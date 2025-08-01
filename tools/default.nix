@@ -1,11 +1,12 @@
 { pkgs }:
 
+let
+  mcp-language-server = pkgs.callPackage ./mcp-language-server.nix { };
+in
 {
-  # Example tool structure - add your mcp-language-server here
-  # mcp-language-server = import ./mcp-language-server { inherit pkgs; };
+  inherit mcp-language-server;
   
-  # For now, export empty list until we add actual tools
   all = [
-    # tools.mcp-language-server
+    mcp-language-server
   ];
 }

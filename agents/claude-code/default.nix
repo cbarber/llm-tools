@@ -49,6 +49,9 @@ pkgs.mkShell {
       echo "Created CLAUDE.local.md from template (add to .gitignore)"
     fi
 
+    # Setup MCP configuration for detected languages
+    ${./setup-mcp.sh}
+
     # Auto-launch claude
     exec claude
   '';
