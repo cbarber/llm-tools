@@ -6,6 +6,8 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     claude-code
     findutils
+    jq
+    libnotify  # For notify-send
   ] ++ tools.all;
 
   shellHook = ''
@@ -51,6 +53,9 @@ pkgs.mkShell {
 
     # Setup MCP configuration for detected languages
     ${./setup-mcp.sh}
+
+    # Add Claude Code utility scripts to PATH
+    export PATH="${./.:$PATH}"
 
     # Auto-launch claude
     exec claude

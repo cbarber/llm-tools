@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# Smart linting script for Claude Code
+# Auto-detects project type and runs appropriate linters
+
+set -euo pipefail
+
+# Exit codes for Claude Code hooks:
+# 0 = continue silently
+# 1 = error (missing deps, config issues)  
+# 2 = block operation with message
+
+# Language detection and linting commands
+declare -A LINTERS=()
+
+# Check for project indicators and set up linting commands
+[[ -f "package.json" ]] && LINTERS["javascript"]="npm run lint 2>/dev/null || (command -v eslint >/dev/null && eslint . --ext .js,.ts,.jsx,.tsx)"
+[[ -f "Cargo.toml" ]] && LINTERS["rust"]="cargo fmt --check && cargo clippy -- -D warnings"
+[[ -f "go.mod" ]] && LINTERS["go"]="gofmt -l . && go vet ./..."
+[[ -f "pyproject.toml" || -f "requirements.txt" || -f "setup.py" ]] && LINTERS["python"]="black --check . && (ruff check . 2>/dev/null || flake8 . 2>/dev/null)"
+[[ -f "flake.nix" || -f "default.nix" ]] && LINTERS["nix"]="nixpkgs-fmt --check . 2>/dev/null || alejandra --check . 2>/dev/null"
+
+# Check for Makefile lint target (highest priority)
+if [[ -f "Makefile" ]] && grep -q "^lint:" Makefile; then
+    LINTERS["makefile"]="make lint"
+fi
+
+# Exit if no linters found
+if [[ ${#LINTERS[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+echo "Running linters..."
+
+# Run all detected linters
+failed=false
+for lang in "${!LINTERS[@]}"; do
+    echo "→ $lang"
+    if ! eval "${LINTERS[$lang]}"; then
+        failed=true
+        echo "✗ $lang linting failed"
+    else
+        echo "✓ $lang linting passed"
+    fi
+done
+
+if [[ "$failed" == "true" ]]; then
+    echo "❌ Linting failed - fix issues before proceeding" >&2
+    exit 2
+fi
+
+echo "✅ All linting checks passed" >&2
+exit 2  # Show success message to user

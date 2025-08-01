@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# Smart testing script for Claude Code
+# Auto-detects project type and runs appropriate tests
+
+set -euo pipefail
+
+# Exit codes for Claude Code hooks:
+# 0 = continue silently
+# 1 = error (missing deps, config issues)
+# 2 = block operation with message
+
+# Language detection and test commands
+declare -A TESTERS=()
+
+# Check for project indicators and set up test commands
+[[ -f "package.json" ]] && TESTERS["javascript"]="npm test 2>/dev/null || (command -v jest >/dev/null && jest)"
+[[ -f "Cargo.toml" ]] && TESTERS["rust"]="cargo test"
+[[ -f "go.mod" ]] && TESTERS["go"]="go test ./..."
+[[ -f "pyproject.toml" || -f "requirements.txt" || -f "setup.py" ]] && TESTERS["python"]="python -m pytest 2>/dev/null || python -m unittest discover 2>/dev/null"
+
+# Check for shell tests
+if [[ -d "spec" ]] && command -v shellspec >/dev/null; then
+    TESTERS["shell"]="shellspec"
+fi
+
+# Check for Makefile test target (highest priority)
+if [[ -f "Makefile" ]] && grep -q "^test:" Makefile; then
+    TESTERS["makefile"]="make test"
+fi
+
+# Exit if no test runners found
+if [[ ${#TESTERS[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+echo "Running tests..."
+
+# Run all detected test suites
+failed=false
+for lang in "${!TESTERS[@]}"; do
+    echo "→ $lang"
+    if ! eval "${TESTERS[$lang]}"; then
+        failed=true
+        echo "✗ $lang tests failed"
+    else
+        echo "✓ $lang tests passed"
+    fi
+done
+
+if [[ "$failed" == "true" ]]; then
+    echo "❌ Tests failed - fix issues before proceeding" >&2
+    exit 2
+fi
+
+echo "✅ All tests passed" >&2
+exit 2  # Show success message to user

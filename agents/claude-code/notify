@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+# Desktop notification script for Claude Code using notify-send
+# Sends notifications for Claude Code events and operations
+
+set -euo pipefail
+
+# Check for notify-send availability
+if ! command -v notify-send >/dev/null; then
+    exit 0  # Silently continue if notify-send not available
+fi
+
+# Rate limiting - avoid notification spam
+LAST_NOTIFY_FILE="/tmp/claude-code-last-notify"
+if [[ -f "$LAST_NOTIFY_FILE" ]]; then
+    last_notify=$(cat "$LAST_NOTIFY_FILE")
+    current_time=$(date +%s)
+    if (( current_time - last_notify < 2 )); then
+        exit 0  # Skip if less than 2 seconds since last notification
+    fi
+fi
+echo "$(date +%s)" > "$LAST_NOTIFY_FILE"
+
+# Read JSON input from Claude Code (if available)
+if [[ -t 0 ]]; then
+    # Called directly - show generic notification
+    notify-send -u normal -a "Claude Code" "Claude Code" "Development session active"
+    exit 0
+fi
+
+# Parse JSON input from stdin
+input=$(cat)
+event_type=$(echo "$input" | jq -r '.eventType // "unknown"')
+tool_name=$(echo "$input" | jq -r '.params.name // "unknown"')
+
+# Only notify on PostToolUse events
+if [[ "$event_type" != "PostToolUse" ]]; then
+    exit 0
+fi
+
+# Skip Read tool notifications (too noisy)
+if [[ "$tool_name" == "Read" ]]; then
+    exit 0
+fi
+
+# Generate notification based on tool
+case "$tool_name" in
+    "Edit"|"MultiEdit")
+        file_path=$(echo "$input" | jq -r '.params.file_path // "unknown file"')
+        notify-send -u normal -a "Claude Code" -i "text-editor" \
+            "File Modified" "Edited: $(basename "$file_path")"
+        ;;
+    "Write")
+        file_path=$(echo "$input" | jq -r '.params.file_path // "unknown file"')
+        notify-send -u normal -a "Claude Code" -i "document-new" \
+            "File Created" "Created: $(basename "$file_path")"
+        ;;
+    "Bash")
+        command=$(echo "$input" | jq -r '.params.command // "unknown command"' | head -c 50)
+        notify-send -u normal -a "Claude Code" -i "terminal" \
+            "Command Executed" "$command..."
+        ;;
+    "Task")
+        description=$(echo "$input" | jq -r '.params.description // "Task executed"')
+        notify-send -u normal -a "Claude Code" -i "system-run" \
+            "Agent Task" "$description"
+        ;;
+    *)
+        notify-send -u normal -a "Claude Code" -i "applications-development" \
+            "Claude Code Activity" "Tool: $tool_name"
+        ;;
+esac
+
+exit 0
