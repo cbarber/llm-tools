@@ -6,12 +6,11 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     claude-code
     findutils
-    jq
-    libnotify  # For notify-send
   ] ++ tools.all;
 
   shellHook = ''
     export CLAUDE_TEMPLATE="${./claude.template.md}"
+    export SETTINGS_TEMPLATE="${./settings.template.json}"
 
     # Source .env files if they exist (for API key auth)
     [ -f .env ] && source .env
@@ -54,8 +53,8 @@ pkgs.mkShell {
     # Setup MCP configuration for detected languages
     ${./setup-mcp.sh}
 
-    # Add Claude Code utility scripts to PATH
-    export PATH="${./.:$PATH}"
+    # Setup Claude Code hooks configuration
+    ${./setup-settings.sh}
 
     # Auto-launch claude
     exec claude
