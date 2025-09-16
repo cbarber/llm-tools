@@ -56,7 +56,12 @@ pkgs.mkShell {
     # Setup Claude Code hooks configuration
     ${./setup-settings.sh}
 
-    # Auto-launch claude
-    exec claude
+    # Auto-launch claude unless disabled
+    if [[ "''${AUTO_LAUNCH:-true}" == "true" ]]; then
+      exec claude
+    else
+      echo "Claude Code environment ready. Run 'claude' to start."
+      echo "Available commands: smart-lint, smart-test, notify, mcp-language-server"
+    fi
   '';
 }
