@@ -7,47 +7,137 @@ set -euo pipefail
 
 # Exit codes for Claude Code hooks:
 # 0 = continue silently
-# 1 = error (missing deps, config issues)  
+# 1 = error (missing deps, config issues)
 # 2 = block operation with message
 
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 # Language detection and linting commands
-declare -A LINTERS=()
+declare -A LINTER_COMMANDS=()
 
 # Check for project indicators and set up linting commands
-[[ -f "package.json" ]] && LINTERS["javascript"]="npm run lint 2>/dev/null || (command -v eslint >/dev/null && eslint . --ext .js,.ts,.jsx,.tsx)"
-[[ -f "Cargo.toml" ]] && LINTERS["rust"]="cargo fmt --check && cargo clippy -- -D warnings"
-[[ -f "go.mod" ]] && LINTERS["go"]="gofmt -l . && go vet ./..."
-[[ -f "pyproject.toml" || -f "requirements.txt" || -f "setup.py" ]] && LINTERS["python"]="black --check . && (ruff check . 2>/dev/null || flake8 . 2>/dev/null)"
-[[ -f "flake.nix" || -f "default.nix" ]] && LINTERS["nix"]="nixpkgs-fmt --check . 2>/dev/null || alejandra --check . 2>/dev/null"
+if [[ -f "package.json" ]]; then
+  # Detect package manager and lint script
+  js_commands=""
+  if command_exists npm && [[ -f "package-lock.json" ]]; then
+    if grep -q '"lint"' package.json 2>/dev/null; then
+      js_commands="npm run lint"
+    fi
+  elif command_exists yarn && [[ -f "yarn.lock" ]]; then
+    if grep -q '"lint"' package.json 2>/dev/null; then
+      js_commands="yarn lint"
+    fi
+  elif command_exists pnpm && [[ -f "pnpm-lock.yaml" ]]; then
+    if grep -q '"lint"' package.json 2>/dev/null; then
+      js_commands="pnpm lint"
+    fi
+  fi
+  
+  # Fallback to direct tools if no package manager lint script
+  if [[ -z "$js_commands" ]]; then
+    if command_exists eslint; then
+      js_commands="eslint . --ext .js,.ts,.jsx,.tsx --fix"
+    fi
+    if command_exists prettier; then
+      js_commands="${js_commands:+$js_commands;}prettier --write ."
+    fi
+  fi
+  
+  # Add prettier if config exists
+  if [[ -f ".prettierrc" || -f "prettier.config.js" || -f ".prettierrc.json" ]]; then
+    if [[ -x "node_modules/.bin/prettier" ]]; then
+      js_commands="${js_commands:+$js_commands;}node_modules/.bin/prettier --write ."
+    elif command_exists prettier; then
+      js_commands="${js_commands:+$js_commands;}prettier --write ."
+    elif command_exists npx; then
+      js_commands="${js_commands:+$js_commands;}npx prettier --write ."
+    fi
+  fi
+  
+  [[ -n "$js_commands" ]] && LINTER_COMMANDS["javascript"]="$js_commands"
+fi
+
+if [[ -f "Cargo.toml" ]] && command_exists cargo; then 
+  LINTER_COMMANDS["rust"]="cargo fmt;cargo clippy -- -D warnings"
+fi
+
+if [[ -f "go.mod" ]]; then
+  go_commands=""
+  if command_exists gofmt; then
+    go_commands="gofmt -l -w ."
+  fi
+  if command_exists go; then
+    go_commands="${go_commands:+$go_commands;}go vet ./..."
+  fi
+  [[ -n "$go_commands" ]] && LINTER_COMMANDS["go"]="$go_commands"
+fi
+
+if [[ -f "pyproject.toml" || -f "requirements.txt" || -f "setup.py" ]]; then
+  py_commands=""
+  if command_exists black; then
+    py_commands="black ."
+  fi
+  if command_exists ruff; then
+    py_commands="${py_commands:+$py_commands;}ruff check . --fix"
+  elif command_exists flake8; then
+    py_commands="${py_commands:+$py_commands;}flake8 ."
+  fi
+  [[ -n "$py_commands" ]] && LINTER_COMMANDS["python"]="$py_commands"
+fi
+
+if [[ -f "flake.nix" || -f "default.nix" ]]; then
+  nix_commands=""
+  if command_exists nixpkgs-fmt; then
+    nix_commands="nixpkgs-fmt ."
+  elif command_exists alejandra; then
+    nix_commands="alejandra ."
+  fi
+  [[ -n "$nix_commands" ]] && LINTER_COMMANDS["nix"]="$nix_commands"
+fi
 
 # Check for Makefile lint target (highest priority)
 if [[ -f "Makefile" ]] && grep -q "^lint:" Makefile; then
-    LINTERS["makefile"]="make lint"
+  LINTER_COMMANDS["makefile"]="make lint"
 fi
 
 # Exit if no linters found
-if [[ ${#LINTERS[@]} -eq 0 ]]; then
-    exit 0
+if [[ ${#LINTER_COMMANDS[@]} -eq 0 ]]; then
+  exit 0
 fi
 
 echo "Running linters..."
 
 # Run all detected linters
 failed=false
-for lang in "${!LINTERS[@]}"; do
-    echo "→ $lang"
-    if ! eval "${LINTERS[$lang]}"; then
-        failed=true
-        echo "✗ $lang linting failed"
-    else
-        echo "✓ $lang linting passed"
+for lang in "${!LINTER_COMMANDS[@]}"; do
+  echo "→ $lang"
+  
+  # Split commands by semicolon and run each
+  IFS=';' read -ra COMMANDS <<< "${LINTER_COMMANDS[$lang]}"
+  lang_failed=false
+  
+  for cmd in "${COMMANDS[@]}"; do
+    echo "  Running: $cmd"
+    if ! eval "$cmd"; then
+      lang_failed=true
     fi
+  done
+  
+  if [[ "$lang_failed" == "true" ]]; then
+    failed=true
+    echo "✗ $lang linting failed"
+  else
+    echo "✓ $lang linting passed"
+  fi
 done
 
 if [[ "$failed" == "true" ]]; then
-    echo "❌ Linting failed - fix issues before proceeding" >&2
-    exit 2
+  echo "❌ Linting failed - fix issues before proceeding" >&2
+  exit 2
 fi
 
 echo "✅ All linting checks passed" >&2
-exit 2  # Show success message to user
+exit 2 # Show success message to user
