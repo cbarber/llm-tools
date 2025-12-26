@@ -54,4 +54,4 @@ if [[ "$failed" == "true" ]]; then
 fi
 
 echo "✅ All tests passed" >&2
-exit 2  # Show success message to user
+exit 0  # Continue silently on success
