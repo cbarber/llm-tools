@@ -1,0 +1,459 @@
+#!/usr/bin/env bash
+#
+# git-to-bare-worktree - Convert standard git repo to bare worktree structure
+#
+# This script converts a git repository from standard .git directory structure
+# to a bare repository with worktrees. On error, it outputs current state and
+# exits - NO automatic cleanup or rm operations.
+#
+
+set -euo pipefail
+
+BARE_DIR=".bare"
+BACKUP_DIR="repo-backup"
+
+REPO_ROOT=""
+CURRENT_BRANCH=""
+CURRENT_COMMIT=""
+REMOTE_URL=""
+
+STEP_COMPLETED=()
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+log_step() {
+    STEP_COMPLETED+=("$1")
+}
+
+output_state_on_error() {
+    local exit_code=$?
+
+    if [ $exit_code -ne 0 ] && [ $exit_code -ne 130 ]; then
+        echo >&2
+        echo "========================================" >&2
+        echo "ERROR: Conversion failed!" >&2
+        echo "========================================" >&2
+        echo >&2
+        echo "Steps completed before failure:" >&2
+        if [ ${#STEP_COMPLETED[@]} -eq 0 ]; then
+            echo "  (none - failed during validation)" >&2
+        else
+            for step in "${STEP_COMPLETED[@]}"; do
+                echo "  ✓ $step" >&2
+            done
+        fi
+        echo >&2
+        echo "Current repository state:" >&2
+        if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT" ]; then
+            echo "  Repository root: $REPO_ROOT" >&2
+            echo >&2
+            echo "  Directory contents:" >&2
+            ls -la "$REPO_ROOT" 2>/dev/null | head -20 >&2 || echo "    (cannot list)" >&2
+        fi
+        echo >&2
+        echo "DO NOT run this script again until you manually fix the state." >&2
+        echo "Examine the repository and restore manually as needed." >&2
+        echo "========================================" >&2
+    fi
+}
+
+trap output_state_on_error EXIT
+
+validate_environment() {
+    if ! command_exists git; then
+        echo "Error: git command not found" >&2
+        exit 1
+    fi
+
+    local git_version
+    git_version=$(git --version | grep -oP '\d+\.\d+' | head -1)
+    local major minor
+    major=$(echo "$git_version" | cut -d. -f1)
+    minor=$(echo "$git_version" | cut -d. -f2)
+
+    if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 5 ]; }; then
+        echo "Error: git 2.5+ required for worktree support (found $git_version)" >&2
+        exit 1
+    fi
+}
+
+validate_git_repository() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        echo "Error: Not a git repository" >&2
+        echo "Run this command from inside a git repository." >&2
+        exit 1
+    fi
+
+    REPO_ROOT=$(git rev-parse --show-toplevel)
+
+    if [ ! -d "$REPO_ROOT/.git" ]; then
+        echo "Error: Already in a worktree or bare repository" >&2
+        echo "This script converts standard git repositories only." >&2
+        echo >&2
+        echo "Current structure:" >&2
+        git worktree list 2>&1 >&2 || true
+        exit 1
+    fi
+
+    if git rev-parse --is-bare-repository 2>&1 | grep -q "true"; then
+        echo "Error: Already a bare repository" >&2
+        exit 1
+    fi
+
+    local git_dir git_common_dir
+    git_dir=$(git rev-parse --git-dir 2>/dev/null || echo "")
+    git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+
+    if [ -n "$git_dir" ] && [ -n "$git_common_dir" ] && [ "$git_dir" != "$git_common_dir" ]; then
+        echo "Error: Already in a worktree" >&2
+        git worktree list >&2
+        exit 1
+    fi
+
+    if [ -d "$REPO_ROOT/$BARE_DIR" ]; then
+        echo "Error: $BARE_DIR directory already exists" >&2
+        echo "Remove it first or use a different location." >&2
+        exit 1
+    fi
+
+    if [ -d "$REPO_ROOT/$BACKUP_DIR" ]; then
+        echo "Error: $BACKUP_DIR directory already exists" >&2
+        echo "Remove it first or use a different location." >&2
+        exit 1
+    fi
+}
+
+check_working_tree_clean() {
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        echo "Error: You have unstaged changes" >&2
+        echo >&2
+        echo "Please commit, stash, or discard your changes first:" >&2
+        git status --short >&2
+        echo >&2
+        echo "Then run git-to-bare-worktree again." >&2
+        exit 1
+    fi
+
+    if ! git diff --cached --quiet 2>/dev/null; then
+        echo "Error: You have staged but uncommitted changes" >&2
+        echo >&2
+        git status --short >&2
+        echo >&2
+        echo "Commit these changes first, then run git-to-bare-worktree again." >&2
+        exit 1
+    fi
+
+    local untracked
+    untracked=$(git ls-files --others --exclude-standard)
+    if [ -n "$untracked" ]; then
+        echo "Error: You have untracked files" >&2
+        echo >&2
+        echo "Commit, ignore, or remove these files first:" >&2
+        echo "$untracked" | sed 's/^/  /' >&2
+        echo >&2
+        echo "Then run git-to-bare-worktree again." >&2
+        exit 1
+    fi
+}
+
+warn_unpushed_commits() {
+    local unpushed
+    unpushed=$(git log --branches --not --remotes --oneline 2>/dev/null || echo "")
+
+    if [ -n "$unpushed" ]; then
+        echo "Warning: You have unpushed commits:"
+        echo "$unpushed" | head -10
+        [ $(echo "$unpushed" | wc -l) -gt 10 ] && echo "  ... and more"
+        echo
+        echo "Consider pushing your work before conversion."
+        echo
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Conversion cancelled."
+            exit 0
+        fi
+        echo
+    fi
+}
+
+detect_special_configurations() {
+    local repo_size
+    repo_size=$(du -sh "$REPO_ROOT/.git" 2>/dev/null | cut -f1 || echo "unknown")
+    echo "Repository .git size: $repo_size"
+    echo
+
+    if ! git remote | grep -q .; then
+        echo "Warning: No remote configured"
+        echo "This repository only exists locally. Consider:"
+        echo "  1. Push to a remote before converting"
+        echo "  2. Create a backup clone elsewhere"
+        echo
+        read -p "Continue conversion? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Conversion cancelled."
+            exit 0
+        fi
+        echo
+    fi
+
+    if git config --get-regexp 'lfs\.' >/dev/null 2>&1; then
+        echo "Notice: Git LFS detected"
+        echo "  LFS objects will be shared across all worktrees"
+
+        if ! command_exists git-lfs; then
+            echo "  Warning: git-lfs command not found in PATH"
+            echo "  Install git-lfs before creating additional worktrees"
+        fi
+        echo
+    fi
+
+    if [ -f "$REPO_ROOT/.gitmodules" ] || [ -d "$REPO_ROOT/.git/modules" ]; then
+        echo "Notice: Submodules detected"
+        echo "  Run 'git submodule update' in new worktrees as needed"
+        echo
+    fi
+
+    local custom_hooks
+    custom_hooks=$(find "$REPO_ROOT/.git/hooks" -type f ! -name "*.sample" 2>/dev/null | wc -l)
+    if [ "$custom_hooks" -gt 0 ]; then
+        echo "Notice: $custom_hooks custom git hook(s) detected"
+        echo "  Hooks will be preserved in $BARE_DIR/hooks/"
+        echo "  Configure core.hooksPath for worktree-specific hooks if needed"
+        echo
+    fi
+
+    if [ -f "$REPO_ROOT/.git/info/sparse-checkout" ] && git config core.sparseCheckout >/dev/null 2>&1; then
+        echo "Notice: Sparse checkout is enabled"
+        echo "  Each worktree can have different sparse patterns"
+        echo "  Use 'git sparse-checkout' commands in each worktree"
+        echo
+    fi
+
+    local remote_count
+    remote_count=$(git remote | wc -l)
+    if [ "$remote_count" -gt 1 ]; then
+        echo "Notice: Multiple remotes detected:"
+        git remote -v | head -6
+        echo
+    fi
+}
+
+get_current_state() {
+    REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+
+    if git symbolic-ref HEAD >/dev/null 2>&1; then
+        CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
+        echo "Current branch: $CURRENT_BRANCH"
+    else
+        CURRENT_COMMIT=$(git rev-parse HEAD)
+        echo "Current state: detached HEAD at $CURRENT_COMMIT"
+        echo "Error: Cannot create worktree from detached HEAD"
+        echo "Please checkout a branch first, then run this script again."
+        exit 1
+    fi
+
+    CURRENT_COMMIT=$(git rev-parse HEAD)
+    echo "Current commit: $CURRENT_COMMIT"
+
+    if [ -n "$REMOTE_URL" ]; then
+        echo "Remote URL: $REMOTE_URL"
+    fi
+    echo
+}
+
+create_bare_clone() {
+    echo "→ Creating bare repository clone..."
+
+    if ! git clone --bare "$REPO_ROOT" "$REPO_ROOT/$BARE_DIR" 2>&1; then
+        echo "✗ Failed to create bare clone" >&2
+        exit 1
+    fi
+
+    if [ ! -d "$REPO_ROOT/$BARE_DIR/refs" ] || [ ! -f "$REPO_ROOT/$BARE_DIR/HEAD" ]; then
+        echo "✗ Bare clone structure invalid" >&2
+        exit 1
+    fi
+
+    log_step "Created bare repository at $BARE_DIR/"
+    echo "✓ Bare repository created"
+}
+
+fix_remote_url() {
+    echo "→ Fixing remote configuration..."
+
+    cd "$REPO_ROOT"
+
+    if [ -n "$REMOTE_URL" ]; then
+        git -C "$BARE_DIR" remote set-url origin "$REMOTE_URL"
+        echo "  Remote URL: $REMOTE_URL"
+    else
+        echo "  No remote configured"
+    fi
+
+    git -C "$BARE_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+
+    log_step "Fixed remote configuration in $BARE_DIR/"
+    echo "✓ Remote configuration fixed"
+}
+
+move_to_backup() {
+    echo "→ Moving current repository to backup..."
+
+    cd "$REPO_ROOT"
+    mkdir -p "$BACKUP_DIR"
+
+    for item in * .[!.]* ..?*; do
+        if [ "$item" = "." ] || [ "$item" = ".." ]; then
+            continue
+        fi
+        if [ "$item" = "$BARE_DIR" ] || [ "$item" = "$BACKUP_DIR" ]; then
+            continue
+        fi
+        if [ -e "$item" ]; then
+            mv "$item" "$BACKUP_DIR/" 2>/dev/null || true
+        fi
+    done
+
+    log_step "Moved repository contents to $BACKUP_DIR/"
+    echo "✓ Repository moved to $BACKUP_DIR/"
+}
+
+create_git_pointer() {
+    echo "→ Creating git pointer..."
+
+    cd "$REPO_ROOT"
+    echo "gitdir: ./.bare" > .git
+
+    log_step "Created .git pointer file"
+    echo "✓ Git pointer created"
+}
+
+create_main_worktree() {
+    echo "→ Creating worktree for branch: $CURRENT_BRANCH..."
+
+    cd "$REPO_ROOT"
+
+    if ! git worktree add "$CURRENT_BRANCH" "$CURRENT_BRANCH" 2>&1; then
+        echo "✗ Failed to create worktree" >&2
+        exit 1
+    fi
+
+    log_step "Created worktree at $CURRENT_BRANCH/"
+    echo "✓ Worktree created at $CURRENT_BRANCH/"
+}
+
+validate_conversion() {
+    echo "→ Validating conversion..."
+
+    cd "$REPO_ROOT/$CURRENT_BRANCH"
+
+    if ! git status >/dev/null 2>&1; then
+        echo "✗ git status failed in worktree" >&2
+        exit 1
+    fi
+
+    if ! git branch >/dev/null 2>&1; then
+        echo "✗ git branch failed" >&2
+        exit 1
+    fi
+
+    if [ ! -d "$REPO_ROOT/$BARE_DIR/refs" ] || [ ! -f "$REPO_ROOT/$BARE_DIR/HEAD" ]; then
+        echo "✗ Bare repository structure invalid" >&2
+        exit 1
+    fi
+
+    local actual_commit
+    actual_commit=$(git rev-parse HEAD 2>/dev/null)
+    if [ "$actual_commit" != "$CURRENT_COMMIT" ]; then
+        echo "✗ Commit mismatch: expected $CURRENT_COMMIT, got $actual_commit" >&2
+        exit 1
+    fi
+
+    local actual_branch
+    actual_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+    if [ "$actual_branch" != "$CURRENT_BRANCH" ]; then
+        echo "✗ Branch mismatch: expected $CURRENT_BRANCH, got $actual_branch" >&2
+        exit 1
+    fi
+
+    if [ -n "$REMOTE_URL" ]; then
+        local remote_url
+        remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        if [ -n "$remote_url" ]; then
+            echo "  Remote preserved: $remote_url"
+        fi
+    fi
+
+    log_step "Validated conversion"
+    echo "✓ Conversion validated successfully"
+}
+
+show_success_message() {
+    cd "$REPO_ROOT"
+
+    echo
+    echo "=========================================="
+    echo "✓ Conversion Complete!"
+    echo "=========================================="
+    echo
+    echo "Your repository structure:"
+    echo "  $BARE_DIR/              - Bare repository (git internals)"
+    echo "  .git                - Pointer to $BARE_DIR/"
+    echo "  $BACKUP_DIR/        - Original repository (backup)"
+    echo "  $CURRENT_BRANCH/    - Active worktree for $CURRENT_BRANCH"
+    echo
+    echo "Your work is now in: $CURRENT_BRANCH/"
+    echo "The original repo (including .git) is preserved in: $BACKUP_DIR/"
+    echo
+    echo "Create additional worktrees with:"
+    echo "  git worktree add <branch-name>"
+    echo
+    echo "Examples:"
+    echo "  git worktree add feature-x"
+    echo "  git worktree add hotfix"
+    echo
+    echo "List all worktrees:"
+    echo "  git worktree list"
+    echo
+    echo "Remove a worktree:"
+    echo "  git worktree remove <branch-name>"
+    echo
+    echo "Documentation: https://git-scm.com/docs/git-worktree"
+    echo "=========================================="
+}
+
+main() {
+    echo "git-to-bare-worktree: Converting to bare worktree structure..."
+    echo
+
+    validate_environment
+    validate_git_repository
+    check_working_tree_clean
+    warn_unpushed_commits
+    detect_special_configurations
+    get_current_state
+
+    read -p "Proceed with conversion? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Conversion cancelled."
+        exit 0
+    fi
+    echo
+
+    create_bare_clone
+    fix_remote_url
+    move_to_backup
+    create_git_pointer
+    create_main_worktree
+    validate_conversion
+    show_success_message
+
+    exit 0
+}
+
+main "$@"
