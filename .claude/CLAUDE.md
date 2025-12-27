@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository provides experimental environments for LLM agent tools, MCPs (Model Context Protocols), and supporting tools. Each environment is configured via Nix flakes that construct development shells with pre-loaded configurations and tooling.
 
+## Configuration Templates
+
+Agent shells auto-generate config files on first run via `agents/*/setup-*.sh` scripts. To update default configurations:
+- Edit templates in setup scripts (e.g., `agents/opencode/setup-mcp.sh`)
+- NOT the generated files (opencode.json, .mcp.json, cclsp.json)
+
 ## Development Guidelines
 
 - Be terse. Only provide examples if actually necessary for clarification
