@@ -1,65 +1,122 @@
 #!/usr/bin/env bash
 
-# Setup MCP configuration for Claude Code based on detected project languages
-# Only creates .mcp.json if it doesn't already exist
+# Setup MCP and cclsp configuration based on detected project languages
+# Only creates files if they don't already exist
 
 set -euo pipefail
 
-if [[ -f ".mcp.json" ]]; then
+should_create_mcp=false
+should_create_cclsp=false
+
+[[ ! -f ".mcp.json" ]] && should_create_mcp=true
+[[ ! -f "cclsp.json" ]] && should_create_cclsp=true
+
+if [[ "$should_create_mcp" == "false" && "$should_create_cclsp" == "false" ]]; then
   exit 0
 fi
 
 declare -A LANGUAGES=()
+declare -A EXTENSIONS=()
+declare -A COMMANDS=()
 
-[[ -f "package.json" ]] && LANGUAGES["typescript"]="typescript-language-server -- --stdio"
-[[ -f "tsconfig.json" ]] && LANGUAGES["typescript"]="typescript-language-server -- --stdio"
-[[ -f "Cargo.toml" ]] && LANGUAGES["rust"]="rust-analyzer"
-[[ -f "go.mod" ]] && LANGUAGES["go"]="gopls"
-[[ -f "requirements.txt" || -f "pyproject.toml" || -f "setup.py" ]] && LANGUAGES["python"]="pyright-langserver -- --stdio"
-[[ -f "flake.nix" || -f "default.nix" ]] && LANGUAGES["nix"]="nil"
-[[ -f "pom.xml" || -f "build.gradle" ]] && LANGUAGES["java"]="jdtls"
-[[ -f "Gemfile" ]] && LANGUAGES["ruby"]="solargraph stdio"
-[[ -f "mix.exs" ]] && LANGUAGES["elixir"]="elixir-ls"
-[[ -f "pubspec.yaml" ]] && LANGUAGES["dart"]="dart_language_server"
+# Detect languages and map to LSP servers
+if [[ -f "package.json" || -f "tsconfig.json" ]]; then
+  LANGUAGES["typescript"]=1
+  EXTENSIONS["typescript"]='["ts", "tsx", "js", "jsx"]'
+  COMMANDS["typescript"]='["typescript-language-server", "--stdio"]'
+fi
+
+if [[ -f "Cargo.toml" ]]; then
+  LANGUAGES["rust"]=1
+  EXTENSIONS["rust"]='["rs"]'
+  COMMANDS["rust"]='["rust-analyzer"]'
+fi
+
+if [[ -f "go.mod" ]]; then
+  LANGUAGES["go"]=1
+  EXTENSIONS["go"]='["go"]'
+  COMMANDS["go"]='["gopls", "serve"]'
+fi
+
+if [[ -f "requirements.txt" || -f "pyproject.toml" || -f "setup.py" ]]; then
+  LANGUAGES["python"]=1
+  EXTENSIONS["python"]='["py"]'
+  COMMANDS["python"]='["pyright-langserver", "--stdio"]'
+fi
+
+if [[ -f "flake.nix" || -f "default.nix" ]]; then
+  LANGUAGES["nix"]=1
+  EXTENSIONS["nix"]='["nix"]'
+  COMMANDS["nix"]='["nil"]'
+fi
+
+if [[ -f "pom.xml" || -f "build.gradle" ]]; then
+  LANGUAGES["java"]=1
+  EXTENSIONS["java"]='["java"]'
+  COMMANDS["java"]='["jdtls"]'
+fi
+
+if [[ -f "Gemfile" ]]; then
+  LANGUAGES["ruby"]=1
+  EXTENSIONS["ruby"]='["rb"]'
+  COMMANDS["ruby"]='["solargraph", "stdio"]'
+fi
+
+if [[ -f "mix.exs" ]]; then
+  LANGUAGES["elixir"]=1
+  EXTENSIONS["elixir"]='["ex", "exs"]'
+  COMMANDS["elixir"]='["elixir-ls"]'
+fi
 
 if [[ ${#LANGUAGES[@]} -eq 0 ]]; then
   exit 0
 fi
 
-cat >.mcp.json <<'EOF'
+# Create .mcp.json
+if [[ "$should_create_mcp" == "true" ]]; then
+  cat >.mcp.json <<'EOF'
 {
   "mcpServers": {
-EOF
-
-first=true
-for lang in "${!LANGUAGES[@]}"; do
-  if [[ "$first" == "true" ]]; then
-    first=false
-  else
-    echo "," >>.mcp.json
-  fi
-
-  lsp_cmd="${LANGUAGES[$lang]}"
-  if [[ "$lsp_cmd" == *" -- "* ]]; then
-    lsp_name="${lsp_cmd%% -- *}"
-    lsp_args="${lsp_cmd#* -- }"
-    args_json="[\"--workspace\", \".\", \"--lsp\", \"$lsp_name\", \"--\", \"$lsp_args\"]"
-  else
-    args_json="[\"--workspace\", \".\", \"--lsp\", \"$lsp_cmd\"]"
-  fi
-
-  cat >>.mcp.json <<EOF
-    "$lang-language-server": {
-      "command": "mcp-language-server",
-      "args": $args_json
+    "lsp": {
+      "command": "cclsp",
+      "env": {
+        "CCLSP_CONFIG_PATH": "cclsp.json"
+      }
     }
-EOF
-done
-
-cat >>.mcp.json <<'EOF'
   }
 }
 EOF
+  echo "Created .mcp.json with cclsp MCP server"
+fi
 
-echo "Created .mcp.json with language servers for: ${!LANGUAGES[*]}"
+# Create cclsp.json
+if [[ "$should_create_cclsp" == "true" ]]; then
+  cat >cclsp.json <<'EOF'
+{
+  "servers": [
+EOF
+
+  first=true
+  for lang in "${!LANGUAGES[@]}"; do
+    if [[ "$first" == "true" ]]; then
+      first=false
+    else
+      echo "," >>cclsp.json
+    fi
+
+    cat >>cclsp.json <<EOF
+    {
+      "extensions": ${EXTENSIONS[$lang]},
+      "command": ${COMMANDS[$lang]},
+      "rootDir": "."
+    }
+EOF
+  done
+
+  cat >>cclsp.json <<'EOF'
+  ]
+}
+EOF
+  echo "Created cclsp.json with language servers for: ${!LANGUAGES[*]}"
+fi
 

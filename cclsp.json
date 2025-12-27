@@ -1,0 +1,44 @@
+{
+  "servers": [
+    {
+      "extensions": ["nix"],
+      "command": ["nil"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["ts", "tsx", "js", "jsx"],
+      "command": ["typescript-language-server", "--stdio"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["py"],
+      "command": ["pyright-langserver", "--stdio"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["go"],
+      "command": ["gopls", "serve"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["rs"],
+      "command": ["rust-analyzer"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["c", "cpp", "cc", "h", "hpp"],
+      "command": ["clangd"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["rb"],
+      "command": ["solargraph", "stdio"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["java"],
+      "command": ["jdtls"],
+      "rootDir": "."
+    }
+  ]
+}

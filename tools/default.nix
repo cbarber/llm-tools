@@ -1,14 +1,14 @@
-{ pkgs }:
+{ pkgs, bun2nix }:
 
 let
-  mcp-language-server = pkgs.callPackage ./mcp-language-server.nix { };
+  cclsp = pkgs.callPackage ./cclsp.nix { inherit bun2nix; };
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
 in
 {
-  inherit mcp-language-server claude-code-scripts;
-  
+  inherit cclsp claude-code-scripts;
+
   all = [
-    mcp-language-server
+    cclsp
     claude-code-scripts
   ];
 }

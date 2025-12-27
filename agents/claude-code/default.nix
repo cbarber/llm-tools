@@ -2,11 +2,14 @@
 
 pkgs.mkShell {
   name = "claude-code-shell";
-  
-  buildInputs = with pkgs; [
-    claude-code
-    findutils
-  ] ++ tools.all;
+
+  buildInputs =
+    with pkgs;
+    [
+      claude-code
+      findutils
+    ]
+    ++ tools.all;
 
   shellHook = ''
     export CLAUDE_TEMPLATE="${./claude.template.md}"
@@ -61,7 +64,7 @@ pkgs.mkShell {
       exec claude
     else
       echo "Claude Code environment ready. Run 'claude' to start."
-      echo "Available commands: smart-lint, smart-test, notify, mcp-language-server"
+      echo "Available commands: smart-lint, smart-test, notify, cclsp"
     fi
   '';
 }
