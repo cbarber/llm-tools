@@ -30,10 +30,12 @@
       {
         packages = {
           claude-code = import ./agents/claude-code { inherit pkgs tools; };
+          opencode = import ./agents/opencode { inherit pkgs tools; };
         };
 
         devShells = {
           claude-code = self.packages.${system}.claude-code;
+          opencode = self.packages.${system}.opencode;
           default = self.packages.${system}.claude-code;
         };
       }
