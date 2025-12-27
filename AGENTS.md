@@ -121,6 +121,35 @@ nix flake update
 nix-shell -p nix-init --run "nix-init"
 ```
 
+## Beads Integration
+
+Beads (bd) provides task tracking and memory management. Auto-initializes on first shell entry (disable with `BD_SKIP_SETUP=true`).
+
+**Agent Integration:**
+- **Claude Code**: Hooks auto-inject `bd prime` context on session start/compaction
+- **OpenCode**: [opencode-beads](https://github.com/joshuadavidthomas/opencode-beads) plugin (v0.3.0) provides context injection and `/bd-*` commands
+  - Pinned version in opencode.json: `"plugin": ["opencode-beads@0.3.0"]`
+  - OpenCode auto-installs to `~/.cache/opencode/node_modules/` on first use
+  - No project pollution - installed globally per-user
+
+**Branch Configuration:**
+
+For protected branches, use a separate sync branch:
+```bash
+export BD_BRANCH=beads-sync  # Commits to beads-sync via git worktrees
+```
+
+Without `BD_BRANCH`, commits go to current branch.
+
+**Essential Commands:**
+
+```bash
+bd ready              # Show available work
+bd create "Task" -p 1 # Create task
+bd show <id>          # View details
+bd sync               # Sync to git
+```
+
 ## Authentication
 
 Claude Code supports two authentication methods:
@@ -147,3 +176,31 @@ Use `nix-init` to package new tools:
 
 This allows shared MCP servers and custom tooling across multiple agent environments.
 
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push --force-with-lease
+   git status  # MUST show "up to date with origin"
+   ```
+   If `git push --force-with-lease` fails, STOP and request manual intervention.
+
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If force-with-lease fails, abort and request help

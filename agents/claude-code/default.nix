@@ -59,12 +59,33 @@ pkgs.mkShell {
     # Setup Claude Code hooks configuration
     ${./setup-settings.sh}
 
+    # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
+    if [[ ! -d ".beads" && "''${BD_SKIP_SETUP:-}" != "true" ]]; then
+      echo "Initializing beads for task tracking..."
+      
+      # Support custom branch via BD_BRANCH (useful for protected branches)
+      branch_arg=""
+      if [[ -n "''${BD_BRANCH:-}" ]]; then
+        branch_arg="--branch ''${BD_BRANCH}"
+        echo "  Using branch: ''${BD_BRANCH}"
+      fi
+      
+      if bd init --quiet $branch_arg 2>/dev/null; then
+        bd setup claude --quiet 2>/dev/null || true
+        echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
+        echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+        if [[ -n "''${BD_BRANCH:-}" ]]; then
+          echo "Set BD_BRANCH=<branch> to use a different branch for beads commits."
+        fi
+      fi
+    fi
+
     # Auto-launch claude unless disabled
     if [[ "''${AUTO_LAUNCH:-true}" == "true" ]]; then
       exec claude
     else
       echo "Claude Code environment ready. Run 'claude' to start."
-      echo "Available commands: smart-lint, smart-test, notify, cclsp"
+      echo "Available commands: smart-lint, smart-test, notify, cclsp, bd"
     fi
   '';
 }

@@ -72,12 +72,15 @@ if [[ ${#LANGUAGES[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Create opencode.json with cclsp MCP server
+# Create opencode.json with cclsp MCP server and beads plugin
+# OpenCode installs plugins to ~/.cache/opencode/node_modules/ automatically
+# Version pinning ensures reproducibility and security
 if [[ "$should_create_opencode" == "true" ]]; then
   cat >opencode.json <<'EOF'
 {
   "$schema": "https://opncd.ai/config.json",
   "share": "disabled",
+  "plugin": ["opencode-beads@0.3.0"],
   "mcp": {
     "lsp": {
       "type": "local",
@@ -90,7 +93,7 @@ if [[ "$should_create_opencode" == "true" ]]; then
   }
 }
 EOF
-  echo "Created opencode.json with cclsp MCP server"
+  echo "Created opencode.json with cclsp MCP server and opencode-beads@0.3.0 plugin"
 fi
 
 # Create cclsp.json

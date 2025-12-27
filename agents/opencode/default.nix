@@ -26,12 +26,32 @@ pkgs.mkShell {
     # Setup MCP configuration for detected languages
     ${./setup-mcp.sh}
 
+    # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
+    if [[ ! -d ".beads" && "''${BD_SKIP_SETUP:-}" != "true" ]]; then
+      echo "Initializing beads for task tracking..."
+      
+      # Support custom branch via BD_BRANCH (useful for protected branches)
+      branch_arg=""
+      if [[ -n "''${BD_BRANCH:-}" ]]; then
+        branch_arg="--branch ''${BD_BRANCH}"
+        echo "  Using branch: ''${BD_BRANCH}"
+      fi
+      
+      if bd init --quiet $branch_arg 2>/dev/null; then
+        echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
+        echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+        if [[ -n "''${BD_BRANCH:-}" ]]; then
+          echo "Set BD_BRANCH=<branch> to use a different branch for beads commits."
+        fi
+      fi
+    fi
+
     # Auto-launch opencode unless disabled
     if [[ "''${AUTO_LAUNCH:-true}" == "true" ]]; then
       exec opencode
     else
       echo "OpenCode environment ready. Run 'opencode' to start."
-      echo "Available commands: cclsp, smart-lint, smart-test, notify"
+      echo "Available commands: cclsp, smart-lint, smart-test, notify, bd"
     fi
   '';
 }
