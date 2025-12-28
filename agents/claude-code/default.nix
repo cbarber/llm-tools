@@ -8,6 +8,7 @@ pkgs.mkShell {
     [
       claude-code
       findutils
+      bubblewrap
     ]
     ++ tools.all;
 
@@ -17,6 +18,8 @@ pkgs.mkShell {
     export SETTINGS_TEMPLATE="${./settings.template.json}"
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export SETUP_SETTINGS_SCRIPT="${./setup-settings.sh}"
+    export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
+    export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
 
     source ${./setup-shell.sh}
   '';

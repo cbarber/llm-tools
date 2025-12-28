@@ -81,9 +81,22 @@ if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
 fi
 
 # Auto-launch opencode unless disabled
-if [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
+# Skip if already in sandbox (prevent infinite loop)
+if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
+  echo "Already in sandbox, starting OpenCode directly..."
   exec opencode
+elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
+  # Use sandbox if enabled (default: enabled)
+  if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
+    echo "Launching OpenCode in sandbox (disable with AGENT_SANDBOX=false)..."
+    exec "$AGENT_SANDBOX_SCRIPT" opencode
+  else
+    exec opencode
+  fi
 else
   echo "OpenCode environment ready. Run 'opencode' to start."
+  if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
+    echo "Sandbox enabled: use 'agent-sandbox opencode' or just 'opencode' will be sandboxed"
+  fi
   echo "Available commands: cclsp, smart-lint, smart-test, notify, bd"
 fi
