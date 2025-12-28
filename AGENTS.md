@@ -30,7 +30,7 @@ See `agents/templates/README.md` for details.
 ## Development Guidelines
 
 - Be terse. Only provide examples if actually necessary for clarification
-- Avoid comments. When in doubt, name a variable or extract a function.
+* Code must be self-documenting. Never add prescriptive comments that describe what code does. Only add descriptive comments that explain why (rationale, edge cases, non-obvious algorithms). When in doubt, name a variable or extract a function.
 - Avoid function side effects. Functions are always better as a clear input and output.
 - Strive for logical function organization. "clean code" and "one large function" are too dogmatic
 - Avoid deep block nesting. Prefer conditions that return early.
