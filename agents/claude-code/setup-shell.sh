@@ -10,7 +10,7 @@ export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 # Note: Claude Code supports both browser auth and API key
 # If no API key is set, it will attempt browser authentication
-if [ -z "$ANTHROPIC_API_KEY" ]; then
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "Note: No ANTHROPIC_API_KEY found. Claude Code will use browser authentication."
   echo "If you prefer API key auth, set ANTHROPIC_API_KEY in .env or ~/.config/claude/.env"
 fi
