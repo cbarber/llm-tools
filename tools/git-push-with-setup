@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Git Push with Automatic Setup Detection
+#
+# Wraps git push to detect authentication failures and provide
+# helpful instructions for setting up deploy keys.
+#
+# Usage: git-push-with-setup [git push arguments...]
+
+set -euo pipefail
+
+# Run git push and capture output
+OUTPUT=$(git push "$@" 2>&1) || EXIT_CODE=$?
+
+# Check if push succeeded
+if [[ -z "${EXIT_CODE:-}" ]]; then
+  echo "$OUTPUT"
+  exit 0
+fi
+
+# Check for authentication errors
+if echo "$OUTPUT" | grep -qE "Permission denied|Could not read from remote|authentication failed|403"; then
+  echo "$OUTPUT"
+  echo ""
+  echo "======================================"
+  echo "⚠️  Git Push Failed: Authentication Required"
+  echo "======================================"
+  echo ""
+  echo "It looks like the agent deploy key is not set up for this repository."
+  echo ""
+  echo "Run this command to set up agent SSH keys:"
+  echo "  ./tools/setup-agent-keys.sh"
+  echo ""
+  echo "Or if keys are already generated, add the deploy key manually:"
+  
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+  if [[ "$REMOTE_URL" =~ github\.com ]]; then
+    echo "  cat ~/.ssh/agent-github.pub"
+  elif [[ "$REMOTE_URL" =~ gitlab\.com ]]; then
+    echo "  cat ~/.ssh/agent-gitlab.pub"
+  elif [[ "$REMOTE_URL" =~ gitea ]]; then
+    echo "  cat ~/.ssh/agent-gitea.pub"
+  fi
+  
+  echo ""
+  exit $EXIT_CODE
+fi
+
+# Other error - just show output and exit
+echo "$OUTPUT"
+exit $EXIT_CODE

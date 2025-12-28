@@ -15,6 +15,12 @@
 
 set -euo pipefail
 
+# Platform detection - bubblewrap only works on Linux
+if [[ "$(uname -s)" != "Linux" ]]; then
+  # Non-Linux platforms: run command directly without sandboxing
+  exec "$@"
+fi
+
 # Find bwrap - try BWRAP_PATH env var first, then PATH, then nix store
 BWRAP=""
 if [[ -n "${BWRAP_PATH:-}" ]] && [[ -x "$BWRAP_PATH" ]]; then
@@ -69,6 +75,25 @@ BWRAP_ARGS=(
   --setenv IN_AGENT_SANDBOX "1"
 )
 
+# SSL/TLS certificates (required for HTTPS and nix operations)
+if [[ -d /etc/ssl ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/ssl /etc/ssl)
+fi
+if [[ -d /etc/pki ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/pki /etc/pki)
+fi
+if [[ -d /etc/static/ssl ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/static/ssl /etc/static/ssl)
+fi
+
+# User/group information (needed for SSH username lookup)
+if [[ -f /etc/passwd ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/passwd /etc/passwd)
+fi
+if [[ -f /etc/group ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/group /etc/group)
+fi
+
 # Bind mount all directories in PATH (read-only)
 # This ensures all commands available to the parent are available in the sandbox
 IFS=':' read -ra PATH_DIRS <<< "$PATH"
@@ -113,6 +138,33 @@ fi
 if [[ -d "$HOME/.local/share/claude" ]]; then
   BWRAP_ARGS+=(--bind "$HOME/.local/share/claude" "$HOME/.local/share/claude")
 fi
+
+# Agent SSH keys for git operations
+if [[ -f "$HOME/.ssh/agent-github" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-github" "$HOME/.ssh/agent-github")
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-github.pub" "$HOME/.ssh/agent-github.pub")
+fi
+if [[ -f "$HOME/.ssh/agent-gitlab" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-gitlab" "$HOME/.ssh/agent-gitlab")
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-gitlab.pub" "$HOME/.ssh/agent-gitlab.pub")
+fi
+if [[ -f "$HOME/.ssh/agent-gitea" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea")
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/agent-gitea.pub" "$HOME/.ssh/agent-gitea.pub")
+fi
+
+# SSH config for agent keys
+# Mount agent config AS the SSH config (replaces personal config in sandbox)
+# This keeps your personal SSH config private and prevents conflicts
+if [[ -f "$HOME/.ssh/config.agent" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/config.agent" "$HOME/.ssh/config")
+fi
+
+# SSH known_hosts for host key verification
+if [[ -f "$HOME/.ssh/known_hosts" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$HOME/.ssh/known_hosts" "$HOME/.ssh/known_hosts")
+fi
+
 
 # Optional: bind mount SSH keys for git authentication
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]] && [[ -d "$HOME/.ssh" ]]; then
