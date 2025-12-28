@@ -12,7 +12,7 @@
 # Environment variables:
 #   AGENT_SANDBOX_BIND_HOME - Set to "true" to bind mount $HOME (breaks isolation)
 #   AGENT_SANDBOX_SSH       - Set to "true" to bind mount ~/.ssh (for git auth)
-#   BWRAP_EXTRA_PATHS       - Colon-separated paths to bind mount (e.g., ~/.cargo:~/.cache/go-build)
+#   BWRAP_EXTRA_PATHS       - Colon-separated agent/project-specific paths (e.g., ~/.config/myagent)
 
 set -euo pipefail
 
@@ -178,7 +178,26 @@ if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   BWRAP_ARGS+=(--bind "$HOME" "$HOME")
 fi
 
-# Extra paths for language tooling caches (extensible by agents and projects)
+# Common language tooling cache directories (only mount if they exist)
+# These are shared across all agents for build caching
+LANGUAGE_CACHE_PATHS=(
+  "$HOME/.cache/go-build"
+  "$HOME/.cargo"
+  "$HOME/.cache/pip"
+  "$HOME/.gem"
+  "$HOME/.cache/yarn"
+  "$HOME/.npm"
+  "$HOME/.local/share/pnpm"
+  "$HOME/.bun"
+)
+
+for cache_path in "${LANGUAGE_CACHE_PATHS[@]}"; do
+  if [[ -d "$cache_path" ]]; then
+    BWRAP_ARGS+=(--bind "$cache_path" "$cache_path")
+  fi
+done
+
+# Extra paths for agent-specific or project-specific needs
 # Format: BWRAP_EXTRA_PATHS="/path/one:/path/two:~/path/three"
 # Only mounts paths that already exist (does not create them)
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then

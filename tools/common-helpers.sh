@@ -1,25 +1,22 @@
 #!/usr/bin/env bash
 # Common helper functions for agent environments
 
-# Setup language tooling cache paths for sandbox
-# These paths are bind-mounted only if they exist, allowing language tools to cache builds/packages
-setup_language_cache_paths() {
-  local cache_paths=(
-    "$HOME/.cache/go-build"
-    "$HOME/.cargo"
-    "$HOME/.cache/pip"
-    "$HOME/.gem"
-    "$HOME/.cache/yarn"
-    "$HOME/.npm"
-    "$HOME/.local/share/pnpm"
-    "$HOME/.bun"
-  )
-  
-  # Build list of existing paths
+# Add agent-specific paths to BWRAP_EXTRA_PATHS
+# Usage: add_sandbox_paths "/path/one" "/path/two" "~/path/three"
+# Only adds paths that exist; does not create them
+add_sandbox_paths() {
   local existing_paths=()
-  for path in "${cache_paths[@]}"; do
-    if [[ -d "$path" ]]; then
-      existing_paths+=("$path")
+  
+  for path in "$@"; do
+    # Expand tilde to home directory
+    local expanded_path="${path/#\~/$HOME}"
+    
+    # Skip empty paths
+    [[ -z "$expanded_path" ]] && continue
+    
+    # Add to list if path exists
+    if [[ -d "$expanded_path" ]]; then
+      existing_paths+=("$expanded_path")
     fi
   done
   
