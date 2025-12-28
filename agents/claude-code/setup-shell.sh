@@ -73,11 +73,16 @@ if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   
   if bd init --quiet $branch_arg 2>/dev/null; then
     bd setup claude --quiet 2>/dev/null || true
-    echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
-    echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+    
+    # Start daemon with auto-commit if using a separate branch
     if [[ -n "${BD_BRANCH:-}" ]]; then
-      echo "Set BD_BRANCH=<branch> to use a different branch for beads commits."
+      bd daemon --start --auto-commit 2>/dev/null || true
+      echo "Beads initialized with auto-commit to branch: ${BD_BRANCH}"
+    else
+      echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
     fi
+    
+    echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
   fi
 fi
 
