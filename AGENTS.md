@@ -195,9 +195,21 @@ This allows shared MCP servers and custom tooling across multiple agent environm
    ```
    If `git push --force-with-lease` fails, STOP and request manual intervention.
 
-5. **Clean up** - Clear stashes, prune remote branches
+5. **Clean up** - Remove debug code, temp files.
 6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+7. **Hand off** - Create next session prompt in this exact format:
+   ```
+   Recent Work:
+   - Completed issue-id: Summary of changes
+
+   Repository State:
+   - Branch: <branch-name> (<commit-hash>)
+   - Beads: X closed, Y ready issues
+
+   Context:
+   - Important details for continuity
+   ```
+   This prompt should be ready to paste into the next AI session.
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds

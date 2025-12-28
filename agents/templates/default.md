@@ -14,3 +14,43 @@ This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when wor
 * Remember neither you nor I are a god. Do not break your arm patting me on the back. Just continue working.
 * Challenge my assumptions with compelling evidence.
 * You are always on a branch. Delete code rather than versioning code.
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd sync
+   git push --force-with-lease
+   git status  # MUST show "up to date with origin"
+   ```
+   If `git push --force-with-lease` fails, STOP and request manual intervention.
+
+5. **Clean up** - Remove debug code, temp files.
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Create next session prompt in this exact format:
+   ```
+   Recent Work:
+   - Completed issue-id: Summary of changes
+
+   Repository State:
+   - Branch: <branch-name> (<commit-hash>)
+   - Beads: X closed, Y ready issues
+
+   Context:
+   - Important details for continuity
+   ```
+   This prompt should be ready to paste into the next AI session.
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If force-with-lease fails, abort and request help
