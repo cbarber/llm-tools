@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export AGENTS_TEMPLATE="${AGENTS_TEMPLATE}"
+# Select user-specific template with fallback to default
+# Priority: agents/templates/${USER}.md -> agents/templates/default.md
+select_template() {
+  local user_template="${AGENTS_TEMPLATES_DIR}/${USER}.md"
+  if [ -f "$user_template" ]; then
+    echo "$user_template"
+  else
+    echo "$AGENTS_TEMPLATE_DEFAULT"
+  fi
+}
+
+export AGENTS_TEMPLATE="$(select_template)"
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 # Source .env files if they exist (for API key auth)

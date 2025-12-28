@@ -12,6 +12,21 @@ Agent shells auto-generate config files on first run via `agents/*/setup-*.sh` s
 - Edit templates in setup scripts (e.g., `agents/opencode/setup-mcp.sh`)
 - NOT the generated files (opencode.json, .mcp.json, cclsp.json)
 
+### User-Specific AGENTS.md Templates
+
+Create personalized templates in `agents/templates/${USER}.md` to customize agent instructions. The shell automatically selects:
+
+1. `agents/templates/${USER}.md` (if exists)
+2. `agents/templates/default.md` (fallback)
+
+Example:
+```bash
+cp agents/templates/default.md agents/templates/cbarber.md
+# Edit with personal preferences
+```
+
+See `agents/templates/README.md` for details.
+
 ## Development Guidelines
 
 - Be terse. Only provide examples if actually necessary for clarification
