@@ -1,0 +1,117 @@
+name: Test macOS Sandbox
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/macos-sandbox.sh'
+      - 'tools/macos-sandbox-profile.sb'
+      - '.github/workflows/test-macos-sandbox.yml'
+  pull_request:
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/macos-sandbox.sh'
+      - 'tools/macos-sandbox-profile.sb'
+      - '.github/workflows/test-macos-sandbox.yml'
+  workflow_dispatch:
+
+jobs:
+  test-macos:
+    name: Test Sandbox on macOS
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v9
+      
+      - name: Debug - Show generated profile
+        run: |
+          echo "=== Generated Sandbox Profile ==="
+          export AGENT_SANDBOX_DEBUG=true
+          ./tools/agent-sandbox.sh echo "test" 2>&1 || true
+          echo "=== End Profile ==="
+      
+      - name: Test sandbox basic functionality
+        run: |
+          # Test that sandbox-exec is available
+          which sandbox-exec
+          
+          # Test basic command execution
+          echo "=== Test 1: Basic command execution ==="
+          ./tools/agent-sandbox.sh echo "Hello from sandbox"
+      
+      - name: Test filesystem restrictions
+        run: |
+          echo "=== Test 2: Project directory access (should work) ==="
+          ./tools/agent-sandbox.sh touch test-file.txt
+          ./tools/agent-sandbox.sh rm test-file.txt
+          
+          echo "=== Test 3: Home directory access (should be restricted) ==="
+          # This should fail because Documents is not in the allowed list
+          if ./tools/agent-sandbox.sh touch ~/Documents/sandbox-test.txt 2>/dev/null; then
+            echo "ERROR: Should not be able to write to ~/Documents"
+            exit 1
+          else
+            echo "PASS: Cannot write to ~/Documents (as expected)"
+          fi
+      
+      - name: Test agent config directories
+        run: |
+          echo "=== Test 4: Agent config directories (should work) ==="
+          
+          # Create config dirs if they don't exist
+          mkdir -p ~/.config/opencode ~/.config/claude
+          
+          # Test write access
+          ./tools/agent-sandbox.sh touch ~/.config/opencode/test.txt
+          ./tools/agent-sandbox.sh rm ~/.config/opencode/test.txt
+          
+          ./tools/agent-sandbox.sh touch ~/.config/claude/test.txt
+          ./tools/agent-sandbox.sh rm ~/.config/claude/test.txt
+          
+          echo "PASS: Can write to agent config directories"
+      
+      - name: Test network access
+        run: |
+          echo "=== Test 5: Network access (should work) ==="
+          # Test network with a simple command that's already available
+          # ping is available by default on macOS
+          ./tools/agent-sandbox.sh ping -c 1 google.com && echo "PASS: Network access works"
+      
+      - name: Test workspace directory
+        run: |
+          echo "=== Test 6: Workspace directory access ==="
+          ./tools/agent-sandbox.sh bash -c 'echo "AGENT_WORK_DIR=$AGENT_WORK_DIR"; ls -la $AGENT_WORK_DIR; touch $AGENT_WORK_DIR/test.txt'
+      
+      - name: Test nix operations
+        run: |
+          echo "=== Test 7: Nix operations (should work) ==="
+          # Nix needs ~/.cache/nix to exist (can't create parent dirs in sandbox)
+          mkdir -p ~/.cache/nix
+          ./tools/agent-sandbox.sh nix-shell -p hello --run hello
+      
+      - name: Test BWRAP_EXTRA_PATHS
+        run: |
+          echo "=== Test 8: Extra paths mounting ==="
+          mkdir -p /tmp/extra-test-dir
+          echo "test content" > /tmp/extra-test-dir/test.txt
+          
+          export BWRAP_EXTRA_PATHS="/tmp/extra-test-dir"
+          ./tools/agent-sandbox.sh cat /tmp/extra-test-dir/test.txt
+          
+          rm -rf /tmp/extra-test-dir
+      
+      - name: Test IN_AGENT_SANDBOX variable
+        run: |
+          echo "=== Test 9: IN_AGENT_SANDBOX environment variable ==="
+          ./tools/agent-sandbox.sh bash -c 'if [[ "$IN_AGENT_SANDBOX" == "1" ]]; then echo "PASS: IN_AGENT_SANDBOX is set"; else echo "ERROR: IN_AGENT_SANDBOX not set"; exit 1; fi'
+      
+      - name: Summary
+        run: |
+          echo "=========================================="
+          echo "All macOS sandbox tests passed!"
+          echo "=========================================="

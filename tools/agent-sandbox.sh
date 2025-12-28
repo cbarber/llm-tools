@@ -16,9 +16,16 @@
 
 set -euo pipefail
 
-# Platform detection - bubblewrap only works on Linux
-if [[ "$(uname -s)" != "Linux" ]]; then
-  # Non-Linux platforms: run command directly without sandboxing
+# Platform detection
+PLATFORM="$(uname -s)"
+
+if [[ "$PLATFORM" == "Darwin" ]]; then
+  # macOS: use sandbox-exec
+  source "$(dirname "${BASH_SOURCE[0]}")/macos-sandbox.sh"
+  exit $?
+elif [[ "$PLATFORM" != "Linux" ]]; then
+  # Unsupported platform: run command directly without sandboxing
+  echo "Warning: Sandboxing not supported on $PLATFORM, running without isolation" >&2
   exec "$@"
 fi
 

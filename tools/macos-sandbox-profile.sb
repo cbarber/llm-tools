@@ -1,0 +1,166 @@
+;; macOS Sandbox Profile for Agent Isolation
+;; This profile provides similar restrictions to the bubblewrap configuration
+;; 
+;; Base permissions inspired by OpenAI Codex and Chrome's sandbox:
+;; https://github.com/openai/codex/blob/810ebe0/codex-rs/core/src/seatbelt_base_policy.sbpl
+;; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/common.sb
+;; 
+;; Key differences from bubblewrap:
+;; - No namespace isolation (macOS doesn't support this)
+;; - No mount-based restrictions (uses allow/deny rules instead)
+;; - Cannot hide home directory entirely (we deny most operations instead)
+
+(version 1)
+
+;; Default deny - start with minimal permissions
+(deny default)
+
+;; ==============================================================================
+;; Base Process Permissions (from Codex/Chrome sandbox)
+;; ==============================================================================
+
+;; Child processes inherit the policy of their parent
+(allow process-exec)
+(allow process-fork)
+(allow signal (target same-sandbox))
+
+;; Allow cf prefs to work
+(allow user-preference-read)
+
+;; Process info
+(allow process-info* (target same-sandbox))
+
+;; Critical device access - /dev/null for redirects
+(allow file-write-data
+  (require-all
+    (path "/dev/null")
+    (vnode-type CHARACTER-DEVICE)))
+
+;; Sysctls permitted (specific whitelist from Codex)
+(allow sysctl-read
+  (sysctl-name "hw.activecpu")
+  (sysctl-name "hw.busfrequency_compat")
+  (sysctl-name "hw.byteorder")
+  (sysctl-name "hw.cacheconfig")
+  (sysctl-name "hw.cachelinesize_compat")
+  (sysctl-name "hw.cpufamily")
+  (sysctl-name "hw.cpufrequency_compat")
+  (sysctl-name "hw.cputype")
+  (sysctl-name "hw.l1dcachesize_compat")
+  (sysctl-name "hw.l1icachesize_compat")
+  (sysctl-name "hw.l2cachesize_compat")
+  (sysctl-name "hw.l3cachesize_compat")
+  (sysctl-name "hw.logicalcpu_max")
+  (sysctl-name "hw.machine")
+  (sysctl-name "hw.memsize")
+  (sysctl-name "hw.ncpu")
+  (sysctl-name "hw.nperflevels")
+  (sysctl-name-prefix "hw.optional.arm.")
+  (sysctl-name-prefix "hw.optional.armv8_")
+  (sysctl-name "hw.packages")
+  (sysctl-name "hw.pagesize_compat")
+  (sysctl-name "hw.pagesize")
+  (sysctl-name "hw.physicalcpu")
+  (sysctl-name "hw.physicalcpu_max")
+  (sysctl-name "hw.tbfrequency_compat")
+  (sysctl-name "hw.vectorunit")
+  (sysctl-name "kern.argmax")
+  (sysctl-name "kern.hostname")
+  (sysctl-name "kern.maxfilesperproc")
+  (sysctl-name "kern.maxproc")
+  (sysctl-name "kern.osproductversion")
+  (sysctl-name "kern.osrelease")
+  (sysctl-name "kern.ostype")
+  (sysctl-name "kern.osvariant_status")
+  (sysctl-name "kern.osversion")
+  (sysctl-name "kern.secure_kernel")
+  (sysctl-name "kern.usrstack64")
+  (sysctl-name "kern.version")
+  (sysctl-name "sysctl.proc_cputype")
+  (sysctl-name "vm.loadavg")
+  (sysctl-name-prefix "hw.perflevel")
+  (sysctl-name-prefix "kern.proc.pgrp.")
+  (sysctl-name-prefix "kern.proc.pid.")
+  (sysctl-name-prefix "net.routetable."))
+
+;; Allow Java to read some CPU info (misclassified as write)
+(allow sysctl-write
+  (sysctl-name "kern.grade_cputype"))
+
+;; IOKit
+(allow iokit-open
+  (iokit-registry-entry-class "RootDomainUserClient"))
+
+;; Mach services needed for user lookups and power management
+(allow mach-lookup
+  (global-name "com.apple.system.opendirectoryd.libinfo")
+  (global-name "com.apple.PowerManagement.control"))
+
+;; IPC: POSIX semaphores and shared memory
+;; - ipc-posix-sem: Python multiprocessing, shell operations (SemLock)
+;; - ipc-posix-shm: SQLite shared memory cache (Nix fetcher cache)
+(allow ipc-posix-sem)
+(allow ipc-posix-shm)
+
+;; PTY support - allow openpty() for interactive shells
+(allow pseudo-tty)
+(allow file-read* file-write* file-ioctl (literal "/dev/ptmx"))
+(allow file-read* file-write*
+  (require-all
+    (regex #"^/dev/ttys[0-9]+")
+    (extension "com.apple.sandbox.pty")))
+;; PTYs created before entering seatbelt may lack the extension
+(allow file-ioctl (regex #"^/dev/ttys[0-9]+"))
+
+;; ==============================================================================
+;; Network Access
+;; ==============================================================================
+
+;; Allow all network operations (needed for package downloads, API calls)
+(allow network*)
+
+;; ==============================================================================
+;; File Access Policy (Codex-style: allow read, restrict write)
+;; ==============================================================================
+
+;; Allow read-only file operations (like Codex does)
+;; This is simpler and more reliable than whitelisting specific paths
+(allow file-read*)
+
+;; Write access restricted to specific directories
+;; Following Codex's approach: allow writes to cwd, /tmp, TMPDIR, and HOME_* agent dirs
+;; Note: Both /tmp and /private/tmp needed because /tmp -> /private/tmp on macOS
+(allow file-write*
+  (subpath (param "PROJECT_DIR"))
+  (subpath (param "WORK_DIR"))
+  (subpath (param "TMPDIR"))
+  (subpath "/tmp")
+  (subpath "/private/tmp")
+  (subpath (param "HOME_CONFIG_OPENCODE"))
+  (subpath (param "HOME_CONFIG_CLAUDE"))
+  (subpath (param "HOME_CLAUDE"))
+  (subpath (param "HOME_CACHE_OPENCODE"))
+  (subpath (param "HOME_CACHE_CLAUDE"))
+  (subpath (param "HOME_CACHE_NIX"))
+  (subpath (param "HOME_SHARE_OPENCODE"))
+  (subpath (param "HOME_SHARE_CLAUDE"))
+  (subpath (param "HOME_CACHE_GO"))
+  (subpath (param "HOME_CARGO"))
+  (subpath (param "HOME_CACHE_PIP"))
+  (subpath (param "HOME_GEM"))
+  (subpath (param "HOME_CACHE_YARN"))
+  (subpath (param "HOME_NPM"))
+  (subpath (param "HOME_SHARE_PNPM"))
+  (subpath (param "HOME_BUN"))
+)
+
+;; ==============================================================================
+;; Extensibility
+;; ==============================================================================
+
+;; EXTRA_PATHS will be added here by the wrapper script
+
+;; Note: Read access is allowed globally (like Codex), but write access is
+;; restricted to specific directories above. Personal files (Documents, etc.)
+;; are read-only, which provides good isolation while being simpler and more
+;; reliable than trying to whitelist every system path.
