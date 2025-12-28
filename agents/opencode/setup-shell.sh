@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export AGENTS_TEMPLATE="${AGENTS_TEMPLATE}"
+
 # Source .env files if they exist (for API key auth)
 [ -f .env ] && source .env
 [ -f ~/.config/opencode/.env ] && source ~/.config/opencode/.env
@@ -10,6 +12,34 @@ set -euo pipefail
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "Note: No ANTHROPIC_API_KEY found. Set it for API key authentication."
   echo "Set ANTHROPIC_API_KEY in .env or ~/.config/opencode/.env"
+fi
+
+# Check for agent instruction files in all locations agents search
+agents_found=false
+
+# Check current and parent directories (walk up to root)
+dir="$(pwd)"
+while [ "$dir" != "/" ]; do
+  if [ -f "$dir/AGENTS.md" ] || [ -f "$dir/CLAUDE.md" ] || [ -f "$dir/CLAUDE.local.md" ]; then
+    agents_found=true
+    break
+  fi
+  dir="$(dirname "$dir")"
+done
+
+# Check child directories using find
+if [ "$agents_found" = false ] && find . -name "AGENTS.md" -o -name "CLAUDE.md" -o -name "CLAUDE.local.md" | head -1 | grep -q .; then
+  agents_found=true
+fi
+
+# Check global config directory
+[ "$agents_found" = false ] && [ -f ~/.config/opencode/AGENTS.md ] && agents_found=true
+
+# Create template if no agent instruction file found anywhere
+if [ "$agents_found" = false ]; then
+  cp "$AGENTS_TEMPLATE" ./AGENTS.md
+  ln -s AGENTS.md CLAUDE.md
+  echo "Created AGENTS.md with CLAUDE.md symlink (add AGENTS.md to .gitignore if needed)"
 fi
 
 # Setup MCP configuration for detected languages

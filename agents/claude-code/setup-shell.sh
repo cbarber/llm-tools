@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export CLAUDE_TEMPLATE="${CLAUDE_TEMPLATE}"
+export AGENTS_TEMPLATE="${AGENTS_TEMPLATE}"
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 # Source .env files if they exist (for API key auth)
@@ -15,31 +15,32 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "If you prefer API key auth, set ANTHROPIC_API_KEY in .env or ~/.config/claude/.env"
 fi
 
-# Check for CLAUDE files in all locations Claude searches
-claude_found=false
+# Check for agent instruction files in all locations agents search
+agents_found=false
 
 # Check current and parent directories (walk up to root)
 dir="$(pwd)"
 while [ "$dir" != "/" ]; do
-  if [ -f "$dir/CLAUDE.md" ] || [ -f "$dir/CLAUDE.local.md" ]; then
-    claude_found=true
+  if [ -f "$dir/AGENTS.md" ] || [ -f "$dir/CLAUDE.md" ] || [ -f "$dir/CLAUDE.local.md" ]; then
+    agents_found=true
     break
   fi
   dir="$(dirname "$dir")"
 done
 
 # Check child directories using find
-if [ "$claude_found" = false ] && find . -name "CLAUDE.md" -o -name "CLAUDE.local.md" | head -1 | grep -q .; then
-  claude_found=true
+if [ "$agents_found" = false ] && find . -name "AGENTS.md" -o -name "CLAUDE.md" -o -name "CLAUDE.local.md" | head -1 | grep -q .; then
+  agents_found=true
 fi
 
 # Check home directory
-[ "$claude_found" = false ] && [ -f ~/.claude/CLAUDE.md ] && claude_found=true
+[ "$agents_found" = false ] && [ -f ~/.claude/CLAUDE.md ] && agents_found=true
 
-# Create template if no CLAUDE file found anywhere
-if [ "$claude_found" = false ]; then
-  cp "$CLAUDE_TEMPLATE" ./CLAUDE.local.md
-  echo "Created CLAUDE.local.md from template (add to .gitignore)"
+# Create template if no agent instruction file found anywhere
+if [ "$agents_found" = false ]; then
+  cp "$AGENTS_TEMPLATE" ./AGENTS.md
+  ln -s AGENTS.md CLAUDE.md
+  echo "Created AGENTS.md with CLAUDE.md symlink (add AGENTS.md to .gitignore if needed)"
 fi
 
 # Setup MCP configuration for detected languages

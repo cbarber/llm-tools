@@ -12,7 +12,7 @@ pkgs.mkShell {
     ++ tools.all;
 
   shellHook = ''
-    export CLAUDE_TEMPLATE="${./claude.template.md}"
+    export AGENTS_TEMPLATE="${../templates/default.md}"
     export SETTINGS_TEMPLATE="${./settings.template.json}"
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export SETUP_SETTINGS_SCRIPT="${./setup-settings.sh}"
