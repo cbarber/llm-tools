@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opncd.ai/config.json",
+  "share": "disabled",
+  "plugin": ["opencode-beads@0.3.0"],
+  "mcp": {
+    "lsp": {
+      "type": "local",
+      "command": ["cclsp"],
+      "enabled": true,
+      "environment": {
+        "CCLSP_CONFIG_PATH": "cclsp.json"
+      }
+    }
+  }
+}
