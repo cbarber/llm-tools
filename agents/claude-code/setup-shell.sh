@@ -54,6 +54,10 @@ if [ "$agents_found" = false ]; then
   echo "Created AGENTS.md with CLAUDE.md symlink (add AGENTS.md to .gitignore if needed)"
 fi
 
+# Setup language cache paths (shared across agents)
+source "${COMMON_HELPERS_SCRIPT}"
+setup_language_cache_paths
+
 # Setup MCP configuration for detected languages
 ${SETUP_MCP_SCRIPT}
 

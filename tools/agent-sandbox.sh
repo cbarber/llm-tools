@@ -12,6 +12,7 @@
 # Environment variables:
 #   AGENT_SANDBOX_BIND_HOME - Set to "true" to bind mount $HOME (breaks isolation)
 #   AGENT_SANDBOX_SSH       - Set to "true" to bind mount ~/.ssh (for git auth)
+#   BWRAP_EXTRA_PATHS       - Colon-separated paths to bind mount (e.g., ~/.cargo:~/.cache/go-build)
 
 set -euo pipefail
 
@@ -175,6 +176,25 @@ fi
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   echo "Warning: Binding \$HOME breaks sandbox isolation" >&2
   BWRAP_ARGS+=(--bind "$HOME" "$HOME")
+fi
+
+# Extra paths for language tooling caches (extensible by agents and projects)
+# Format: BWRAP_EXTRA_PATHS="/path/one:/path/two:~/path/three"
+# Only mounts paths that already exist (does not create them)
+if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
+  IFS=':' read -ra EXTRA_PATHS <<< "$BWRAP_EXTRA_PATHS"
+  for path in "${EXTRA_PATHS[@]}"; do
+    # Expand tilde to home directory
+    expanded_path="${path/#\~/$HOME}"
+    
+    # Skip empty paths
+    [[ -z "$expanded_path" ]] && continue
+    
+    # Bind mount only if directory exists
+    if [[ -d "$expanded_path" ]]; then
+      BWRAP_ARGS+=(--bind "$expanded_path" "$expanded_path")
+    fi
+  done
 fi
 
 # Run command in sandbox
