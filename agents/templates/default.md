@@ -83,3 +83,14 @@ Footer should include an `Authored By: <agent> (<model>)
 - NEVER stop before pushing - leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If force-with-lease fails, abort and request help
+
+## Quick Reference (by frequency)
+
+**Every commit:**
+- [Semantic Commit Messages](#semantic-commit-messages) - Succinct subject, body for nuance (not itemized lists)
+
+**Every session end:**
+- [Landing the Plane](#landing-the-plane) - Push before saying "done"
+
+**As needed:**
+- [Development Guidelines](#development-guidelines) - Code style, terseness
