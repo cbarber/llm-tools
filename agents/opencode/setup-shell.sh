@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source "${TOOLS_DIR}/setup-shared-aliases.sh"
+
 # Select user-specific template with fallback to default
 # Priority: agents/templates/${USER}.md -> agents/templates/default.md
 select_template() {
