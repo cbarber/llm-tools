@@ -1,0 +1,410 @@
+#!/usr/bin/env bash
+# Unified GitHub/Gitea CLI wrapper for agent workflows
+# Provides LCD (Lowest Common Denominator) commands that work across both forges
+
+set -euo pipefail
+
+NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
+
+# Wrapper for tea that uses nixsmith namespace
+run_tea() {
+    XDG_CONFIG_HOME="${NIXSMITH_CONFIG}" tea "$@"
+}
+
+# Detect forge type from git remote
+detect_forge() {
+    local remote_url
+    remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+    
+    if [[ "$remote_url" =~ github\.com ]]; then
+        echo "github"
+    elif [[ "$remote_url" =~ gitlab\.com ]]; then
+        echo "gitlab"
+    elif [[ "$remote_url" =~ gitea ]]; then
+        echo "gitea"
+    else
+        echo "unknown"
+    fi
+}
+
+# Authenticate GitHub
+authenticate_github() {
+    if [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
+        export GH_TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
+    elif gh auth status &>/dev/null 2>&1; then
+        echo "⚠️  Warning: Using dev's gh auth. Set up agent tokens: tools/setup-agent-api-tokens.sh" >&2
+    else
+        echo "Error: No GitHub authentication." >&2
+        echo "Run: tools/setup-agent-api-tokens.sh" >&2
+        exit 1
+    fi
+}
+
+# Authenticate Gitea
+authenticate_gitea() {
+    if ! run_tea repos list >/dev/null 2>&1; then
+        echo "Error: Gitea not authenticated." >&2
+        echo "Run: tools/setup-agent-api-tokens.sh" >&2
+        exit 1
+    fi
+}
+
+FORGE_TYPE=$(detect_forge)
+
+# Ensure we have the right CLI tool and authenticate
+case "$FORGE_TYPE" in
+    github)
+        if ! command -v gh >/dev/null; then
+            echo "Error: gh CLI not found. Install with: nix-env -iA nixpkgs.gh" >&2
+            exit 1
+        fi
+        authenticate_github
+        ;;
+    gitea)
+        if ! command -v tea >/dev/null; then
+            echo "Error: tea CLI not found. Install with: nix-env -iA nixpkgs.tea" >&2
+            exit 1
+        fi
+        authenticate_gitea
+        ;;
+    *)
+        echo "Error: Unknown forge type. Remote must be GitHub or Gitea." >&2
+        exit 1
+        ;;
+esac
+
+# Show usage
+usage() {
+    cat <<EOF
+Usage: forge <command> [options]
+
+Unified CLI for GitHub (gh) and Gitea (tea) operations.
+Auto-detects forge type from git remote.
+
+Commands:
+  pr create --title TITLE --body BODY [--draft]
+  pr view NUMBER [--comments] [--json]
+  pr comment NUMBER TEXT
+  pr list [--state STATE]
+  pr checkout NUMBER
+  pr approve NUMBER
+  pr reviews NUMBER [--json]
+  pr review-comments NUMBER [--json]
+
+  issue list [--state STATE]
+  issue show NUMBER
+
+Options:
+  --json           Output in JSON format (where supported)
+  --state STATE    Filter by state: open, closed, all (space-separated)
+
+Note: Use space-separated arguments (e.g., --state open, not --state=open)
+
+Examples:
+  forge pr create --title "Fix bug" --body "Description"
+  forge pr list --state open --json
+  forge pr view 123 --comments --json
+  forge pr comment 123 "Looks good!"
+  forge pr approve 123
+
+Current forge: $FORGE_TYPE
+EOF
+}
+
+# PR commands
+pr_create() {
+    local title="" body="" draft=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --body) body="$2"; shift 2 ;;
+            --draft) draft=true; shift ;;
+            --title=*|--body=*)
+                echo "Error: Use space-separated arguments (e.g., --title 'text', not --title='text')" >&2
+                exit 1
+                ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    if [[ -z "$title" ]]; then
+        echo "Error: --title required" >&2
+        exit 1
+    fi
+    
+    # Add agent signature if in agent environment
+    if [[ -n "${IN_AGENT_SANDBOX:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        body="${body}
+
+---
+*🤖 Created by agent*"
+    fi
+    
+    case "$FORGE_TYPE" in
+        github)
+            local args=(--title "$title")
+            [[ -n "$body" ]] && args+=(--body "$body")
+            [[ "$draft" == true ]] && args+=(--draft)
+            gh pr create "${args[@]}"
+            ;;
+        gitea)
+            local args=(--title "$title")
+            [[ -n "$body" ]] && args+=(--description "$body")
+            [[ "$draft" == true ]] && args+=(--draft)
+            run_tea pr create "${args[@]}"
+            ;;
+    esac
+}
+
+pr_view() {
+    local number="$1"
+    shift
+    
+    local show_comments=false json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --comments) show_comments=true; shift ;;
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            local args=("$number")
+            [[ "$show_comments" == true ]] && args+=(--comments)
+            [[ "$json_output" == true ]] && args+=(--json body,title,state,number,comments)
+            gh pr view "${args[@]}"
+            ;;
+        gitea)
+            local args=("$number")
+            [[ "$json_output" == true ]] && args+=(--output json)
+            run_tea pr "$number" "${args[@]}"
+            if [[ "$show_comments" == true ]]; then
+                run_tea pr comments "$number" $([[ "$json_output" == true ]] && echo "--output json")
+            fi
+            ;;
+    esac
+}
+
+pr_comment() {
+    local number="$1"
+    local text="$2"
+    
+    # Add agent signature if in agent environment
+    if [[ -n "${IN_AGENT_SANDBOX:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        text="${text}
+
+---
+*🤖 Posted by agent*"
+    fi
+    
+    case "$FORGE_TYPE" in
+        github)
+            gh pr comment "$number" --body "$text"
+            ;;
+        gitea)
+            run_tea pr comment "$number" "$text"
+            ;;
+    esac
+}
+
+pr_list() {
+    local state="open"
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --state) state="$2"; shift 2 ;;
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            local args=(--state "$state")
+            [[ "$json_output" == true ]] && args+=(--json number,title,state,headRefName)
+            gh pr list "${args[@]}"
+            ;;
+        gitea)
+            local args=(--state "$state")
+            [[ "$json_output" == true ]] && args+=(--output json)
+            run_tea pr list "${args[@]}"
+            ;;
+    esac
+}
+
+pr_checkout() {
+    local number="$1"
+    
+    case "$FORGE_TYPE" in
+        github)
+            gh pr checkout "$number"
+            ;;
+        gitea)
+            run_tea pr checkout "$number"
+            ;;
+    esac
+}
+
+pr_approve() {
+    local number="$1"
+    
+    case "$FORGE_TYPE" in
+        github)
+            gh pr review "$number" --approve
+            ;;
+        gitea)
+            run_tea pr approve "$number"
+            ;;
+    esac
+}
+
+pr_reviews() {
+    local number="$1"
+    shift
+    
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            if [[ "$json_output" == true ]]; then
+                gh api "repos/{owner}/{repo}/pulls/${number}/reviews"
+            else
+                gh api "repos/{owner}/{repo}/pulls/${number}/reviews" --jq '.[] | "Review #\(.id) by \(.user.login) (\(.state)):\n\(.body)\n---"'
+            fi
+            ;;
+        gitea)
+            echo "Error: Review listing not implemented for Gitea" >&2
+            exit 1
+            ;;
+    esac
+}
+
+pr_review_comments() {
+    local number="$1"
+    shift
+    
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            if [[ "$json_output" == true ]]; then
+                gh api "repos/{owner}/{repo}/pulls/${number}/comments"
+            else
+                gh api "repos/{owner}/{repo}/pulls/${number}/comments" --jq '.[] | "File: \(.path):\(.original_start_line // .start_line // .line)-\(.original_line // .line) @ \(.original_commit_id[:7])\nComment: \(.body)\nContext:\n\(.diff_hunk)\n---"'
+            fi
+            ;;
+        gitea)
+            echo "Error: Review comments not implemented for Gitea" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Issue commands
+issue_list() {
+    local state="open"
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --state) state="$2"; shift 2 ;;
+            --json) json_output=true; shift ;;
+            --state=*)
+                echo "Error: Use space-separated arguments: --state open (not --state=open)" >&2
+                exit 1
+                ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            local args=(--state "$state")
+            [[ "$json_output" == true ]] && args+=(--json number,title,state)
+            gh issue list "${args[@]}"
+            ;;
+        gitea)
+            local args=(--state "$state")
+            [[ "$json_output" == true ]] && args+=(--output json)
+            run_tea issue list "${args[@]}"
+            ;;
+    esac
+}
+
+issue_show() {
+    local number="$1"
+    shift
+    
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            local args=("$number")
+            [[ "$json_output" == true ]] && args+=(--json number,title,body,state)
+            gh issue view "${args[@]}"
+            ;;
+        gitea)
+            local args=("$number")
+            [[ "$json_output" == true ]] && args+=(--output json)
+            run_tea issue "$number" "${args[@]}"
+            ;;
+    esac
+}
+
+# Main command router
+case "${1:-}" in
+    pr)
+        case "${2:-}" in
+            create) shift 2; pr_create "$@" ;;
+            view) shift 2; pr_view "$@" ;;
+            comment) shift 2; pr_comment "$@" ;;
+            list) shift 2; pr_list "$@" ;;
+            checkout) shift 2; pr_checkout "$@" ;;
+            approve) shift 2; pr_approve "$@" ;;
+            reviews) shift 2; pr_reviews "$@" ;;
+            review-comments) shift 2; pr_review_comments "$@" ;;
+            *) usage; exit 1 ;;
+        esac
+        ;;
+    issue)
+        case "${2:-}" in
+            list) shift 2; issue_list "$@" ;;
+            show) shift 2; issue_show "$@" ;;
+            *) usage; exit 1 ;;
+        esac
+        ;;
+    --help|-h|help|"")
+        usage
+        ;;
+    *)
+        echo "Unknown command: $1" >&2
+        usage
+        exit 1
+        ;;
+esac

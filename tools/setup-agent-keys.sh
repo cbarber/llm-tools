@@ -18,6 +18,25 @@ echo "Agent SSH Key Setup"
 echo "======================================"
 echo ""
 
+# Early exit if not in a git repo
+if ! git remote -v &>/dev/null 2>&1; then
+  echo "✓ Agent SSH keys verified (not a git repo)"
+  exit 0
+fi
+
+# Early exit if key already exists for this platform
+remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+if [[ "$remote_url" =~ github\.com ]] && [[ -f "$GITHUB_KEY" ]]; then
+  echo "✓ Agent SSH keys verified (GitHub key exists)"
+  exit 0
+elif [[ "$remote_url" =~ gitlab\.com ]] && [[ -f "$GITLAB_KEY" ]]; then
+  echo "✓ Agent SSH keys verified (GitLab key exists)"
+  exit 0
+elif [[ "$remote_url" =~ gitea ]] && [[ -f "$GITEA_KEY" ]]; then
+  echo "✓ Agent SSH keys verified (Gitea key exists)"
+  exit 0
+fi
+
 # Detect current repository
 CURRENT_REPO=""
 CURRENT_PLATFORM=""

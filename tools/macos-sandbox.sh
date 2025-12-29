@@ -57,6 +57,7 @@ fi
 # Add home directory parameters for writable paths
 SANDBOX_PARAMS+=("-DHOME_CONFIG_OPENCODE=$HOME/.config/opencode")
 SANDBOX_PARAMS+=("-DHOME_CONFIG_CLAUDE=$HOME/.config/claude")
+SANDBOX_PARAMS+=("-DHOME_CONFIG_NIXSMITH=$HOME/.config/nixsmith")
 SANDBOX_PARAMS+=("-DHOME_CLAUDE=$HOME/.claude")
 SANDBOX_PARAMS+=("-DHOME_CACHE_OPENCODE=$HOME/.cache/opencode")
 SANDBOX_PARAMS+=("-DHOME_CACHE_CLAUDE=$HOME/.cache/claude")
@@ -118,6 +119,7 @@ fi
 
 # Create agent config directories if they don't exist
 mkdir -p "$HOME/.config/opencode" "$HOME/.config/claude" "$HOME/.claude" \
+         "$HOME/.config/nixsmith" \
          "$HOME/.cache/opencode" "$HOME/.cache/claude" \
          "$HOME/.local/share/opencode" "$HOME/.local/share/claude" 2>/dev/null || true
 

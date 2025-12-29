@@ -256,6 +256,37 @@ Use `nix-init` to package new tools:
 This allows shared MCP servers and custom tooling across multiple agent environments.
 
 
+
+## Agent PR Workflow
+
+Agents create PRs via `bash tools/forge` - a unified wrapper for GitHub (gh) and Gitea (tea).
+
+**forge examples:**
+```bash
+bash tools/forge pr create --title "..." --body "..."
+bash tools/forge pr view 123 --comments
+bash tools/forge pr review-comments 1
+```
+
+**Basic workflow:**
+1. Complete work on branch
+2. Commit changes
+3. Push: `git push -u origin <branch>`
+4. Create PR: `bash tools/forge pr create --title "..." --body "..."`
+5. Use `--draft` if tests fail or work incomplete
+
+**PR body focus:**
+- Why the change was made (motivation, rationale)
+- Link to beads issue if applicable
+- If draft: what's blocking completion
+
+**Commit hygiene:**
+- Use `git commit --fixup=<sha>` for review feedback
+- Maintains atomic commits
+- User handles final `git rebase --autosquash`
+
+See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.

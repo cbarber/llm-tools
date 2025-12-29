@@ -17,6 +17,7 @@ pkgs.mkShell {
     export AGENTS_TEMPLATE_DEFAULT="${../templates/default.md}"
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
+    export TOOLS_DIR="${../../tools}"
     export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
 
     source ${./setup-shell.sh}
