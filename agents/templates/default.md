@@ -14,6 +14,7 @@ This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when wor
 * Remember neither you nor I are a god. Do not break your arm patting me on the back. Just continue working.
 * Challenge my assumptions with compelling evidence.
 * You are always on a branch. Delete code rather than versioning code.
+* **When git commands fail, STOP and ask for help.** Do not attempt recovery with reset/stash/cherry-pick.
 
 ## Semantic Commit Messages
 

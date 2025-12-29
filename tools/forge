@@ -73,7 +73,6 @@ case "$FORGE_TYPE" in
         ;;
 esac
 
-# Helper: Auto-detect PR number from current branch
 auto_detect_pr() {
     local branch
     branch=$(git branch --show-current 2>/dev/null || echo "")
