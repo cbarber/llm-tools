@@ -74,8 +74,9 @@ bash tools/forge pr review-comments 1
 
 **Commit hygiene:**
 - Use `git commit --fixup=<sha>` for review feedback
+- Squash fixups with `git rebase --autosquash origin/main` (non-interactive)
+- **NEVER use `git rebase -i`** - interactive rebases are forbidden
 - Maintains atomic commits
-- User handles final `git rebase --autosquash`
 
 See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
 
