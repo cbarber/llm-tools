@@ -73,6 +73,50 @@ case "$FORGE_TYPE" in
         ;;
 esac
 
+# Helper: Auto-detect PR number from current branch
+auto_detect_pr() {
+    local branch
+    branch=$(git branch --show-current 2>/dev/null || echo "")
+    
+    if [[ -z "$branch" ]]; then
+        echo "Error: Not on a branch (detached HEAD?)" >&2
+        return 1
+    fi
+    
+    case "$FORGE_TYPE" in
+        github)
+            # Try to find PR for current branch
+            local pr_number
+            pr_number=$(gh pr list --head "$branch" --json number --jq '.[0].number' 2>/dev/null || echo "")
+            
+            if [[ -z "$pr_number" ]]; then
+                echo "Error: No PR found for branch '$branch'. Create one with: forge pr create" >&2
+                return 1
+            fi
+            
+            echo "$pr_number"
+            ;;
+        gitea)
+            # tea doesn't have --head flag, need to parse list output
+            local pr_number
+            pr_number=$(run_tea pr list --output simple | grep -E "^[0-9]+" | while read num title rest; do
+                local pr_branch=$(run_tea pr "$num" --output simple 2>/dev/null | grep -E "^Head Branch:" | cut -d: -f2 | xargs)
+                if [[ "$pr_branch" == "$branch" ]]; then
+                    echo "$num"
+                    break
+                fi
+            done)
+            
+            if [[ -z "$pr_number" ]]; then
+                echo "Error: No PR found for branch '$branch'. Create one with: forge pr create" >&2
+                return 1
+            fi
+            
+            echo "$pr_number"
+            ;;
+    esac
+}
+
 # Show usage
 usage() {
     cat <<EOF
@@ -83,13 +127,13 @@ Auto-detects forge type from git remote.
 
 Commands:
   pr create --title TITLE --body BODY [--draft]
-  pr view NUMBER [--comments] [--json]
-  pr comment NUMBER TEXT
+  pr view [NUMBER] [--comments] [--json]
+  pr comment [NUMBER] TEXT
   pr list [--state STATE]
-  pr checkout NUMBER
-  pr approve NUMBER
-  pr reviews NUMBER [--json]
-  pr review-comments NUMBER [--json]
+  pr checkout [NUMBER]
+  pr approve [NUMBER]
+  pr reviews [NUMBER] [--json]
+  pr review-comments [NUMBER] [--json]
 
   issue list [--state STATE]
   issue show NUMBER
@@ -158,8 +202,13 @@ pr_create() {
 }
 
 pr_view() {
-    local number="$1"
-    shift
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
     
     local show_comments=false json_output=false
     
@@ -190,8 +239,20 @@ pr_view() {
 }
 
 pr_comment() {
-    local number="$1"
-    local text="$2"
+    local number="${1:-}"
+    local text="${2:-}"
+    
+    # Auto-detect PR if first arg looks like text (doesn't start with digit)
+    if [[ -z "$number" ]] || [[ ! "$number" =~ ^[0-9]+$ ]]; then
+        # First arg is text, not number
+        text="$number"
+        number=$(auto_detect_pr) || exit 1
+    fi
+    
+    if [[ -z "$text" ]]; then
+        echo "Error: Comment text required" >&2
+        exit 1
+    fi
     
     # Add agent signature if in agent environment
     if [[ -n "${IN_AGENT_SANDBOX:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
@@ -238,7 +299,12 @@ pr_list() {
 }
 
 pr_checkout() {
-    local number="$1"
+    local number="${1:-}"
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
     
     case "$FORGE_TYPE" in
         github)
@@ -251,7 +317,12 @@ pr_checkout() {
 }
 
 pr_approve() {
-    local number="$1"
+    local number="${1:-}"
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
     
     case "$FORGE_TYPE" in
         github)
@@ -264,8 +335,13 @@ pr_approve() {
 }
 
 pr_reviews() {
-    local number="$1"
-    shift
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
     
     local json_output=false
     
@@ -292,8 +368,13 @@ pr_reviews() {
 }
 
 pr_review_comments() {
-    local number="$1"
-    shift
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
     
     local json_output=false
     
