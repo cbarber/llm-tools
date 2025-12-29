@@ -16,6 +16,20 @@
 
 set -euo pipefail
 
+# Debug logging (controlled by AGENT_DEBUG env var)
+debug_sandbox() {
+  if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
+    echo "[DEBUG $(date +%H:%M:%S)] agent-sandbox: $*" >&2
+  fi
+}
+
+debug_sandbox "=========================================="
+debug_sandbox "Sandbox script started"
+debug_sandbox "Command: $*"
+debug_sandbox "HOME: $HOME"
+debug_sandbox "PWD: $(pwd)"
+debug_sandbox "=========================================="
+
 # Platform detection
 PLATFORM="$(uname -s)"
 
@@ -118,17 +132,30 @@ done
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
 # Config directories
+debug_sandbox "Checking config directories..."
 if [[ -d "$HOME/.config/opencode" ]]; then
+  debug_sandbox "  Mounting $HOME/.config/opencode"
   BWRAP_ARGS+=(--bind "$HOME/.config/opencode" "$HOME/.config/opencode")
+else
+  debug_sandbox "  SKIP: $HOME/.config/opencode does not exist"
 fi
 if [[ -d "$HOME/.config/claude" ]]; then
+  debug_sandbox "  Mounting $HOME/.config/claude"
   BWRAP_ARGS+=(--bind "$HOME/.config/claude" "$HOME/.config/claude")
+else
+  debug_sandbox "  SKIP: $HOME/.config/claude does not exist"
 fi
 if [[ -d "$HOME/.claude" ]]; then
+  debug_sandbox "  Mounting $HOME/.claude"
   BWRAP_ARGS+=(--bind "$HOME/.claude" "$HOME/.claude")
+else
+  debug_sandbox "  SKIP: $HOME/.claude does not exist"
 fi
 if [[ -d "$HOME/.config/nixsmith" ]]; then
+  debug_sandbox "  Mounting $HOME/.config/nixsmith"
   BWRAP_ARGS+=(--bind "$HOME/.config/nixsmith" "$HOME/.config/nixsmith")
+else
+  debug_sandbox "  SKIP: $HOME/.config/nixsmith does not exist"
 fi
 
 # Cache directories
