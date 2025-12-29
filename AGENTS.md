@@ -64,7 +64,43 @@ More Examples:
     test: (adding missing tests, refactoring tests; no production code change)
     chore: (updating grunt tasks etc; no production code change)
 
-Body is for nuanced information beyond a succinct summary, not an itemized list of changes. 
+**Body rules:**
+- Maximum 1-2 sentences explaining WHY (motivation, context, rationale)
+- Never itemize features, changes, or implementation details
+- If you can't explain the WHY in 2 sentences, the subject is sufficient
+- Code is self-documenting; commit bodies are not documentation
+
+**Examples:**
+
+Good:
+```
+feat: add weekly flake update workflow
+
+Automates dependency updates every Sunday via GitHub Actions, creating PRs for review.
+```
+
+Bad (itemizes implementation):
+```
+feat: add weekly flake update workflow
+
+- Schedule: Weekly on Sundays via cron
+- Manual trigger: workflow_dispatch
+- Auto-generates diff summary
+- Labels: dependencies, automated
+```
+
+Good (complex change needing context):
+```
+fix: canonicalize paths before sandbox profile generation
+
+macOS symlinks /var → /private/var and /tmp → /private/tmp, causing
+sandbox-exec to reject non-canonical paths in profile rules.
+```
+
+Good (simple change, no body needed):
+```
+refactor: extract path validation to separate function
+```
 
 Footer should include an `Authored By: <agent> (<model>)
 

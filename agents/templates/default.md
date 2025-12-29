@@ -39,7 +39,12 @@ More Examples:
     test: (adding missing tests, refactoring tests; no production code change)
     chore: (updating grunt tasks etc; no production code change)
 
-Body is for nuanced information beyond a succinct summary, not an itemized list of changes. 
+**Body rules:**
+- 1-2 sentences on WHY, or omit if subject is sufficient
+- Never itemize implementation details
+
+Good: "Automates dependency updates every Sunday via GitHub Actions, creating PRs for review."
+Bad: "- Schedule: Weekly\n- Manual trigger: workflow_dispatch\n- Auto-generates diff\n..."
 
 Footer should include an `Authored By: <agent> (<model>)
 
