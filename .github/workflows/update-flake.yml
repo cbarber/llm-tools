@@ -1,0 +1,63 @@
+name: Update Flake Dependencies
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-flake:
+    name: Update flake.lock
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v9
+      
+      - name: Update flake inputs
+        run: |
+          nix flake update
+          
+          # Check if there are changes
+          if git diff --quiet flake.lock; then
+            echo "No updates available"
+            echo "has_updates=false" >> $GITHUB_ENV
+          else
+            echo "Updates found"
+            echo "has_updates=true" >> $GITHUB_ENV
+          fi
+      
+      - name: Generate update summary
+        if: env.has_updates == 'true'
+        run: |
+          echo "## Flake Updates" > update-summary.md
+          echo "" >> update-summary.md
+          echo "The following dependencies were updated:" >> update-summary.md
+          echo "" >> update-summary.md
+          echo '```' >> update-summary.md
+          git diff flake.lock | grep -E '^\+|^-' | head -50 >> update-summary.md || true
+          echo '```' >> update-summary.md
+          echo "" >> update-summary.md
+          echo "Review the changes and merge if tests pass." >> update-summary.md
+      
+      - name: Create Pull Request
+        if: env.has_updates == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update flake.lock dependencies"
+          branch: automated/flake-update
+          delete-branch: true
+          title: "chore: update flake.lock dependencies"
+          body-path: update-summary.md
+          labels: |
+            dependencies
+            automated
