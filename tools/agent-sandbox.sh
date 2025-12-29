@@ -108,6 +108,15 @@ if [[ -d /etc/static/ssl ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/static/ssl /etc/static/ssl)
 fi
 
+# DNS resolution (required for network operations)
+# Note: macOS sandbox allows global file-read* which includes these files
+if [[ -f /etc/resolv.conf ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/resolv.conf /etc/resolv.conf)
+fi
+if [[ -f /etc/hosts ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/hosts /etc/hosts)
+fi
+
 # User/group information (needed for SSH username lookup)
 if [[ -f /etc/passwd ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/passwd /etc/passwd)
