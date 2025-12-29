@@ -45,6 +45,14 @@ debug "Getting remote URL..."
 remote_url=$(git remote get-url origin 2>/dev/null || echo "")
 debug "Remote URL: '$remote_url'"
 
+# Exit if no remote configured
+if [[ -z "$remote_url" ]]; then
+  debug "No remote configured - exiting early"
+  echo "✓ Agent API tokens verified (no remote configured)"
+  exit 0
+fi
+debug "Remote URL found: $remote_url"
+
 # Exit if tokens already configured for this forge
 debug "Checking for existing tokens..."
 if [[ "$remote_url" =~ github\.com ]] && [[ -f "$GITHUB_TOKEN_FILE" ]]; then
