@@ -80,6 +80,19 @@ if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   fi
 fi
 
+# Run agent setup (SSH keys + API tokens)
+# Scripts check if setup is needed and exit early if not
+if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; then
+  "${TOOLS_DIR}/setup-agent-keys.sh" || {
+    echo "Error: SSH key setup failed" >&2
+    exit 1
+  }
+  "${TOOLS_DIR}/setup-agent-api-tokens.sh" || {
+    echo "Error: API token setup failed" >&2
+    exit 1
+  }
+fi
+
 # Auto-launch opencode unless disabled
 # Skip if already in sandbox (prevent infinite loop)
 if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then

@@ -114,11 +114,8 @@ for dir in "${PATH_DIRS[@]}"; do
   fi
 done
 
-# Agent config directories (needed for sessions, settings, etc.)
-# These need to be accessible for agent settings, sessions, etc.
-mkdir -p "$HOME/.config/opencode" "$HOME/.config/claude" "$HOME/.claude" \
-         "$HOME/.cache/opencode" "$HOME/.cache/claude" \
-         "$HOME/.local/share/opencode" "$HOME/.local/share/claude" 2>/dev/null || true
+# Create nixsmith config directory (always needed for agent auth)
+mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
 # Config directories
 if [[ -d "$HOME/.config/opencode" ]]; then
@@ -129,6 +126,9 @@ if [[ -d "$HOME/.config/claude" ]]; then
 fi
 if [[ -d "$HOME/.claude" ]]; then
   BWRAP_ARGS+=(--bind "$HOME/.claude" "$HOME/.claude")
+fi
+if [[ -d "$HOME/.config/nixsmith" ]]; then
+  BWRAP_ARGS+=(--bind "$HOME/.config/nixsmith" "$HOME/.config/nixsmith")
 fi
 
 # Cache directories

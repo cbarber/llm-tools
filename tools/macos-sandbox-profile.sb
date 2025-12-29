@@ -138,6 +138,7 @@
   (subpath "/private/tmp")
   (subpath (param "HOME_CONFIG_OPENCODE"))
   (subpath (param "HOME_CONFIG_CLAUDE"))
+  (subpath (param "HOME_CONFIG_NIXSMITH"))
   (subpath (param "HOME_CLAUDE"))
   (subpath (param "HOME_CACHE_OPENCODE"))
   (subpath (param "HOME_CACHE_CLAUDE"))
