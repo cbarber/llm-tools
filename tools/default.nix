@@ -29,13 +29,15 @@ let
   
   cclsp = pkgs.callPackage ./cclsp.nix { inherit bun2nix; };
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
+  tea = pkgs.tea;
 in
 {
-  inherit cclsp claude-code-scripts beads;
+  inherit cclsp claude-code-scripts beads tea;
 
   all = [
     cclsp
     claude-code-scripts
     beads
+    tea
   ];
 }
