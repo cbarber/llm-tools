@@ -51,10 +51,17 @@ if ! git remote -v &>/dev/null 2>&1; then
 fi
 debug "Git repository detected"
 
-# Early exit if key already exists for this platform
+# Early exit if no remote configured
 debug "Getting remote URL..."
 remote_url=$(git remote get-url origin 2>/dev/null || echo "")
 debug "Remote URL: '$remote_url'"
+
+if [[ -z "$remote_url" ]]; then
+  debug "No remote configured - exiting early"
+  echo "✓ Agent SSH keys verified (no remote configured)"
+  exit 0
+fi
+debug "Remote URL found: $remote_url"
 
 debug "Checking for existing keys..."
 if [[ "$remote_url" =~ github\.com ]] && [[ -f "$GITHUB_KEY" ]]; then
