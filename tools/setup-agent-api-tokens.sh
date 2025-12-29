@@ -260,9 +260,11 @@ main() {
       setup_gitea || exit 1
       ;;
     unknown)
-      echo "Error: Unknown forge type" >&2
-      echo "Repository must be GitHub or Gitea" >&2
-      exit 1
+      debug "Unknown forge type - skipping API token setup"
+      echo "⚠️  Unknown forge type (not GitHub or Gitea)" >&2
+      echo "Skipping API token setup - SSH keys are sufficient for git operations" >&2
+      echo "API tokens are only needed for PR/issue operations via gh/tea CLI" >&2
+      exit 0
       ;;
   esac
   
