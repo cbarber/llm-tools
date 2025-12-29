@@ -4,26 +4,59 @@
 
 set -euo pipefail
 
+# Debug logging function (controlled by AGENT_DEBUG env var)
+debug() {
+  if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
+    echo "[DEBUG $(date +%H:%M:%S)] setup-agent-api-tokens: $*" >&2
+  fi
+}
+
+debug "=========================================="
+debug "Script started"
+debug "PWD: $(pwd)"
+debug "USER: $USER"
+debug "HOME: $HOME"
+debug "Shell interactive: $([[ $- == *i* ]] && echo 'yes' || echo 'no')"
+debug "Stdin is terminal: $([[ -t 0 ]] && echo 'yes' || echo 'no')"
+debug "Stdout is terminal: $([[ -t 1 ]] && echo 'yes' || echo 'no')"
+debug "Stderr is terminal: $([[ -t 2 ]] && echo 'yes' || echo 'no')"
+debug "TERM: ${TERM:-<unset>}"
+debug "=========================================="
+
 NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
 GITHUB_TOKEN_FILE="${NIXSMITH_CONFIG}/github-token"
 TEA_CONFIG_DIR="${NIXSMITH_CONFIG}/tea"
 
+debug "Config paths:"
+debug "  NIXSMITH_CONFIG: $NIXSMITH_CONFIG"
+debug "  GITHUB_TOKEN_FILE: $GITHUB_TOKEN_FILE"
+debug "  TEA_CONFIG_DIR: $TEA_CONFIG_DIR"
+
 # Check if setup is needed - exit early if tokens already exist
+debug "Checking for git repository..."
 if ! git remote -v &>/dev/null 2>&1; then
+  debug "Not in git repository - exiting early"
   echo "✓ Agent API tokens verified (not a git repo)"
   exit 0
 fi
+debug "Git repository detected"
 
+debug "Getting remote URL..."
 remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+debug "Remote URL: '$remote_url'"
 
 # Exit if tokens already configured for this forge
+debug "Checking for existing tokens..."
 if [[ "$remote_url" =~ github\.com ]] && [[ -f "$GITHUB_TOKEN_FILE" ]]; then
+  debug "GitHub remote detected and token exists - exiting early"
   echo "✓ Agent API tokens verified (GitHub token exists)"
   exit 0
 elif [[ "$remote_url" =~ gitea ]] && [[ -f "$TEA_CONFIG_DIR/config.yml" ]]; then
+  debug "Gitea remote detected and config exists - exiting early"
   echo "✓ Agent API tokens verified (Gitea token exists)"
   exit 0
 fi
+debug "No early exit conditions met - continuing with setup"
 
 echo "======================================"
 echo "Agent API Token Setup"
