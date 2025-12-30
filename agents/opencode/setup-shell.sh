@@ -3,6 +3,14 @@ set -euo pipefail
 
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
+# Alias opencode to run in sandbox when AGENT_SANDBOX is enabled
+if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
+  opencode() {
+    agent-sandbox opencode "$@"
+  }
+  export -f opencode
+fi
+
 # Select user-specific template with fallback to default
 # Priority: agents/templates/${USER}.md -> agents/templates/default.md
 select_template() {
