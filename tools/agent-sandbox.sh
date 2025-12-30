@@ -148,9 +148,9 @@ if [[ -d "$HOME/.config/opencode" ]]; then
 else
   debug_sandbox "  SKIP: $HOME/.config/opencode does not exist"
 fi
-if [[ -d "$HOME/.config/claude" ]]; then
-  debug_sandbox "  Mounting $HOME/.config/claude"
-  BWRAP_ARGS+=(--bind "$HOME/.config/claude" "$HOME/.config/claude")
+if [[ -f "$HOME/.claude.json" ]]; then
+  debug_sandbox "  Mounting $HOME/.claude.json"
+  BWRAP_ARGS+=(--bind "$HOME/.claude.json" "$HOME/.claude.json")
 else
   debug_sandbox "  SKIP: $HOME/.config/claude does not exist"
 fi
