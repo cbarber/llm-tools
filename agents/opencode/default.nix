@@ -9,6 +9,8 @@ pkgs.mkShell {
       opencode
       findutils
       bubblewrap
+      gh
+      tea
     ]
     ++ tools.all;
 

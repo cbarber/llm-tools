@@ -9,6 +9,8 @@ pkgs.mkShell {
       claude-code
       findutils
       bubblewrap
+      gh
+      tea
     ]
     ++ tools.all;
 
