@@ -107,6 +107,22 @@ jobs:
           EOF
           sandbox-exec -f /tmp/test-profile-6.sb echo "SUCCESS: profile without nix works"
       
+      - name: Experiment 7 - Test with process-fork and more permissions
+        continue-on-error: true
+        run: |
+          echo "=== Testing with process-fork added ==="
+          cat > /tmp/test-profile-7.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow process-fork)
+          (allow signal)
+          (allow sysctl-read)
+          (allow file-read*
+            (subpath "/"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-7.sb echo "SUCCESS: permissive profile works"
+      
       - name: Test sandbox basic functionality
         run: |
           # Test that sandbox-exec is available
