@@ -120,16 +120,83 @@
 (allow network*)
 
 ;; ==============================================================================
-;; File Access Policy (Codex-style: allow read, restrict write)
+;; File Access Policy (Whitelist-based: explicit read/write permissions)
 ;; ==============================================================================
 
-;; Allow read-only file operations (like Codex does)
-;; This is simpler and more reliable than whitelisting specific paths
-(allow file-read*)
+;; SECURITY NOTE: Unlike Codex, we use explicit whitelisting instead of global
+;; file-read* to prevent agents from accessing sensitive files (API keys, SSH
+;; keys, personal documents, browser data, etc.). This matches the Linux
+;; bubblewrap implementation which only binds specific paths into the sandbox.
+
+;; Read-only system paths (core functionality)
+(allow file-read*
+  ;; Nix store (all installed packages)
+  (subpath "/nix")
+  
+  ;; System libraries and binaries
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath "/usr/bin")
+  (subpath "/usr/sbin")
+  (subpath "/usr/lib")
+  (subpath "/usr/libexec")
+  (subpath "/usr/share")
+  (subpath "/Library")
+  (subpath "/System/Library")
+  
+  ;; SSL/TLS certificates (HTTPS)
+  (subpath "/etc/ssl")
+  (subpath "/private/etc/ssl")
+  
+  ;; DNS resolution
+  (literal "/etc/resolv.conf")
+  (literal "/private/etc/resolv.conf")
+  (literal "/etc/hosts")
+  (literal "/private/etc/hosts")
+  
+  ;; User/group information (SSH username lookup)
+  (literal "/etc/passwd")
+  (literal "/private/etc/passwd")
+  (literal "/etc/group")
+  (literal "/private/etc/group")
+  
+  ;; Current project directory (read-only here, write allowed below)
+  (subpath (param "PROJECT_DIR"))
+  
+  ;; Agent-specific config directories
+  (subpath (param "HOME_CONFIG_OPENCODE"))
+  (subpath (param "HOME_CONFIG_NIXSMITH"))
+  (literal (param "HOME_CLAUDE_JSON"))
+  (subpath (param "HOME_CLAUDE"))
+  (subpath (param "HOME_CACHE_OPENCODE"))
+  (subpath (param "HOME_CACHE_CLAUDE"))
+  (subpath (param "HOME_CACHE_NIX"))
+  (subpath (param "HOME_SHARE_OPENCODE"))
+  (subpath (param "HOME_SHARE_CLAUDE"))
+  
+  ;; Language tooling cache directories
+  (subpath (param "HOME_CACHE_GO"))
+  (subpath (param "HOME_CARGO"))
+  (subpath (param "HOME_CACHE_PIP"))
+  (subpath (param "HOME_GEM"))
+  (subpath (param "HOME_CACHE_YARN"))
+  (subpath (param "HOME_NPM"))
+  (subpath (param "HOME_SHARE_PNPM"))
+  (subpath (param "HOME_BUN"))
+  
+  ;; Agent SSH keys (read-only)
+  (literal (param "HOME_SSH_AGENT_GITHUB"))
+  (literal (param "HOME_SSH_AGENT_GITHUB_PUB"))
+  (literal (param "HOME_SSH_AGENT_GITLAB"))
+  (literal (param "HOME_SSH_AGENT_GITLAB_PUB"))
+  (literal (param "HOME_SSH_AGENT_GITEA"))
+  (literal (param "HOME_SSH_AGENT_GITEA_PUB"))
+  (literal (param "HOME_SSH_CONFIG_AGENT"))
+  (literal (param "HOME_SSH_KNOWN_HOSTS"))
+)
 
 ;; Write access restricted to specific directories
-;; Following Codex's approach: allow writes to cwd, /tmp, TMPDIR, and HOME_* agent dirs
-;; Note: Both /tmp and /private/tmp needed because /tmp -> /private/tmp on macOS
+;; Agents can modify project files, temp dirs, and their own config/cache
 (allow file-write*
   (subpath (param "PROJECT_DIR"))
   (subpath (param "WORK_DIR"))
@@ -138,7 +205,7 @@
   (subpath "/private/tmp")
   (subpath (param "HOME_CONFIG_OPENCODE"))
   (subpath (param "HOME_CONFIG_NIXSMITH"))
-  (subpath (param "HOME_CLAUDE_JSON"))
+  (literal (param "HOME_CLAUDE_JSON"))
   (subpath (param "HOME_CLAUDE"))
   (subpath (param "HOME_CACHE_OPENCODE"))
   (subpath (param "HOME_CACHE_CLAUDE"))
