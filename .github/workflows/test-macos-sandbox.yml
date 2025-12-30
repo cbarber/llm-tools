@@ -51,12 +51,32 @@ jobs:
           ./tools/agent-sandbox.sh rm test-file.txt
           
           echo "=== Test 3: Home directory access (should be restricted) ==="
-          # This should fail because Documents is not in the allowed list
+          # Test that personal directories cannot be written to
           if ./tools/agent-sandbox.sh touch ~/Documents/sandbox-test.txt 2>/dev/null; then
             echo "ERROR: Should not be able to write to ~/Documents"
             exit 1
           else
             echo "PASS: Cannot write to ~/Documents (as expected)"
+          fi
+          
+          # Test that sensitive files cannot be read
+          echo "=== Test 3a: Sensitive file read restrictions ==="
+          mkdir -p ~/.ssh ~/.config/gh
+          echo "fake-ssh-key" > ~/.ssh/id_rsa
+          echo "fake-gh-token" > ~/.config/gh/hosts.yml
+          
+          if ./tools/agent-sandbox.sh cat ~/.ssh/id_rsa 2>/dev/null | grep -q "fake-ssh-key"; then
+            echo "ERROR: Should not be able to read ~/.ssh/id_rsa"
+            exit 1
+          else
+            echo "PASS: Cannot read personal SSH keys (as expected)"
+          fi
+          
+          if ./tools/agent-sandbox.sh cat ~/.config/gh/hosts.yml 2>/dev/null | grep -q "fake-gh-token"; then
+            echo "ERROR: Should not be able to read ~/.config/gh/hosts.yml"
+            exit 1
+          else
+            echo "PASS: Cannot read GitHub CLI credentials (as expected)"
           fi
       
       - name: Test agent config directories
