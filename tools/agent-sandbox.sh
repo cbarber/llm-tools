@@ -65,6 +65,175 @@ if [[ -z "$BWRAP" ]] || [[ ! -x "$BWRAP" ]]; then
   exit 1
 fi
 
+# Detect and report sandbox blockers with OS-specific instructions
+detect_sandbox_blocker() {
+  # Quick test - if bwrap works, no blocker
+  if "$BWRAP" --ro-bind / / true 2>/dev/null; then
+    return 0
+  fi
+
+  # AppArmor userns restriction (Ubuntu 23.10+, Debian 12+)
+  if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" == "1" ]]; then
+    echo "apparmor_userns"
+    return 1
+  fi
+
+  # Kernel disables unprivileged userns
+  if [[ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null)" == "0" ]]; then
+    echo "kernel_userns"
+    return 1
+  fi
+
+  # SELinux enforcing
+  if command -v getenforce &>/dev/null && [[ "$(getenforce 2>/dev/null)" == "Enforcing" ]]; then
+    echo "selinux"
+    return 1
+  fi
+
+  # Inside container
+  if [[ -f /.dockerenv ]] || grep -qE 'docker|lxc|kubepods' /proc/1/cgroup 2>/dev/null; then
+    echo "container"
+    return 1
+  fi
+
+  echo "unknown"
+  return 1
+}
+
+print_blocker_instructions() {
+  local blocker="$1"
+  local bwrap_path="$BWRAP"
+
+  echo "" >&2
+  echo "═══════════════════════════════════════════════════════════════════" >&2
+  echo "  Sandbox Setup Required" >&2
+  echo "═══════════════════════════════════════════════════════════════════" >&2
+  echo "" >&2
+
+  case "$blocker" in
+    apparmor_userns)
+      cat >&2 <<EOF
+Your system uses AppArmor to restrict user namespaces (Ubuntu 23.10+).
+bubblewrap needs an AppArmor profile to create sandboxes.
+
+Option 1: Create AppArmor profile for bwrap (recommended)
+─────────────────────────────────────────────────────────
+  sudo tee /etc/apparmor.d/bwrap << 'PROFILE'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap $bwrap_path flags=(unconfined) {
+  userns,
+}
+PROFILE
+
+  sudo apparmor_parser -r /etc/apparmor.d/bwrap
+
+Note: The Nix store path changes on updates. You may need to update
+the profile path after running 'nix flake update'. A wildcard profile
+for /nix/store/*/bin/bwrap is more maintainable:
+
+  sudo tee /etc/apparmor.d/nix-bwrap << 'PROFILE'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile nix-bwrap /nix/store/*/bin/bwrap flags=(unconfined) {
+  userns,
+}
+PROFILE
+
+  sudo apparmor_parser -r /etc/apparmor.d/nix-bwrap
+
+Option 2: Run without sandbox
+─────────────────────────────
+  AGENT_SANDBOX=false nix develop .#claude-code
+
+EOF
+      ;;
+
+    kernel_userns)
+      cat >&2 <<EOF
+Your kernel has unprivileged user namespaces disabled.
+bubblewrap requires this feature for sandboxing.
+
+Enable user namespaces:
+───────────────────────
+  sudo sysctl -w kernel.unprivileged_userns_clone=1
+
+To persist across reboots:
+  echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/50-userns.conf
+  sudo sysctl --system
+
+Or run without sandbox:
+  AGENT_SANDBOX=false nix develop .#claude-code
+
+EOF
+      ;;
+
+    selinux)
+      cat >&2 <<EOF
+SELinux is blocking bubblewrap from creating user namespaces.
+
+Option 1: Create SELinux policy for bwrap
+─────────────────────────────────────────
+  # Generate policy module (requires policycoreutils-python-utils)
+  sudo ausearch -c bwrap --raw | audit2allow -M bwrap-sandbox
+  sudo semodule -i bwrap-sandbox.pp
+
+Option 2: Set bwrap to permissive (less secure)
+───────────────────────────────────────────────
+  sudo semanage permissive -a bwrap_t
+
+Or run without sandbox:
+  AGENT_SANDBOX=false nix develop .#claude-code
+
+EOF
+      ;;
+
+    container)
+      cat >&2 <<EOF
+You're running inside a container (Docker/LXC/Kubernetes).
+Nested user namespaces are typically restricted by the container runtime.
+
+Options:
+────────
+1. Run the container with --privileged (not recommended)
+2. Add specific capabilities: --cap-add SYS_ADMIN --security-opt seccomp=unconfined
+3. Run without sandbox (agent will have container-level isolation):
+   AGENT_SANDBOX=false nix develop .#claude-code
+
+EOF
+      ;;
+
+    *)
+      cat >&2 <<EOF
+bubblewrap failed to create a sandbox for an unknown reason.
+
+Debug information:
+──────────────────
+  bwrap path: $bwrap_path
+  Error: $("$BWRAP" --ro-bind / / true 2>&1 || true)
+
+Run without sandbox:
+  AGENT_SANDBOX=false nix develop .#claude-code
+
+Please report this issue with the above details at:
+  https://github.com/cbarber/llm-tools/issues
+
+EOF
+      ;;
+  esac
+
+  echo "═══════════════════════════════════════════════════════════════════" >&2
+  echo "" >&2
+}
+
+# Test if bwrap actually works before proceeding
+if ! blocker=$(detect_sandbox_blocker); then
+  print_blocker_instructions "$blocker"
+  exit 1
+fi
+
 # Create temporary workspace
 WORK_DIR=$(mktemp -d -t agent-XXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT
