@@ -147,6 +147,7 @@ Examples:
   forge pr create --title "Fix bug" --body "Description"
   forge pr list --state open --json
   forge pr view 123 --comments --json
+  forge pr review-comments 123
   forge pr comment 123 "Looks good!"
   forge pr approve 123
 

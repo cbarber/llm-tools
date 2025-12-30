@@ -53,6 +53,8 @@ Footer should include an `Authored By: <agent> (<model>)
 
 Agents create PRs via `bash tools/forge` - a unified wrapper for GitHub (gh) and Gitea (tea).
 
+**IMPORTANT:** Always use `forge` for repository operations. Do not use `gh` or `tea` directly. Check `bash tools/forge --help` for available commands before attempting direct API calls.
+
 **forge examples:**
 ```bash
 bash tools/forge pr create --title "..." --body "..."
