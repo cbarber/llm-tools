@@ -64,14 +64,15 @@ jobs:
           echo "=== Test 4: Agent config directories (should work) ==="
           
           # Create config dirs if they don't exist
-          mkdir -p ~/.config/opencode ~/.config/claude
+          mkdir -p ~/.config/opencode ~/.claude
           
-          # Test write access
+          # Test write access to opencode config
           ./tools/agent-sandbox.sh touch ~/.config/opencode/test.txt
           ./tools/agent-sandbox.sh rm ~/.config/opencode/test.txt
           
-          ./tools/agent-sandbox.sh touch ~/.config/claude/test.txt
-          ./tools/agent-sandbox.sh rm ~/.config/claude/test.txt
+          # Test write access to claude directory (not ~/.config/claude)
+          ./tools/agent-sandbox.sh touch ~/.claude/test.txt
+          ./tools/agent-sandbox.sh rm ~/.claude/test.txt
           
           echo "PASS: Can write to agent config directories"
       

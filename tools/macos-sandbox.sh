@@ -56,8 +56,8 @@ fi
 
 # Add home directory parameters for writable paths
 SANDBOX_PARAMS+=("-DHOME_CONFIG_OPENCODE=$HOME/.config/opencode")
-SANDBOX_PARAMS+=("-DHOME_CONFIG_CLAUDE=$HOME/.config/claude")
 SANDBOX_PARAMS+=("-DHOME_CONFIG_NIXSMITH=$HOME/.config/nixsmith")
+SANDBOX_PARAMS+=("-DHOME_CLAUDE_JSON=$HOME/.claude.json")
 SANDBOX_PARAMS+=("-DHOME_CLAUDE=$HOME/.claude")
 SANDBOX_PARAMS+=("-DHOME_CACHE_OPENCODE=$HOME/.cache/opencode")
 SANDBOX_PARAMS+=("-DHOME_CACHE_CLAUDE=$HOME/.cache/claude")
