@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
+# Shared shell aliases and functions for agent environments
 
+# Git wrapper to prevent catastrophic recovery attempts on write operations
 git() {
-  command git "$@" || {
-    echo "❌ Git command failed. Ask user for guidance instead of attempting recovery." >&2
-    exit 1
-  }
+  # Only intercept write operations that could cause damage
+  local first_arg="${1:-}"
+  local write_commands="add|commit|push|pull|merge|rebase|reset|checkout|branch|tag|stash|cherry-pick|revert|am|apply"
+  
+  if [[ "$first_arg" =~ ^($write_commands)$ ]]; then
+    command git "$@" || {
+      echo "❌ STOP: Git write operation failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+      return 1
+    }
+  else
+    command git "$@"
+  fi
 }
 
 export -f git
