@@ -35,6 +35,58 @@ jobs:
           ./tools/agent-sandbox.sh echo "test" 2>&1 || true
           echo "=== End Profile ==="
       
+      - name: Experiment 1 - Test subpath on non-existent directory
+        continue-on-error: true
+        run: |
+          echo "=== Testing if (subpath ...) on non-existent dir causes abort ==="
+          cat > /tmp/test-profile-1.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read*
+            (subpath "/nix")
+            (subpath "/Users/runner/.config/does-not-exist"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-1.sb echo "SUCCESS: subpath on non-existent dir works"
+      
+      - name: Experiment 2 - Test with dtruss to see file access
+        continue-on-error: true
+        run: |
+          echo "=== Using dtruss to see what files sandbox-exec tries to access ==="
+          # Create minimal profile
+          cat > /tmp/test-profile-2.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read* (subpath "/nix"))
+          EOF
+          # Run with dtruss (requires sudo but may not work in CI)
+          sudo dtruss -f sandbox-exec -f /tmp/test-profile-2.sb echo "test" 2>&1 | grep -E "(open|stat|access)" | head -50 || echo "dtruss not available or failed"
+      
+      - name: Experiment 3 - Test our actual profile with strace equivalent
+        continue-on-error: true
+        run: |
+          echo "=== Trying to trace our actual sandbox invocation ==="
+          # Use fs_usage if available (logs filesystem activity)
+          sudo fs_usage -w -f filesys ./tools/agent-sandbox.sh echo "test" 2>&1 | head -100 || echo "fs_usage not available"
+      
+      - name: Experiment 4 - Test minimal profile that should work
+        continue-on-error: true
+        run: |
+          echo "=== Testing minimal known-good profile ==="
+          cat > /tmp/test-profile-4.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow process-fork)
+          (allow file-read* file-write* file-ioctl (literal "/dev/null"))
+          (allow file-read*
+            (subpath "/bin")
+            (subpath "/usr/bin")
+            (subpath "/usr/lib"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-4.sb echo "SUCCESS: minimal profile works"
+      
       - name: Test sandbox basic functionality
         run: |
           # Test that sandbox-exec is available
