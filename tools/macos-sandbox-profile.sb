@@ -22,7 +22,7 @@
 ;; Child processes inherit the policy of their parent
 (allow process-exec)
 (allow process-fork)
-(allow signal (target same-sandbox))
+(allow signal)
 
 ;; Allow cf prefs to work
 (allow user-preference-read)
@@ -166,7 +166,6 @@
   ;; Agent-specific config directories
   (subpath (param "HOME_CONFIG_OPENCODE"))
   (subpath (param "HOME_CONFIG_NIXSMITH"))
-  (literal (param "HOME_CLAUDE_JSON"))
   (subpath (param "HOME_CLAUDE"))
   (subpath (param "HOME_CACHE_OPENCODE"))
   (subpath (param "HOME_CACHE_CLAUDE"))
@@ -183,17 +182,10 @@
   (subpath (param "HOME_NPM"))
   (subpath (param "HOME_SHARE_PNPM"))
   (subpath (param "HOME_BUN"))
-  
-  ;; Agent SSH keys (read-only)
-  (literal (param "HOME_SSH_AGENT_GITHUB"))
-  (literal (param "HOME_SSH_AGENT_GITHUB_PUB"))
-  (literal (param "HOME_SSH_AGENT_GITLAB"))
-  (literal (param "HOME_SSH_AGENT_GITLAB_PUB"))
-  (literal (param "HOME_SSH_AGENT_GITEA"))
-  (literal (param "HOME_SSH_AGENT_GITEA_PUB"))
-  (literal (param "HOME_SSH_CONFIG_AGENT"))
-  (literal (param "HOME_SSH_KNOWN_HOSTS"))
 )
+
+;; Note: Agent SSH keys are added dynamically by macos-sandbox.sh
+;; to avoid sandbox-exec abort when files don't exist
 
 ;; Write access restricted to specific directories
 ;; Agents can modify project files, temp dirs, and their own config/cache
@@ -205,7 +197,6 @@
   (subpath "/private/tmp")
   (subpath (param "HOME_CONFIG_OPENCODE"))
   (subpath (param "HOME_CONFIG_NIXSMITH"))
-  (literal (param "HOME_CLAUDE_JSON"))
   (subpath (param "HOME_CLAUDE"))
   (subpath (param "HOME_CACHE_OPENCODE"))
   (subpath (param "HOME_CACHE_CLAUDE"))
