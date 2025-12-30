@@ -262,6 +262,8 @@ This allows shared MCP servers and custom tooling across multiple agent environm
 
 Agents create PRs via `bash tools/forge` - a unified wrapper for GitHub (gh) and Gitea (tea).
 
+**IMPORTANT:** Always use `forge` for repository operations. Do not use `gh` or `tea` directly. Check `bash tools/forge --help` for available commands before attempting direct API calls.
+
 **forge examples:**
 ```bash
 bash tools/forge pr create --title "..." --body "..."
