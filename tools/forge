@@ -134,6 +134,8 @@ Commands:
   pr approve [NUMBER]
   pr reviews [NUMBER] [--json]
   pr review-reply [NUMBER] COMMENT_ID TEXT
+  pr checks [NUMBER] [--json]
+  pr logs RUN_ID
 
   issue list [--state STATE]
   issue show NUMBER
@@ -550,6 +552,59 @@ pr_review_reply() {
     esac
 }
 
+pr_checks() {
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+    
+    # Auto-detect PR if no number provided
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
+    
+    local json_output=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_output=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    case "$FORGE_TYPE" in
+        github)
+            if [[ "$json_output" == true ]]; then
+                gh pr checks "$number" --json
+            else
+                gh pr checks "$number"
+            fi
+            ;;
+        gitea)
+            echo "Error: CI checks not implemented for Gitea" >&2
+            exit 1
+            ;;
+    esac
+}
+
+pr_logs() {
+    local run_id="${1:-}"
+    
+    if [[ -z "$run_id" ]]; then
+        echo "Error: RUN_ID required. Get it from 'forge pr checks NUMBER'" >&2
+        echo "Example: forge pr logs 20587839507" >&2
+        exit 1
+    fi
+    
+    case "$FORGE_TYPE" in
+        github)
+            gh run view "$run_id" --log
+            ;;
+        gitea)
+            echo "Error: Workflow logs not implemented for Gitea" >&2
+            exit 1
+            ;;
+    esac
+}
+
 # Issue commands
 issue_list() {
     local state="open"
@@ -626,6 +681,8 @@ case "${1:-}" in
             approve) shift 2; pr_approve "$@" ;;
             reviews) shift 2; pr_reviews "$@" ;;
             review-reply) shift 2; pr_review_reply "$@" ;;
+            checks) shift 2; pr_checks "$@" ;;
+            logs) shift 2; pr_logs "$@" ;;
             *) usage; exit 1 ;;
         esac
         ;;
