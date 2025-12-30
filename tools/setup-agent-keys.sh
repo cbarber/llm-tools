@@ -156,13 +156,10 @@ generate_key "$GITEA_KEY" "gitea"
 debug "Key generation complete"
 echo ""
 
-# Create SSH config if it doesn't exist or update it
-SSH_CONFIG="$HOME/.ssh/config"
+# Create agent-specific SSH config (sandbox mounts this as ~/.ssh/config)
 SSH_CONFIG_AGENT="$HOME/.ssh/config.agent"
 
-debug "SSH config paths:"
-debug "  SSH_CONFIG: $SSH_CONFIG"
-debug "  SSH_CONFIG_AGENT: $SSH_CONFIG_AGENT"
+debug "SSH config path: $SSH_CONFIG_AGENT"
 
 echo "2. Configuring SSH"
 echo "------------------------------"
@@ -188,43 +185,6 @@ EOF
 
 debug "Successfully created $SSH_CONFIG_AGENT"
 echo "✓ Created: $SSH_CONFIG_AGENT"
-
-# Check if main SSH config includes agent config
-debug "Checking main SSH config..."
-if [[ -f "$SSH_CONFIG" ]]; then
-  debug "$SSH_CONFIG exists - checking contents..."
-  debug "First 10 lines of $SSH_CONFIG:"
-  head -10 "$SSH_CONFIG" 2>&1 | while IFS= read -r line; do debug "  $line"; done
-  
-  if ! grep -q "config.agent" "$SSH_CONFIG"; then
-    debug "config.agent NOT found in $SSH_CONFIG"
-    debug "Would normally prompt user to add 'Include config.agent'"
-    echo ""
-    echo "⚠️  Add this line to the TOP of your ~/.ssh/config:"
-    echo ""
-    echo "    Include config.agent"
-    echo ""
-    debug "About to call read -p..."
-    debug "This is where the script might fail in non-interactive mode"
-    read -p "Press Enter to continue..." || {
-      local read_exit=$?
-      debug "ERROR: read -p failed with exit code $read_exit"
-      debug "THIS IS THE FAILURE POINT"
-      exit 1
-    }
-    debug "read -p succeeded"
-  else
-    debug "config.agent found in $SSH_CONFIG - no action needed"
-    echo "✓ SSH config already includes agent config"
-  fi
-else
-  debug "$SSH_CONFIG does not exist - creating it..."
-  echo "Include config.agent" > "$SSH_CONFIG"
-  chmod 600 "$SSH_CONFIG"
-  debug "Created $SSH_CONFIG with Include directive"
-  echo "✓ Created: $SSH_CONFIG"
-fi
-debug "SSH configuration complete"
 echo ""
 
 # Update sandbox to mount agent keys
