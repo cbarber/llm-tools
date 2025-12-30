@@ -87,6 +87,26 @@ jobs:
           EOF
           sandbox-exec -f /tmp/test-profile-4.sb echo "SUCCESS: minimal profile works"
       
+      - name: Experiment 5 - Test if /nix exists
+        continue-on-error: true
+        run: |
+          echo "=== Checking if /nix directory exists ==="
+          ls -la /nix || echo "/nix does not exist"
+          
+      - name: Experiment 6 - Test profile without /nix
+        continue-on-error: true
+        run: |
+          echo "=== Testing profile without /nix reference ==="
+          cat > /tmp/test-profile-6.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read*
+            (subpath "/bin")
+            (subpath "/usr"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-6.sb echo "SUCCESS: profile without nix works"
+      
       - name: Test sandbox basic functionality
         run: |
           # Test that sandbox-exec is available
