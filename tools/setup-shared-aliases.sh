@@ -8,3 +8,9 @@ git() {
 }
 
 export -f git
+
+# Make agent-sandbox available as a command
+agent-sandbox() {
+  "$AGENT_SANDBOX_SCRIPT" "$@"
+}
+export -f agent-sandbox
