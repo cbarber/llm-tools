@@ -320,6 +320,13 @@ done
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
 # Git config (resolve symlinks to actual target)
+# Git reads both XDG and legacy configs if both exist, in that order
+if [[ -e "$HOME/.config/git/config" ]]; then
+  xdg_gitconfig_target=$(readlink -f "$HOME/.config/git/config")
+  # Create parent directory structure in sandbox
+  BWRAP_ARGS+=(--dir "$HOME/.config/git")
+  BWRAP_ARGS+=(--ro-bind "$xdg_gitconfig_target" "$HOME/.config/git/config")
+fi
 if [[ -e "$HOME/.gitconfig" ]]; then
   gitconfig_target=$(readlink -f "$HOME/.gitconfig")
   BWRAP_ARGS+=(--ro-bind "$gitconfig_target" "$HOME/.gitconfig")
