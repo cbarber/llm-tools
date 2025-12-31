@@ -316,5 +316,35 @@ fi
 echo "======================================"
 echo "Setup Complete!"
 echo "======================================"
+echo ""
+
+# Verify SSH connectivity if deploy key was shown for current repo
+if [[ -n "$CURRENT_PLATFORM" ]]; then
+  echo "Verifying SSH connection..."
+  case "$CURRENT_PLATFORM" in
+    github)
+      if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+        echo "✓ GitHub SSH authentication successful"
+      else
+        echo "⚠️  GitHub SSH authentication failed"
+        echo "   Please add the deploy key shown above to:"
+        echo "   https://github.com/$REPO_OWNER/$REPO_NAME/settings/keys"
+      fi
+      ;;
+    gitlab)
+      if ssh -T git@gitlab.com 2>&1 | grep -q "Welcome to GitLab"; then
+        echo "✓ GitLab SSH authentication successful"
+      else
+        echo "⚠️  GitLab SSH authentication failed"
+        echo "   Please add the deploy key to your GitLab repository"
+      fi
+      ;;
+    gitea)
+      echo "⚠️  Gitea SSH verification not automated"
+      echo "   Please verify manually with: ssh -T git@<your-gitea-host>"
+      ;;
+  esac
+  echo ""
+fi
 
 debug "Script completed successfully"
