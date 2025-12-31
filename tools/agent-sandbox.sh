@@ -234,10 +234,6 @@ if ! blocker=$(detect_sandbox_blocker); then
   exit 1
 fi
 
-# Create temporary workspace
-WORK_DIR=$(mktemp -d -t agent-XXXXXX)
-trap 'rm -rf "$WORK_DIR"' EXIT
-
 # Build bwrap command
 BWRAP_ARGS=(
   # Core system access (read-only)
@@ -246,9 +242,9 @@ BWRAP_ARGS=(
   # Current project directory (read-write)
   --bind "$(pwd)" "$(pwd)"
   
-  # Temporary workspace
-  --bind "$WORK_DIR" /tmp/agent-work
-  --setenv AGENT_WORK_DIR /tmp/agent-work
+  # Temporary directories (needed for nix-shell temp dirs, Claude Code CWD, etc.)
+  --bind /tmp /tmp
+  --setenv AGENT_WORK_DIR /tmp
   
   # Essential system directories
   --dev-bind /dev /dev
@@ -303,6 +299,14 @@ for dir in "${PATH_DIRS[@]}"; do
     if [[ ! "$dir" =~ ^/nix/ ]] && [[ ! "$dir" =~ ^$HOME ]]; then
       BWRAP_ARGS+=(--ro-bind "$dir" "$dir")
     fi
+  fi
+done
+
+# System library directories (required for dynamic linking of system binaries)
+# Covers: traditional Linux, multiarch (Debian/Ubuntu), merged-usr (Fedora), BSD
+for lib_dir in /lib /lib64 /lib32 /usr/lib /usr/lib64 /usr/lib32; do
+  if [[ -d "$lib_dir" ]]; then
+    BWRAP_ARGS+=(--ro-bind "$lib_dir" "$lib_dir")
   fi
 done
 
