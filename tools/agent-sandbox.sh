@@ -313,6 +313,12 @@ done
 # Create nixsmith config directory (always needed for agent auth)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
+# Git config (resolve symlinks to actual target)
+if [[ -e "$HOME/.gitconfig" ]]; then
+  gitconfig_target=$(readlink -f "$HOME/.gitconfig")
+  BWRAP_ARGS+=(--ro-bind "$gitconfig_target" "$HOME/.gitconfig")
+fi
+
 # Config directories
 debug_sandbox "Checking config directories..."
 if [[ -d "$HOME/.config/opencode" ]]; then
