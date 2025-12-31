@@ -86,6 +86,8 @@ if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   if [[ -n "${BD_BRANCH:-}" ]]; then
     branch_arg="--branch ${BD_BRANCH}"
     echo "  Using branch: ${BD_BRANCH}"
+    # Export BD_BRANCH so daemon can see it when started later
+    export BD_BRANCH
   fi
   
   if bd init --quiet $branch_arg 2>/dev/null; then
