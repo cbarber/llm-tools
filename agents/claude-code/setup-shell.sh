@@ -70,6 +70,17 @@ ${SETUP_MCP_SCRIPT}
 # Setup Claude Code hooks configuration
 ${SETUP_SETTINGS_SCRIPT}
 
+# Fix beads git hooks for NixOS if needed (even in existing repos)
+if [[ -d ".beads" && -d ".git/hooks" ]]; then
+  # Check if any beads hook has broken shebang
+  for hook in .git/hooks/pre-commit .git/hooks/post-checkout .git/hooks/post-merge .git/hooks/pre-push; do
+    if [[ -f "$hook" ]] && head -1 "$hook" | grep -q "^#!/bin/sh"; then
+      "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
+      break
+    fi
+  done
+fi
+
 # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
 if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   echo "Initializing beads for task tracking..."
