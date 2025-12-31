@@ -2,133 +2,115 @@
 
 This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when working with code in this repository.
 
+## Starting a Session
+
+**First action:** Check repository state and pick work.
+
+```bash
+git status              # What branch? Clean or dirty?
+git log --oneline -3    # Recent commits
+bd ready                # Available work
+```
+
+**Branch state determines next action:**
+- **On main, clean** → Create feature branch for new work
+- **On feature branch, PR merged** → Return to main, create new branch
+- **On feature branch, PR open** → Continue existing work or address review feedback
+- **On feature branch, no PR** → Complete work and create PR
+
 ## Development Guidelines
 
-* Be terse. Only provide examples if actually necessary for clarification
-* Code must be self-documenting. Never add prescriptive comments that describe what code does. Only add descriptive comments that explain why (rationale, edge cases, non-obvious algorithms). When in doubt, name a variable or extract a function.
-* Avoid function side effects. Functions are always better as a clear input and output.
-* Strive for logical function organization. "clean code" and "one large function" are too dogmatic
-* Avoid deep block nesting. Prefer conditions that return early.
-* Do not update code through shell commands. When you're stuck, ask me to help with changes.
-* Be strategic. Formulate a plan, consider all options, and ask questions before jumping to solutions.
-* Remember neither you nor I are a god. Do not break your arm patting me on the back. Just continue working.
-* Challenge my assumptions with compelling evidence.
-* You are always on a branch. Delete code rather than versioning code.
-* **When git commands fail, STOP and ask for help.** Do not attempt recovery with reset/stash/cherry-pick.
+* Be terse. Only provide examples if necessary
+* Code must be self-documenting. Comments explain WHY, not WHAT
+* Avoid function side effects. Clear input → output
+* Avoid deep nesting. Return early
+* Be strategic. Plan first, ask questions, then execute
+* Challenge assumptions with evidence
+* Delete code rather than commenting it out
+* **When git commands fail, STOP and ask for help**
 
 ## Semantic Commit Messages
 
-Format: <type>(<scope>): <subject>
+Format: `<type>(<scope>): <subject>`
 
-<scope> is optional. Preferably for the issue.
-Example
+Types: feat, fix, refactor, test, docs, style, chore
 
-feat: add hat wobble
-^--^  ^------------^
-|     |
-|     +-> Summary in present tense.
-|
-+-------> Type: chore, docs, feat, fix, refactor, style, or test.
+**Body:** 1-2 sentences on WHY, or omit if subject is sufficient. Never itemize implementation.
 
-More Examples:
+**Footer:** `Authored By: <agent> (<model>)`
 
-    feat: (new feature for the user, not a new feature for build script)
-    fix: (bug fix for the user, not a fix to a build script)
-    docs: (changes to the documentation)
-    style: (formatting, missing semi colons, etc; no production code change)
-    refactor: (refactoring production code, eg. renaming a variable)
-    test: (adding missing tests, refactoring tests; no production code change)
-    chore: (updating grunt tasks etc; no production code change)
+Examples:
+```
+fix(sandbox): support XDG git config in Linux sandbox
 
-**Body rules:**
-- 1-2 sentences on WHY, or omit if subject is sufficient
-- Never itemize implementation details
+Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
+Linux sandbox only mounted legacy file, breaking XDG-only users.
 
-Good: "Automates dependency updates every Sunday via GitHub Actions, creating PRs for review."
-Bad: "- Schedule: Weekly\n- Manual trigger: workflow_dispatch\n- Auto-generates diff\n..."
-
-Footer should include an `Authored By: <agent> (<model>)
-
-## Agent PR Workflow
-
-Agents create PRs via `bash tools/forge` - a unified wrapper for GitHub (gh) and Gitea (tea).
-
-**IMPORTANT:** Always use `forge` for repository operations. Do not use `gh` or `tea` directly. Check `bash tools/forge --help` for available commands before attempting direct API calls.
-
-**forge examples:**
-```bash
-bash tools/forge pr create --title "..." --body "..."
-bash tools/forge pr view 123 --comments
-bash tools/forge pr review-comments 1
+Authored By: claude-code (claude-3.7-sonnet)
 ```
 
-**Basic workflow:**
-1. Complete work on branch
-2. Commit changes
-3. Push: `git push -u origin <branch>`
-4. Create PR: `bash tools/forge pr create --title "..." --body "..."`
-5. Use `--draft` if tests fail or work incomplete
+## PR Workflow
 
-**PR body focus:**
-- Why the change was made (motivation, rationale)
-- Link to beads issue if applicable
-- If draft: what's blocking completion
+Use `bash tools/forge` (not `gh`/`tea` directly). Check `bash tools/forge --help` first.
 
-**Commit hygiene:**
-- Use `git commit --fixup=<sha>` for review feedback
-- Squash fixups with `git rebase --autosquash origin/main` (non-interactive)
-- **NEVER use `git rebase -i`** - interactive rebases are forbidden
-- Maintains atomic commits
+```bash
+# Create PR
+git push -u origin <branch>
+bash tools/forge pr create --title "..." --body "..."
 
-See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
+# Address review feedback
+git commit --fixup=<sha>              # Fix specific commit
+git rebase --autosquash origin/main   # Squash fixups (non-interactive only)
+git push --force-with-lease
 
-## Landing the Plane (Session Completion)
+# NEVER use `git rebase -i` (interactive rebases forbidden)
+```
 
-**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
+**PR body:** Why the change (motivation), link to beads issue, what blocks completion (if draft)
 
-**MANDATORY WORKFLOW:**
+## Session Completion
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+**Work is NOT done until pushed.** Complete ALL steps:
+
+1. **File issues** for remaining work
+2. **Run quality gates** (tests, linters, builds)
+3. **Update beads** - Close/update issues
+4. **Push** (MANDATORY):
    ```bash
    git pull --rebase
    bd sync
    git push --force-with-lease
-   git status  # MUST show "up to date with origin"
+   git status  # MUST be "up to date with origin"
    ```
-   If `git push --force-with-lease` fails, STOP and request manual intervention.
+   If `--force-with-lease` fails, STOP and ask for help.
 
-5. **Clean up** - Remove debug code, temp files.
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Create next session prompt in this exact format:
+5. **Hand off** - Provide next session prompt:
    ```
    Recent Work:
-   - Completed issue-id: Summary of changes
+   - Completed issue-id: Summary
+   - Created PR #N (status: open/merged)
 
    Repository State:
-   - Branch: <branch-name> (<commit-hash>)
-   - Beads: X closed, Y ready issues
+   - Branch: <branch> (<commit-hash>)
+   - PR Status: <open/merged/none>
+   - Main: <commit-hash>
+
+   Next Action:
+   - Work on issue-id (specific task)
+   OR
+   - Pick from: bd ready (3 issues available)
 
    Context:
-   - Important details for continuity
+   - Critical details only
    ```
-   This prompt should be ready to paste into the next AI session.
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If force-with-lease fails, abort and request help
+**Rules:**
+- NEVER say "ready to push when you are" - YOU push
+- NEVER stop before pushing
+- ALWAYS specify next action in handoff
 
-## Quick Reference (by frequency)
+## Quick Reference
 
-**Every commit:**
-- [Semantic Commit Messages](#semantic-commit-messages) - Succinct subject, body for nuance (not itemized lists)
-
-**Every session end:**
-- [Landing the Plane](#landing-the-plane) - Push before saying "done"
-
-**As needed:**
-- [Development Guidelines](#development-guidelines) - Code style, terseness
+**Session start:** Check state → pick work → create/continue branch
+**Every commit:** Semantic format, WHY in body
+**Session end:** Push everything, specify next action in handoff
