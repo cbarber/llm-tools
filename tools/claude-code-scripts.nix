@@ -22,6 +22,7 @@ stdenv.mkDerivation {
     cp ${./claude-code-scripts}/notify $out/bin/
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
     cp ${./claude-code-scripts}/git-to-bare-worktree $out/bin/
+    cp ${./fix-beads-hooks} $out/bin/
     
     # Make scripts executable
     chmod +x $out/bin/*

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# fix-beads-hooks - Patch beads git hooks for NixOS compatibility
+#
+# Beads installs git hooks with #!/bin/sh shebang which doesn't exist in NixOS.
+# This script patches existing hooks to use bash from PATH.
+#
+# Usage:
+#   fix-beads-hooks           # Fix hooks in current repo
+#   fix-beads-hooks /path     # Fix hooks in specific repo
+
+set -euo pipefail
+
+REPO_DIR="${1:-.}"
+
+if [[ ! -d "$REPO_DIR/.git/hooks" ]]; then
+  echo "Error: $REPO_DIR/.git/hooks not found" >&2
+  echo "Run this from a git repository or provide a path" >&2
+  exit 1
+fi
+
+echo "Patching beads git hooks in: $REPO_DIR"
+echo
+
+patched=0
+for hook in "$REPO_DIR/.git/hooks/pre-commit" \
+            "$REPO_DIR/.git/hooks/post-checkout" \
+            "$REPO_DIR/.git/hooks/post-merge" \
+            "$REPO_DIR/.git/hooks/pre-push"; do
+  if [[ ! -f "$hook" ]]; then
+    continue
+  fi
+  
+  shebang=$(head -1 "$hook")
+  
+  # Skip if already using portable shebang
+  if [[ "$shebang" == "#!/usr/bin/env sh" ]] || [[ "$shebang" == "#!/usr/bin/env bash" ]]; then
+    continue
+  fi
+  
+  # Only patch if it has a broken shebang (#!/bin/sh)
+  if [[ "$shebang" == "#!/bin/sh" ]]; then
+    sed -i '1s|^#!/bin/sh|#!/usr/bin/env sh|' "$hook"
+    echo "✓ Patched: $(basename "$hook")"
+    echo "  Old: $shebang"
+    echo "  New: #!/usr/bin/env sh"
+    ((patched++))
+  fi
+done
+
+echo
+if [[ $patched -eq 0 ]]; then
+  echo "No hooks needed patching"
+else
+  echo "Patched $patched hook(s) successfully"
+  echo "Test with: $REPO_DIR/.git/hooks/post-checkout HEAD HEAD 1"
+fi
