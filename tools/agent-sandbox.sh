@@ -282,6 +282,12 @@ if [[ -f /etc/hosts ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/hosts /etc/hosts)
 fi
 
+# Mount /usr/bin if it exists and not already covered by PATH mounts
+# Required for shebangs like #!/usr/bin/env on standard Linux distros
+if [[ -d /usr/bin ]]; then
+  BWRAP_ARGS+=(--ro-bind /usr/bin /usr/bin)
+fi
+
 # User/group information (needed for SSH username lookup)
 if [[ -f /etc/passwd ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/passwd /etc/passwd)
