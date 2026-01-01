@@ -133,6 +133,7 @@ Commands:
   pr approve [NUMBER]
   pr reviews [NUMBER] [--json]
   pr review-comments [NUMBER] [--json]
+  pr review-reply [NUMBER] COMMENT_ID TEXT
 
   issue list [--state STATE]
   issue show NUMBER
@@ -148,6 +149,7 @@ Examples:
   forge pr list --state open --json
   forge pr view 123 --comments --json
   forge pr review-comments 123
+  forge pr review-reply 123 456789 "Fixed in commit abc123"
   forge pr comment 123 "Looks good!"
   forge pr approve 123
 
@@ -463,6 +465,48 @@ pr_review_comments() {
     esac
 }
 
+pr_review_reply() {
+    local number="${1:-}"
+    local comment_id="${2:-}"
+    local text="${3:-}"
+    
+    # Auto-detect PR if first arg looks like comment ID (all digits, typically long)
+    if [[ -z "$number" ]] || [[ -z "$comment_id" ]] || [[ -z "$text" ]]; then
+        # Try auto-detect if only 2 args provided (comment_id + text)
+        if [[ -n "$number" ]] && [[ -n "$comment_id" ]] && [[ -z "$text" ]]; then
+            text="$comment_id"
+            comment_id="$number"
+            number=$(auto_detect_pr) || exit 1
+        else
+            echo "Error: Usage: forge pr review-reply [PR_NUMBER] COMMENT_ID TEXT" >&2
+            exit 1
+        fi
+    fi
+    
+    # Add agent signature if in agent environment
+    if [[ -n "${IN_AGENT_SANDBOX:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+        text="${text}
+
+---
+*🤖 Posted by agent*"
+    fi
+    
+    case "$FORGE_TYPE" in
+        github)
+            gh api \
+                --method POST \
+                "repos/{owner}/{repo}/pulls/${number}/comments" \
+                -f body="$text" \
+                -F in_reply_to="$comment_id" \
+                --jq '"Posted reply to review comment \(.id)"'
+            ;;
+        gitea)
+            echo "Error: Review comment replies not supported for Gitea" >&2
+            exit 1
+            ;;
+    esac
+}
+
 # Issue commands
 issue_list() {
     local state="open"
@@ -534,6 +578,7 @@ case "${1:-}" in
             approve) shift 2; pr_approve "$@" ;;
             reviews) shift 2; pr_reviews "$@" ;;
             review-comments) shift 2; pr_review_comments "$@" ;;
+            review-reply) shift 2; pr_review_reply "$@" ;;
             *) usage; exit 1 ;;
         esac
         ;;
