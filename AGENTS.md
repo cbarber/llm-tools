@@ -241,6 +241,23 @@ Note: Repository state (branch, available issues) is auto-injected via temper - 
 **Check repository state and pick work:**
 
 ```bash
+# Show agent environment context
+if [[ -n "${OPENCODE:-}" ]]; then
+  echo "Agent: OpenCode"
+elif [[ -n "${CLAUDE_CODE:-}" ]]; then
+  echo "Agent: Claude Code"
+else
+  echo "Agent: Unknown"
+fi
+
+if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
+  echo "Sandbox: enabled"
+else
+  echo "Sandbox: disabled"
+fi
+
+echo ""
+
 git status --short --branch
 
 bash tools/forge pr status
