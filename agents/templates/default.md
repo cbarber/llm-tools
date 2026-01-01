@@ -81,6 +81,9 @@ bash tools/forge pr view 123 --comments
 
 # View review comments
 bash tools/forge pr review-comments 1
+
+# Reply to specific review comment
+bash tools/forge pr review-reply 1 123456789 "Fixed in commit abc123"
 ```
 
 **PR body must explain:**
