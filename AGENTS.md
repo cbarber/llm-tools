@@ -209,21 +209,24 @@ This allows shared MCP servers and custom tooling across multiple agent environm
    ```
    If `git push --force-with-lease` fails, STOP and request manual intervention.
 
-5. **Clean up** - Remove debug code, temp files.
+5. **Clean up** - Remove debug code, temp files
 6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Create next session prompt in this exact format:
-   ```
-   Recent Work:
-   - Completed issue-id: Summary of changes
+7. **Session complete** - Next session will auto-load current state via temper
 
-   Repository State:
-   - Branch: <branch-name> (<commit-hash>)
-   - Beads: X closed, Y ready issues
+**Handoff for context:**
+Provide brief context about what was accomplished for session continuity:
+```
+Recent Work:
+- Completed llm-tools-xxx: Brief summary of what changed and why
 
-   Context:
-   - Important details for continuity
-   ```
-   This prompt should be ready to paste into the next AI session.
+PR Status:
+$(bash tools/forge pr status)
+
+Context:
+- Any non-obvious decisions or gotchas for next session
+```
+
+Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds
@@ -334,25 +337,19 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    ```
    If `--force-with-lease` fails, STOP and ask for help.
 
-5. Provide handoff for next session:
+5. Handoff for context:
    ```
    Recent Work:
-   - Completed issue-id: Summary
-   - Created PR #N (status: open/merged)
+   - Completed llm-tools-xxx: Brief summary of what changed and why
 
-   Repository State:
-   - Branch: <branch> (<commit-hash>)
-   - PR Status: <open/merged/none>
-   - Main: <commit-hash>
-
-   Next Action:
-   - Work on issue-id (specific task)
-   OR
-   - Pick from: bd ready (3 issues available)
+   PR Status:
+   $(bash tools/forge pr status)
 
    Context:
-   - Critical details only
+   - Any non-obvious decisions or gotchas for next session
    ```
+
+   Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
 ## Quick Reference (by frequency)
 
