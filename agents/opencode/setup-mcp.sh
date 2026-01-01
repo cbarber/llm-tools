@@ -96,6 +96,16 @@ EOF
   echo "Created opencode.json with cclsp MCP server and opencode-beads@0.3.0 plugin"
 fi
 
+# Add temper plugin to existing opencode.json if not already present
+if [[ -f "opencode.json" ]] && ! grep -q ".opencode/plugin/temper" opencode.json 2>/dev/null; then
+  if [[ -d ".opencode/plugin/temper" ]]; then
+    # Add local temper plugin
+    tmp=$(mktemp)
+    jq '.plugin += ["./.opencode/plugin/temper"]' opencode.json > "$tmp" && mv "$tmp" opencode.json
+    echo "Added temper plugin to opencode.json"
+  fi
+fi
+
 # Create cclsp.json
 if [[ "$should_create_cclsp" == "true" ]]; then
   cat >cclsp.json <<'EOF'

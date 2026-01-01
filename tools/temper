@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENTS_MD="${AGENTS_MD:-AGENTS.md}"
+
+show_help() {
+  cat <<EOF
+temper - Extract workflow subsections from AGENTS.md
+
+Usage: temper [COMMAND]
+
+Commands:
+  init            Execute first bash block, show remaining text (default)
+  commit          Show commit workflow
+  pr              Show pull-request workflow
+  pull-request    Alias for pr
+  complete        Show session completion workflow
+  help            Show this help
+
+Environment:
+  AGENTS_MD       Path to AGENTS.md (default: AGENTS.md)
+EOF
+}
+
+extract_subsection() {
+  local section_name="$1"
+  
+  if [[ ! -f "$AGENTS_MD" ]]; then
+    echo "Error: $AGENTS_MD not found" >&2
+    return 1
+  fi
+  
+  awk -v section="### $section_name" '
+    /^## Workflow$/ { in_workflow=1; next }
+    in_workflow && $0 == section { in_section=1; next }
+    in_workflow && in_section && /^###/ { exit }
+    in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
+    in_section { print }
+  ' "$AGENTS_MD"
+}
+
+execute_init() {
+  set +o pipefail  # Disable pipefail to handle jq failures gracefully
+  
+  local content
+  content=$(extract_subsection "init")
+  
+  if [[ -z "$content" ]]; then
+    echo "No init workflow found in $AGENTS_MD" >&2
+    set -o pipefail
+    return 1
+  fi
+  
+  local in_bash_block=0
+  local bash_code=""
+  local remaining_text=""
+  local found_first_block=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^\`\`\`bash$ ]]; then
+      in_bash_block=1
+      continue
+    elif [[ "$line" =~ ^\`\`\`$ ]] && [[ $in_bash_block -eq 1 ]]; then
+      in_bash_block=0
+      found_first_block=1
+      continue
+    fi
+    
+    if [[ $in_bash_block -eq 1 ]] && [[ $found_first_block -eq 0 ]]; then
+      bash_code+="$line"$'\n'
+    elif [[ $found_first_block -eq 1 ]]; then
+      remaining_text+="$line"$'\n'
+    fi
+  done <<< "$content"
+  
+  if [[ -n "$bash_code" ]]; then
+    eval "$bash_code"
+  fi
+  
+  if [[ -n "$remaining_text" ]]; then
+    echo "$remaining_text"
+  fi
+  
+  set -o pipefail  # Re-enable pipefail
+}
+
+main() {
+  local command="${1:-init}"
+  
+  case "$command" in
+    init)
+      execute_init
+      ;;
+    commit)
+      extract_subsection "commit"
+      ;;
+    pr|pull-request)
+      extract_subsection "pull-request"
+      ;;
+    complete)
+      extract_subsection "complete"
+      ;;
+    help|--help|-h)
+      show_help
+      ;;
+    *)
+      echo "Unknown command: $command" >&2
+      show_help >&2
+      return 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -185,6 +185,16 @@ pr_create() {
 *🤖 Created by agent*"
     fi
     
+    # Show PR workflow guidelines
+    if command -v temper >/dev/null 2>&1 && [[ -f AGENTS.md ]]; then
+        echo "📋 PR Creation Guidelines:"
+        echo ""
+        temper pr
+        echo ""
+        echo "Creating PR..."
+        echo ""
+    fi
+    
     case "$FORGE_TYPE" in
         github)
             local args=(--title "$title")
@@ -210,12 +220,20 @@ pr_view() {
         number=$(auto_detect_pr) || exit 1
     fi
     
-    local show_comments=false json_output=false
+    local show_comments=false json_output=false json_fields=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --comments) show_comments=true; shift ;;
-            --json) json_output=true; shift ;;
+            --json)
+                json_output=true
+                # If next arg doesn't start with --, treat it as fields
+                if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^-- ]]; then
+                    json_fields="$2"
+                    shift
+                fi
+                shift
+                ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -224,7 +242,10 @@ pr_view() {
         github)
             local args=("$number")
             [[ "$show_comments" == true ]] && args+=(--comments)
-            [[ "$json_output" == true ]] && args+=(--json body,title,state,number,comments)
+            if [[ "$json_output" == true ]]; then
+                local fields="${json_fields:-body,title,state,number,comments}"
+                args+=(--json "$fields")
+            fi
             gh pr view "${args[@]}"
             ;;
         gitea)
@@ -236,6 +257,48 @@ pr_view() {
             fi
             ;;
     esac
+}
+
+pr_status() {
+    # Display formatted PR status for current branch
+    # Shows warning for merged PRs, confirmation for open PRs, nothing if no PR exists
+    local branch
+    branch=$(git branch --show-current 2>/dev/null || echo "")
+    
+    if [[ -z "$branch" ]] || [[ "$branch" == "main" ]]; then
+        return 0
+    fi
+    
+    local pr_json
+    case "$FORGE_TYPE" in
+        github)
+            pr_json=$(gh pr view --json number,state 2>/dev/null || echo "")
+            ;;
+        gitea)
+            # tea doesn't have direct branch->PR lookup, fall back to list
+            pr_json=$(run_tea pr list --output json 2>/dev/null | \
+                jq -c ".[] | select(.head.ref==\"$branch\") | {number, state}" 2>/dev/null || echo "")
+            ;;
+    esac
+    
+    if [[ -z "$pr_json" ]]; then
+        return 0
+    fi
+    
+    local pr_num pr_state
+    pr_num=$(echo "$pr_json" | jq -r '.number' 2>/dev/null)
+    pr_state=$(echo "$pr_json" | jq -r '.state' 2>/dev/null)
+    
+    if [[ -n "$pr_num" ]] && [[ -n "$pr_state" ]]; then
+        case "$pr_state" in
+            MERGED)
+                echo "⚠️  Branch has merged PR #${pr_num} - consider: git checkout main"
+                ;;
+            OPEN)
+                echo "✓ PR #${pr_num} is open"
+                ;;
+        esac
+    fi
 }
 
 pr_comment() {
@@ -464,6 +527,7 @@ case "${1:-}" in
         case "${2:-}" in
             create) shift 2; pr_create "$@" ;;
             view) shift 2; pr_view "$@" ;;
+            status) shift 2; pr_status "$@" ;;
             comment) shift 2; pr_comment "$@" ;;
             list) shift 2; pr_list "$@" ;;
             checkout) shift 2; pr_checkout "$@" ;;
