@@ -116,30 +116,24 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    ```
    If `--force-with-lease` fails, STOP and ask for help.
 
-5. Provide handoff for next session:
+5. Handoff for context:
    ```
    Recent Work:
-   - Completed issue-id: Summary
-   - Created PR #N (status: open/merged)
+   - Completed llm-tools-xxx: Brief summary of what changed and why
 
-   Repository State:
-   - Branch: <branch> (<commit-hash>)
-   - PR Status: <open/merged/none>
-   - Main: <commit-hash>
-
-   Next Action:
-   - Work on issue-id (specific task)
-   OR
-   - Pick from: bd ready (3 issues available)
+   PR Status:
+   $(bash tools/forge pr status)
 
    Context:
-   - Critical details only
+   - Any non-obvious decisions or gotchas for next session
    ```
+
+   Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
 **Rules:**
 - NEVER say "ready to push when you are" - YOU push
 - NEVER stop before pushing
-- ALWAYS specify next action in handoff
+- Next session will auto-load state via temper
 
 ## Quick Reference
 
