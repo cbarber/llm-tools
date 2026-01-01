@@ -297,11 +297,11 @@ Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/fo
 git push -u origin <branch>
 bash tools/forge pr create --title "..." --body "..."
 
-# View PR with comments
-bash tools/forge pr view 123 --comments
+# View PR (includes all comments)
+bash tools/forge pr view 123
 
-# View review comments
-bash tools/forge pr review-comments 1
+# View all comments only
+bash tools/forge pr comments 1
 
 # Reply to specific review comment
 bash tools/forge pr review-reply 1 123456789 "Fixed in commit abc123"
