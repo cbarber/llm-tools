@@ -126,13 +126,13 @@ Auto-detects forge type from git remote.
 
 Commands:
   pr create --title TITLE --body BODY [--draft]
-  pr view [NUMBER] [--comments] [--json]
+  pr view [NUMBER] [--json]
   pr comment [NUMBER] TEXT
+  pr comments [NUMBER] [--json]
   pr list [--state STATE]
   pr checkout [NUMBER]
   pr approve [NUMBER]
   pr reviews [NUMBER] [--json]
-  pr review-comments [NUMBER] [--json]
   pr review-reply [NUMBER] COMMENT_ID TEXT
 
   issue list [--state STATE]
@@ -147,8 +147,8 @@ Note: Use space-separated arguments (e.g., --state open, not --state=open)
 Examples:
   forge pr create --title "Fix bug" --body "Description"
   forge pr list --state open --json
-  forge pr view 123 --comments --json
-  forge pr review-comments 123
+  forge pr view 123
+  forge pr comments 123
   forge pr review-reply 123 456789 "Fixed in commit abc123"
   forge pr comment 123 "Looks good!"
   forge pr approve 123
@@ -222,11 +222,10 @@ pr_view() {
         number=$(auto_detect_pr) || exit 1
     fi
     
-    local show_comments=false json_output=false json_fields=""
+    local json_output=false json_fields=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --comments) show_comments=true; shift ;;
             --json)
                 json_output=true
                 # If next arg doesn't start with --, treat it as fields
@@ -242,20 +241,29 @@ pr_view() {
     
     case "$FORGE_TYPE" in
         github)
-            local args=("$number")
-            [[ "$show_comments" == true ]] && args+=(--comments)
             if [[ "$json_output" == true ]]; then
-                local fields="${json_fields:-body,title,state,number,comments}"
-                args+=(--json "$fields")
+                local fields="${json_fields:-body,title,state,number}"
+                gh pr view "$number" --json "$fields"
+            else
+                # Show PR metadata
+                gh pr view "$number"
+                
+                # Always show comments
+                echo ""
+                echo "Comments:"
+                echo ""
+                pr_comments "$number"
             fi
-            gh pr view "${args[@]}"
             ;;
         gitea)
-            local args=("$number")
-            [[ "$json_output" == true ]] && args+=(--output json)
-            run_tea pr "$number" "${args[@]}"
-            if [[ "$show_comments" == true ]]; then
-                run_tea pr comments "$number" $([[ "$json_output" == true ]] && echo "--output json")
+            if [[ "$json_output" == true ]]; then
+                run_tea pr "$number" --output json
+            else
+                run_tea pr "$number"
+                echo ""
+                echo "Comments:"
+                echo ""
+                pr_comments "$number"
             fi
             ;;
     esac
@@ -432,7 +440,7 @@ pr_reviews() {
     esac
 }
 
-pr_review_comments() {
+pr_comments() {
     local number="${1:-}"
     [[ -n "$number" ]] && shift
     
@@ -453,13 +461,34 @@ pr_review_comments() {
     case "$FORGE_TYPE" in
         github)
             if [[ "$json_output" == true ]]; then
-                gh api "repos/{owner}/{repo}/pulls/${number}/comments"
+                # Return both general and review comments as JSON
+                echo '{"general":' && gh api "repos/{owner}/{repo}/issues/${number}/comments" && echo ',"review":' && gh api "repos/{owner}/{repo}/pulls/${number}/comments" && echo '}'
             else
-                gh api "repos/{owner}/{repo}/pulls/${number}/comments" --jq '.[] | "File: \(.path):\(.original_start_line // .start_line // .line)-\(.original_line // .line) @ \(.original_commit_id[:7])\nComment: \(.body)\nContext:\n\(.diff_hunk)\n---"'
+                # Fetch general comments (issue/PR conversation)
+                local general_comments
+                general_comments=$(gh api "repos/{owner}/{repo}/issues/${number}/comments" --jq '.[] | "[general] @\(.user.login)\n\(.body)\n"' 2>/dev/null || echo "")
+                
+                # Fetch review comments (code-specific)
+                local review_comments
+                review_comments=$(gh api "repos/{owner}/{repo}/pulls/${number}/comments" --jq '.[] | "[\(.id)] \(.path):\(.original_start_line // .start_line // .line)-\(.original_line // .line) @\(.user.login)\n\(.body)\n\(.diff_hunk)\n"' 2>/dev/null || echo "")
+                
+                # Output both
+                if [[ -n "$general_comments" ]]; then
+                    echo "$general_comments"
+                fi
+                
+                if [[ -n "$review_comments" ]]; then
+                    echo "$review_comments"
+                fi
+                
+                # If neither, show message
+                if [[ -z "$general_comments" ]] && [[ -z "$review_comments" ]]; then
+                    echo "No comments found"
+                fi
             fi
             ;;
         gitea)
-            echo "Error: Review comments not implemented for Gitea" >&2
+            echo "Error: Comments not implemented for Gitea" >&2
             exit 1
             ;;
     esac
@@ -573,11 +602,11 @@ case "${1:-}" in
             view) shift 2; pr_view "$@" ;;
             status) shift 2; pr_status "$@" ;;
             comment) shift 2; pr_comment "$@" ;;
+            comments) shift 2; pr_comments "$@" ;;
             list) shift 2; pr_list "$@" ;;
             checkout) shift 2; pr_checkout "$@" ;;
             approve) shift 2; pr_approve "$@" ;;
             reviews) shift 2; pr_reviews "$@" ;;
-            review-comments) shift 2; pr_review_comments "$@" ;;
             review-reply) shift 2; pr_review_reply "$@" ;;
             *) usage; exit 1 ;;
         esac
