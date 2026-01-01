@@ -220,7 +220,7 @@ Recent Work:
 - Completed llm-tools-xxx: Brief summary of what changed and why
 
 PR Status:
-$(bash tools/forge pr status)
+<EXECUTE: bash tools/forge pr status and paste output here>
 
 Context:
 - Any non-obvious decisions or gotchas for next session
@@ -338,12 +338,13 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    If `--force-with-lease` fails, STOP and ask for help.
 
 5. Handoff for context:
+   Provide brief context about what was accomplished for session continuity:
    ```
    Recent Work:
    - Completed llm-tools-xxx: Brief summary of what changed and why
 
    PR Status:
-   $(bash tools/forge pr status)
+   <EXECUTE: bash tools/forge pr status and paste output here>
 
    Context:
    - Any non-obvious decisions or gotchas for next session
