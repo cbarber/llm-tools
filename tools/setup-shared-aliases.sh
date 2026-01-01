@@ -16,7 +16,8 @@ git() {
         echo ""
       fi
       
-      # Execute commit
+      # Execute commit (shift off 'commit' to avoid passing it twice)
+      shift
       command git commit "$@" || {
         echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
         return 1
