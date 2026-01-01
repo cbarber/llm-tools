@@ -30,14 +30,17 @@ let
   cclsp = pkgs.callPackage ./cclsp.nix { inherit bun2nix; };
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
   tea = pkgs.tea;
+  
+  temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
 in
 {
-  inherit cclsp claude-code-scripts beads tea;
+  inherit cclsp claude-code-scripts beads tea temper;
 
   all = [
     cclsp
     claude-code-scripts
     beads
     tea
+    temper
   ];
 }

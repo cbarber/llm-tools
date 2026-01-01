@@ -1,11 +1,16 @@
 {
   "$schema": "https://opncd.ai/config.json",
   "share": "disabled",
-  "plugin": ["opencode-beads@0.3.0"],
+  "plugin": [
+    "opencode-beads@0.3.0",
+    "./.opencode/plugin/temper"
+  ],
   "mcp": {
     "lsp": {
       "type": "local",
-      "command": ["cclsp"],
+      "command": [
+        "cclsp"
+      ],
       "enabled": true,
       "environment": {
         "CCLSP_CONFIG_PATH": "cclsp.json"

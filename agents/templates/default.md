@@ -16,119 +16,134 @@ This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when wor
 * You are always on a branch. Delete code rather than versioning code.
 * **When git commands fail, STOP and ask for help.** Do not attempt recovery with reset/stash/cherry-pick.
 
-## Semantic Commit Messages
+## Workflow
 
-Format: <type>(<scope>): <subject>
+### init
 
-<scope> is optional. Preferably for the issue.
-Example
+**Check repository state and pick work:**
 
-feat: add hat wobble
-^--^  ^------------^
-|     |
-|     +-> Summary in present tense.
-|
-+-------> Type: chore, docs, feat, fix, refactor, style, or test.
-
-More Examples:
-
-    feat: (new feature for the user, not a new feature for build script)
-    fix: (bug fix for the user, not a fix to a build script)
-    docs: (changes to the documentation)
-    style: (formatting, missing semi colons, etc; no production code change)
-    refactor: (refactoring production code, eg. renaming a variable)
-    test: (adding missing tests, refactoring tests; no production code change)
-    chore: (updating grunt tasks etc; no production code change)
-
-**Body rules:**
-- 1-2 sentences on WHY, or omit if subject is sufficient
-- Never itemize implementation details
-
-Good: "Automates dependency updates every Sunday via GitHub Actions, creating PRs for review."
-Bad: "- Schedule: Weekly\n- Manual trigger: workflow_dispatch\n- Auto-generates diff\n..."
-
-Footer should include an `Authored By: <agent> (<model>)
-
-## Agent PR Workflow
-
-Agents create PRs via `bash tools/forge` - a unified wrapper for GitHub (gh) and Gitea (tea).
-
-**IMPORTANT:** Always use `forge` for repository operations. Do not use `gh` or `tea` directly. Check `bash tools/forge --help` for available commands before attempting direct API calls.
-
-**forge examples:**
 ```bash
+git status --short --branch
+
+bash tools/forge pr status
+
+if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
+  echo ""
+  echo "📋 Available work:"
+  bd ready --limit=5
+fi
+```
+
+**Next action based on branch state:**
+- **On main, clean** → Pick issue, create feature branch
+- **On feature branch, PR merged** → Return to main, create new branch
+- **On feature branch, PR open** → Continue work or address review feedback
+- **On feature branch, no PR** → Complete work and create PR
+
+### commit
+
+Format: `<type>(<scope>): <subject>`
+
+**Types:**
+- `feat` - New feature for the user
+- `fix` - Bug fix for the user
+- `refactor` - Code restructuring without behavior change
+- `test` - Adding or updating tests
+- `docs` - Documentation changes
+- `style` - Formatting, whitespace (no code change)
+- `chore` - Build tasks, dependencies (no production code change)
+
+**Body:** 1-2 sentences on WHY (motivation, rationale). Omit if subject is sufficient. Never itemize implementation.
+
+**Footer:** `Authored By: <agent> (<model>)`
+
+**Example:**
+```
+fix(sandbox): support XDG git config in Linux sandbox
+
+Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
+Linux sandbox only mounted legacy file, breaking XDG-only users.
+
+Authored By: claude-code (claude-3.7-sonnet)
+```
+
+### pull-request
+
+**IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
+
+Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/forge --help` before attempting direct API calls.
+
+**Workflow:**
+```bash
+# Create PR
+git push -u origin <branch>
 bash tools/forge pr create --title "..." --body "..."
+
+# View PR with comments
 bash tools/forge pr view 123 --comments
+
+# View review comments
 bash tools/forge pr review-comments 1
 ```
 
-**Basic workflow:**
-1. Complete work on branch
-2. Commit changes
-3. Push: `git push -u origin <branch>`
-4. Create PR: `bash tools/forge pr create --title "..." --body "..."`
-5. Use `--draft` if tests fail or work incomplete
-
-**PR body focus:**
-- Why the change was made (motivation, rationale)
+**PR body must explain:**
+- WHY the change was made (motivation, rationale)
 - Link to beads issue if applicable
-- If draft: what's blocking completion
+- What's blocking completion (if using --draft)
 
-**Commit hygiene:**
-- Use `git commit --fixup=<sha>` for review feedback
-- Squash fixups with `git rebase --autosquash origin/main` (non-interactive)
-- **NEVER use `git rebase -i`** - interactive rebases are forbidden
-- Maintains atomic commits
+**Addressing review feedback:**
+```bash
+git commit --fixup=<sha>              # Fix specific commit
+git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
+git push --force-with-lease
+```
 
 See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
 
-## Landing the Plane (Session Completion)
+### complete
 
-**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
+**Work is NOT done until pushed.** Complete ALL steps:
 
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. File issues for remaining work
+2. Run quality gates (tests, linters, builds)
+3. Update beads (close/update issues)
+4. Push to remote:
    ```bash
    git pull --rebase
    bd sync
    git push --force-with-lease
    git status  # MUST show "up to date with origin"
    ```
-   If `git push --force-with-lease` fails, STOP and request manual intervention.
+   If `--force-with-lease` fails, STOP and ask for help.
 
-5. **Clean up** - Remove debug code, temp files.
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Create next session prompt in this exact format:
+5. Provide handoff for next session:
    ```
    Recent Work:
-   - Completed issue-id: Summary of changes
+   - Completed issue-id: Summary
+   - Created PR #N (status: open/merged)
 
    Repository State:
-   - Branch: <branch-name> (<commit-hash>)
-   - Beads: X closed, Y ready issues
+   - Branch: <branch> (<commit-hash>)
+   - PR Status: <open/merged/none>
+   - Main: <commit-hash>
+
+   Next Action:
+   - Work on issue-id (specific task)
+   OR
+   - Pick from: bd ready (3 issues available)
 
    Context:
-   - Important details for continuity
+   - Critical details only
    ```
-   This prompt should be ready to paste into the next AI session.
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If force-with-lease fails, abort and request help
+**Rules:**
+- NEVER say "ready to push when you are" - YOU push
+- NEVER stop before pushing
+- ALWAYS specify next action in handoff
 
-## Quick Reference (by frequency)
+## Quick Reference
 
-**Every commit:**
-- [Semantic Commit Messages](#semantic-commit-messages) - Succinct subject, body for nuance (not itemized lists)
-
-**Every session end:**
-- [Landing the Plane](#landing-the-plane) - Push before saying "done"
-
-**As needed:**
-- [Development Guidelines](#development-guidelines) - Code style, terseness
+**Session start:** Run `temper init` - check state and pick work
+**Every commit:** Run `temper commit` - review commit format
+**Before PR:** Run `temper pr` - review PR workflow
+**Session end:** Run `temper complete` - completion checklist
