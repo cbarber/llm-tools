@@ -29,17 +29,14 @@ See `agents/templates/README.md` for details.
 
 ## Development Guidelines
 
-- Be terse. Only provide examples if actually necessary for clarification
-* Code must be self-documenting. Never add prescriptive comments that describe what code does. Only add descriptive comments that explain why (rationale, edge cases, non-obvious algorithms). When in doubt, name a variable or extract a function.
-- Avoid function side effects. Functions are always better as a clear input and output.
-- Strive for logical function organization. "clean code" and "one large function" are too dogmatic
-- Avoid deep block nesting. Prefer conditions that return early.
-- Do not update code through shell commands. When you're stuck, ask me to help with changes.
-- Be strategic. Formulate a plan, consider all options, and ask questions before jumping to solutions.
-- Remember neither you nor I are a god. Do not break your arm patting me on the back. Just continue working.
-- Challenge my assumptions with compelling evidence.
-- You are always on a branch. Delete code rather than versioning code.
-- **When git commands fail, STOP and ask for help.** Do not attempt recovery with reset/stash/cherry-pick.
+* Be succinct. Only provide examples if necessary
+* Code must be self-documenting. Comments explain WHY, not WHAT
+* Avoid function side effects. Clear input → output
+* Avoid deep nesting. Return early
+* Be strategic. Plan first, ask questions, then execute
+* Challenge assumptions with evidence
+* Delete code rather than commenting it out
+* **When git commands fail, STOP and ask for help**
 
 ## Repository Structure
 
