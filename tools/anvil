@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# Anvil - Forge messages into OpenCode sessions
+# Usage: anvil [session-selector] <message>
+
+set -euo pipefail
+
+# OpenCode API endpoint from environment (set by shell setup)
+# Auto-detect as fallback if not set
+if [[ -z "${OPENCODE_API:-}" ]]; then
+    PORT=$(netstat -tlnp 2>/dev/null | grep opencode | awk '{print $4}' | grep -oE '[0-9]+$' | head -1)
+    if [[ -n "$PORT" ]]; then
+        OPENCODE_API="http://127.0.0.1:$PORT"
+    else
+        OPENCODE_API="http://127.0.0.1:4096"
+    fi
+fi
+
+# Usage
+usage() {
+    cat <<EOF
+Anvil - Forge messages into OpenCode sessions
+
+Usage:
+  anvil <message>                    # Send to first busy session
+  anvil --all <message>              # Send to all busy sessions
+  anvil --session <id> <message>     # Send to specific session
+  anvil --list                       # List active sessions
+  anvil --status                     # Show session statuses
+  anvil --messages <id> [--limit N]  # Get messages for session
+
+Options:
+  --all              Send to all busy sessions in current directory
+  --session <id>     Send to specific session ID
+  --list             List all sessions
+  --status           Show session statuses
+  --messages <id>    Get messages for specific session
+  --limit <n>        Limit number of messages (default: 100)
+  --json             Output in JSON format (for --list/--status/--messages)
+  --repo <path>      Filter by repository path (default: current dir)
+
+Examples:
+  anvil "PR #12 has new comments"
+  anvil --all "Build completed successfully"
+  anvil --session ses_ABC123 "Review feedback addressed"
+  anvil --list --json | jq '.[] | select(.directory == "/home/user/project")'
+  anvil --messages ses_ABC123 --json | jq '.[] | .parts[]? | .text'
+
+EOF
+}
+
+# Get current repo directory
+get_repo_dir() {
+    git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+
+# Check API connectivity
+check_api() {
+    if ! curl -sf "$OPENCODE_API/session" >/dev/null 2>&1; then
+        echo "Error: Cannot connect to OpenCode API at $OPENCODE_API" >&2
+        echo "Is OpenCode running with API server enabled?" >&2
+        echo "Try: opencode serve" >&2
+        exit 1
+    fi
+}
+
+# List sessions
+list_sessions() {
+    local json_output=${1:-false}
+    local repo_dir=${2:-}
+    
+    SESSIONS=$(curl -s "$OPENCODE_API/session" 2>/dev/null)
+    
+    if [[ "$json_output" == "true" ]]; then
+        if [[ -n "$repo_dir" ]]; then
+            echo "$SESSIONS" | jq --arg dir "$repo_dir" '[.[] | select(.directory == $dir)]'
+        else
+            echo "$SESSIONS"
+        fi
+    else
+        if [[ -n "$repo_dir" ]]; then
+            echo "$SESSIONS" | jq -r --arg dir "$repo_dir" \
+                '.[] | select(.directory == $dir) | "\(.id)\t\(.title)\t\(.directory)"'
+        else
+            echo "$SESSIONS" | jq -r '.[] | "\(.id)\t\(.title)\t\(.directory)"'
+        fi | column -t -s $'\t'
+    fi
+}
+
+# Show session statuses
+show_status() {
+    local json_output=${1:-false}
+    
+    STATUS=$(curl -s "$OPENCODE_API/session/status" 2>/dev/null)
+    
+    if [[ "$json_output" == "true" ]]; then
+        echo "$STATUS"
+    else
+        echo "$STATUS" | jq -r 'to_entries | .[] | "\(.key)\t\(.value.type)"' | column -t -s $'\t'
+    fi
+}
+
+# Get messages for a session
+get_messages() {
+    local session_id=$1
+    local limit=${2:-100}
+    local json_output=${3:-false}
+    
+    MESSAGES=$(curl -s "$OPENCODE_API/session/$session_id/message?limit=$limit" 2>/dev/null)
+    
+    if [[ "$json_output" == "true" ]]; then
+        echo "$MESSAGES"
+    else
+        echo "$MESSAGES" | jq -r '.[] | "\(.author)\t\(.parts[]?.text // "")"' | head -20
+    fi
+}
+
+# Find busy sessions in directory
+find_busy_sessions() {
+    local repo_dir="$1"
+    
+    SESSIONS=$(curl -s "$OPENCODE_API/session" 2>/dev/null)
+    STATUS=$(curl -s "$OPENCODE_API/session/status" 2>/dev/null)
+    
+    echo "$SESSIONS" | jq -r \
+        --arg dir "$repo_dir" \
+        --argjson status "$STATUS" \
+        '[.[] | select(.directory == $dir and $status[.id].type == "busy") | .id] | .[]'
+}
+
+# Send message to session
+send_message() {
+    local session_id="$1"
+    local message="$2"
+    local synthetic="${3:-true}"
+    local no_reply="${4:-true}"
+    
+    # Build JSON payload
+    PAYLOAD=$(jq -n \
+        --arg text "$message" \
+        --argjson synthetic "$synthetic" \
+        --argjson noReply "$no_reply" \
+        '{
+            noReply: $noReply,
+            parts: [
+                {
+                    type: "text",
+                    text: $text,
+                    synthetic: $synthetic
+                }
+            ]
+        }')
+    
+    # Use /message endpoint to inject into active session
+    # noReply=false makes this blocking - curl waits for agent response
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "$PAYLOAD" \
+        "$OPENCODE_API/session/$session_id/message" >/dev/null 2>&1
+    
+    return $?
+}
+
+# Main
+main() {
+    local mode="auto"
+    local session_id=""
+    local message=""
+    local json_output=false
+    local repo_dir=""
+    local limit=100
+    # noReply=true for fire-and-forget notifications (doesn't block waiting for response)
+    # This prevents pr-poll daemon from hanging when agents are busy with long operations
+    local no_reply=true
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            --list)
+                mode="list"
+                shift
+                ;;
+            --status)
+                mode="status"
+                shift
+                ;;
+            --messages)
+                mode="messages"
+                session_id="$2"
+                shift 2
+                ;;
+            --limit)
+                limit="$2"
+                shift 2
+                ;;
+            --all)
+                mode="all"
+                shift
+                ;;
+            --session)
+                mode="session"
+                session_id="$2"
+                shift 2
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            --repo)
+                repo_dir="$2"
+                shift 2
+                ;;
+            *)
+                # Remaining args are the message
+                message="$*"
+                break
+                ;;
+        esac
+    done
+    
+    # Default repo dir to current directory
+    if [[ -z "$repo_dir" ]] && [[ "$mode" != "list" ]] && [[ "$mode" != "status" ]] && [[ "$mode" != "messages" ]]; then
+        repo_dir=$(get_repo_dir)
+    fi
+    
+    # Check API connectivity
+    check_api
+    
+    # Execute command
+    case "$mode" in
+        list)
+            list_sessions "$json_output" "$repo_dir"
+            ;;
+        status)
+            show_status "$json_output"
+            ;;
+        messages)
+            if [[ -z "$session_id" ]]; then
+                echo "Error: Session ID required" >&2
+                usage
+                exit 1
+            fi
+            get_messages "$session_id" "$limit" "$json_output"
+            ;;
+        session)
+            if [[ -z "$message" ]]; then
+                echo "Error: Message required" >&2
+                usage
+                exit 1
+            fi
+            echo "Sending to session $session_id..." >&2
+            if send_message "$session_id" "$message" true "$no_reply"; then
+                echo "✓ Message sent" >&2
+            else
+                echo "✗ Failed to send message" >&2
+                exit 1
+            fi
+            ;;
+        all)
+            if [[ -z "$message" ]]; then
+                echo "Error: Message required" >&2
+                usage
+                exit 1
+            fi
+            SESSIONS=$(find_busy_sessions "$repo_dir")
+            if [[ -z "$SESSIONS" ]]; then
+                echo "No busy sessions found in $repo_dir" >&2
+                exit 0
+            fi
+            echo "Found busy sessions in $repo_dir:" >&2
+            count=0
+            while read -r sid; do
+                echo "  Sending to $sid..." >&2
+                if send_message "$sid" "$message" true "$no_reply"; then
+                    echo "    ✓ Sent" >&2
+                    ((count++))
+                else
+                    echo "    ✗ Failed" >&2
+                fi
+            done <<< "$SESSIONS"
+            echo "✓ Sent to $count session(s)" >&2
+            ;;
+        auto)
+            if [[ -z "$message" ]]; then
+                echo "Error: Message required" >&2
+                usage
+                exit 1
+            fi
+            # Find first busy session in current directory
+            SESSIONS=$(find_busy_sessions "$repo_dir")
+            if [[ -z "$SESSIONS" ]]; then
+                echo "No busy sessions found in $repo_dir" >&2
+                exit 0
+            fi
+            session_id=$(echo "$SESSIONS" | head -1)
+            echo "Sending to session $session_id..." >&2
+            if send_message "$session_id" "$message" true "$no_reply"; then
+                echo "✓ Message sent" >&2
+            else
+                echo "✗ Failed to send message" >&2
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+main "$@"
