@@ -4,9 +4,15 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 # Alias opencode to run in sandbox when AGENT_SANDBOX is enabled
+# Always pass --port to ensure API is available on known port
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
   opencode() {
-    agent-sandbox opencode "$@"
+    agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"
+  }
+  export -f opencode
+else
+  opencode() {
+    command opencode --port "${OPENCODE_PORT}" "$@"
   }
   export -f opencode
 fi
@@ -34,6 +40,22 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "Note: No ANTHROPIC_API_KEY found. Set it for API key authentication."
   echo "Set ANTHROPIC_API_KEY in .env or ~/.config/opencode/.env"
 fi
+
+# Allocate random port for OpenCode API server
+# OpenCode accepts --port flag to specify server port
+if [ -z "${OPENCODE_PORT:-}" ]; then
+  # Find random open port between 40000-50000
+  while true; do
+    OPENCODE_PORT=$(shuf -i 40000-50000 -n 1)
+    if ! ss -tln 2>/dev/null | grep -q ":${OPENCODE_PORT} "; then
+      break
+    fi
+  done
+fi
+
+export OPENCODE_PORT
+export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
+echo "OpenCode API: $OPENCODE_API"
 
 # Check for agent instruction files in all locations agents search
 agents_found=false
@@ -116,23 +138,52 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
   }
 fi
 
+# Start PR polling daemon if in git repo
+# Daemon monitors PR status and notifies on changes
+if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
+  
+  # Cleanup function to kill daemon on shell exit
+  cleanup_pr_poll() {
+    if [[ -f "$PR_POLL_PID_FILE" ]]; then
+      local pid=$(cat "$PR_POLL_PID_FILE")
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        echo "Stopped PR polling daemon (PID $pid)"
+      fi
+      rm -f "$PR_POLL_PID_FILE"
+    fi
+  }
+  trap cleanup_pr_poll EXIT
+  
+  # Start daemon in background with logging
+  REPO_ROOT="$(git rev-parse --show-toplevel)"
+  PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
+  "$REPO_ROOT/tools/pr-poll" --daemon > "$PR_POLL_LOG" 2>&1 &
+  echo $! > "$PR_POLL_PID_FILE"
+  echo "Started PR polling daemon (PID $!, interval: 30s)"
+  echo "Logs: $PR_POLL_LOG"
+  echo "Disable with: PR_POLL_DAEMON=false"
+fi
+
 # Auto-launch opencode unless disabled
 # Skip if already in sandbox (prevent infinite loop)
+# Note: Don't use exec so background daemon (pr-poll) can survive
 if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
   echo "Already in sandbox, starting OpenCode directly..."
-  exec opencode
+  command opencode --port "${OPENCODE_PORT}"
 elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
   # Use sandbox if enabled (default: enabled)
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Launching OpenCode in sandbox (disable with AGENT_SANDBOX=false)..."
-    exec "$AGENT_SANDBOX_SCRIPT" opencode
+    "$AGENT_SANDBOX_SCRIPT" opencode --port "${OPENCODE_PORT}"
   else
-    exec opencode
+    command opencode --port "${OPENCODE_PORT}"
   fi
 else
   echo "OpenCode environment ready. Run 'opencode' to start."
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Sandbox enabled: use 'agent-sandbox opencode' or just 'opencode' will be sandboxed"
   fi
-  echo "Available commands: cclsp, smart-lint, smart-test, notify, bd"
+  echo "Available commands: cclsp, smart-lint, smart-test, notify, bd, anvil, pr-poll"
 fi

@@ -168,9 +168,10 @@ main() {
     local json_output=false
     local repo_dir=""
     local limit=100
-    # noReply=true for fire-and-forget notifications (doesn't block waiting for response)
-    # This prevents pr-poll daemon from hanging when agents are busy with long operations
-    local no_reply=true
+    # noReply=false means curl blocks until agent responds (even during long operations like sleep)
+    # This may cause pr-poll daemon to hang during long-running agent tasks
+    # BUT: noReply=true doesn't inject messages into active sessions - agent never sees them
+    local no_reply=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do

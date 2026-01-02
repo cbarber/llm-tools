@@ -68,8 +68,12 @@ get_pr_state() {
         return 1
     fi
     
-    # forge pr view --json now includes comment_count, just add timestamp
-    echo "$state" | jq '. + {last_check: now}'
+    # Get total comment count (general + review)
+    local comments=$(bash "${SCRIPT_DIR}/forge" pr comments "$pr_number" --json 2>/dev/null || echo '{"general":[],"review":[]}')
+    local comment_count=$(echo "$comments" | jq '(.general | length) + (.review | length)')
+    
+    # Add comment_count and timestamp to state
+    echo "$state" | jq --argjson count "$comment_count" '. + {comment_count: $count, last_check: now}'
 }
 
 # Check for changes and notify if needed
