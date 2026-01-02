@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Inject PR status updates into active OpenCode sessions
+# Usage: pr-notify [--dry-run] [pr-number] [custom-message]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse flags
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+    shift
+fi
+
+# Get PR number and custom message (optional)
+PR_NUMBER="${1:-}"
+CUSTOM_MESSAGE="${2:-}"
+
+# Get current repo directory and remote URL
+REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+# Get git remote URL to filter sessions working on this specific repo
+GIT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+if [[ -n "$GIT_REMOTE" ]]; then
+    # Extract repo path from URL (works for both SSH and HTTPS)
+    # git@github.com:owner/repo.git -> github.com/owner/repo
+    # https://github.com/owner/repo.git -> github.com/owner/repo
+    REPO_PATH=$(echo "$GIT_REMOTE" | sed -E 's#^(https://|git@)##' | sed 's#:#/#' | sed 's#\.git$##')
+else
+    REPO_PATH=""
+fi
+
+# Find all sessions in this repo using anvil
+SESSIONS=$(bash "${SCRIPT_DIR}/anvil" --list --repo "$REPO_DIR" --json 2>/dev/null)
+if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
+    echo "No sessions found in $REPO_DIR" >&2
+    exit 0
+fi
+
+# Get list of session IDs sorted by creation time (oldest first)
+ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r 'sort_by(.time.created) | .[].id')
+
+if [[ -z "$ACTIVE_SESSIONS" ]]; then
+    echo "No sessions found in $REPO_DIR" >&2
+    exit 0
+fi
+
+echo "Found sessions in $REPO_DIR:" >&2
+echo "$ACTIVE_SESSIONS" | while read sid; do echo "  - $sid" >&2; done
+
+# For each active session, check if it's working on a PR
+for SESSION_ID in $ACTIVE_SESSIONS; do
+    echo "" >&2
+    echo "Checking session $SESSION_ID..." >&2
+    
+    # Get recent messages using anvil
+    MESSAGES=$(bash "${SCRIPT_DIR}/anvil" --messages "$SESSION_ID" --limit 100 --json 2>/dev/null)
+    
+    # Only look for PR URLs containing our repo path (ignore generic "PR #N" mentions)
+    if [[ -n "$REPO_PATH" ]]; then
+        SESSION_PR=$(echo "$MESSAGES" | jq -r \
+            --arg repo "$REPO_PATH" \
+            '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
+             select(contains($repo)) | select(contains("/pull/")) | scan("/pull/([0-9]+)"; "g")] | 
+             flatten | unique | .[]' 2>/dev/null | tail -1)
+    else
+        # Fallback: accept any PR URL
+        SESSION_PR=$(echo "$MESSAGES" | jq -r \
+            '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
+             scan("/pull/([0-9]+)"; "g")] | 
+             flatten | unique | .[]' 2>/dev/null | tail -1)
+    fi
+    
+    if [[ -z "$SESSION_PR" ]]; then
+        echo "  No PR found in session messages" >&2
+        continue
+    fi
+    
+    echo "  Session is working on PR #$SESSION_PR" >&2
+    
+    # If specific PR requested, skip other PRs
+    if [[ -n "$PR_NUMBER" ]] && [[ "$SESSION_PR" != "$PR_NUMBER" ]]; then
+        echo "  Skipping (looking for PR #$PR_NUMBER)" >&2
+        continue
+    fi
+    
+    # Use custom message if provided, otherwise generate default
+    if [[ -n "$CUSTOM_MESSAGE" ]]; then
+        PR_CONTEXT="$CUSTOM_MESSAGE"
+    else
+        # Get PR details
+        PR_INFO=$(bash "${SCRIPT_DIR}/forge" pr view "$SESSION_PR" --json 2>/dev/null)
+        if [[ -z "$PR_INFO" ]]; then
+            echo "  Failed to get PR info" >&2
+            continue
+        fi
+        
+        # Check for new comments using JSON output
+        COMMENTS=$(bash "${SCRIPT_DIR}/forge" pr comments "$SESSION_PR" --json 2>/dev/null || echo "[]")
+        COMMENT_COUNT=$(echo "$COMMENTS" | jq 'length')
+        
+        # Format PR update context
+        PR_CONTEXT=$(cat <<EOF
+<pr-update>
+PR #$SESSION_PR Update:
+
+$(echo "$PR_INFO" | jq -r '"\(.title) - \(.state)"')
+
+Comments: $COMMENT_COUNT
+
+Run \`forge pr view $SESSION_PR\` for full details.
+</pr-update>
+EOF
+)
+    fi
+    
+    # Send message using anvil (unless dry-run)
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY-RUN] Would inject message to session $SESSION_ID" >&2
+        echo "  [DRY-RUN] Message preview:" >&2
+        echo "$PR_CONTEXT" | head -5 >&2
+        echo "  [DRY-RUN] Session ID: $SESSION_ID" >&2
+        echo "  [DRY-RUN] OPENCODE_API: ${OPENCODE_API:-not set}" >&2
+    else
+        echo "  Injecting PR update to session $SESSION_ID..." >&2
+        echo "  DEBUG: Using OPENCODE_API=${OPENCODE_API:-not set}" >&2
+        if bash "${SCRIPT_DIR}/anvil" --session "$SESSION_ID" "$PR_CONTEXT" 2>&1 | grep -q "✓"; then
+            echo "  ✓ PR update injected" >&2
+        else
+            echo "  ✗ Failed to inject" >&2
+        fi
+    fi
+done
+
+echo "" >&2
+echo "Done." >&2
