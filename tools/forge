@@ -242,8 +242,8 @@ pr_view() {
     case "$FORGE_TYPE" in
         github)
             if [[ "$json_output" == true ]]; then
-                local fields="${json_fields:-body,title,state,number,comments}"
-                gh pr view "$number" --json "$fields" | jq '. + {comment_count: (.comments | length)}'
+                local fields="${json_fields:-body,title,state,number}"
+                gh pr view "$number" --json "$fields"
             else
                 # Show PR metadata
                 gh pr view "$number"
@@ -257,6 +257,7 @@ pr_view() {
             ;;
         gitea)
             if [[ "$json_output" == true ]]; then
+                # TODO: Add comment_count like GitHub branch for consistency
                 run_tea pr "$number" --output json
             else
                 run_tea pr "$number"
