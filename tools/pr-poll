@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# PR polling daemon - monitors PR status and notifies on changes
+# Usage: pr-poll [--interval SECONDS] [--daemon]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_FILE="${REPO_DIR}/.pr-poll-state.json"
+INTERVAL=${PR_POLL_INTERVAL:-30}
+DAEMON_MODE=false
+
+# Get git remote URL to filter sessions working on this specific repo
+GIT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+if [[ -n "$GIT_REMOTE" ]]; then
+    # Extract repo path from URL (works for both SSH and HTTPS)
+    # git@github.com:owner/repo.git -> github.com/owner/repo
+    # https://github.com/owner/repo.git -> github.com/owner/repo
+    REPO_PATH=$(echo "$GIT_REMOTE" | sed -E 's#^(https://|git@)##' | sed 's#:#/#' | sed 's#\.git$##')
+else
+    REPO_PATH=""
+fi
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --interval)
+            INTERVAL="$2"
+            shift 2
+            ;;
+        --daemon)
+            DAEMON_MODE=true
+            shift
+            ;;
+        --help|-h)
+            cat <<EOF
+PR polling daemon - monitors PR status and notifies on changes
+
+Usage:
+  pr-poll                    # Run once, check for changes
+  pr-poll --daemon           # Run continuously (every 30s)
+  pr-poll --interval 60      # Custom interval in seconds
+
+State file: ${REPO_DIR}/.pr-poll-state.json
+
+Add .pr-poll-state.json to .gitignore
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Initialize state file if doesn't exist
+if [[ ! -f "$STATE_FILE" ]]; then
+    echo '{}' > "$STATE_FILE"
+fi
+
+# Get current PR state from forge
+get_pr_state() {
+    local pr_number="$1"
+    local state=$(bash "${SCRIPT_DIR}/forge" pr view "$pr_number" --json 2>/dev/null)
+    if [[ -z "$state" ]]; then
+        echo "{}"
+        return 1
+    fi
+    
+    # forge pr view --json now includes comment_count, just add timestamp
+    echo "$state" | jq '. + {last_check: now}'
+}
+
+# Check for changes and notify if needed
+check_pr() {
+    local pr_number="$1"
+    
+    # Get current state
+    local current_state=$(get_pr_state "$pr_number")
+    if [[ "$current_state" == "{}" ]]; then
+        echo "Failed to fetch PR #$pr_number state" >&2
+        return 1
+    fi
+    
+    # Get previous state from file
+    local previous_state=$(jq -r --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
+    
+    # Extract fields for comparison
+    local curr_pr_state=$(echo "$current_state" | jq -r '.state')
+    local curr_comments=$(echo "$current_state" | jq -r '.comment_count')
+    local prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
+    local prev_comments=$(echo "$previous_state" | jq -r '.comment_count // 0')
+    
+    # Detect changes
+    local changes=()
+    if [[ "$prev_pr_state" == "unknown" ]]; then
+        echo "First check for PR #$pr_number - no notification" >&2
+    else
+        if [[ "$curr_pr_state" != "$prev_pr_state" ]]; then
+            changes+=("Status changed: $prev_pr_state → $curr_pr_state")
+        fi
+        
+        if [[ "$curr_comments" -gt "$prev_comments" ]]; then
+            local new_count=$((curr_comments - prev_comments))
+            changes+=("$new_count new comment(s)")
+        fi
+    fi
+    
+    # Update state file
+    local new_state=$(jq \
+        --arg pr "$pr_number" \
+        --argjson state "$current_state" \
+        '.[$pr] = $state' \
+        "$STATE_FILE")
+    echo "$new_state" > "$STATE_FILE"
+    
+    # Notify if changes detected
+    if [[ ${#changes[@]} -gt 0 ]]; then
+        local title=$(echo "$current_state" | jq -r '.title')
+        local change_summary=$(printf '%s\n' "${changes[@]}")
+        
+        local notification=$(cat <<EOF
+<pr-update>
+🔔 PR #$pr_number Update:
+
+$title
+
+Changes:
+$change_summary
+
+Current status: $curr_pr_state
+Comments: $curr_comments
+
+Run \`forge pr view $pr_number\` for details.
+</pr-update>
+EOF
+)
+        
+        echo "Changes detected for PR #$pr_number:" >&2
+        echo "$change_summary" >&2
+        
+        # Send notification via pr-notify
+        echo "DEBUG: Calling pr-notify with PR #$pr_number" >&2
+        echo "DEBUG: OPENCODE_API=${OPENCODE_API:-not set}" >&2
+        bash "${SCRIPT_DIR}/pr-notify" "$pr_number" "$notification"
+    else
+        echo "No changes for PR #$pr_number" >&2
+    fi
+}
+
+# Find all PRs being worked on in active sessions
+find_active_prs() {
+    # Use anvil to list sessions in this repo
+    SESSIONS=$(bash "${SCRIPT_DIR}/anvil" --list --repo "$REPO_DIR" --json 2>/dev/null)
+    if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
+        return 0
+    fi
+    
+    # Find all sessions in this repo (search from oldest to newest)
+    # Don't filter by time - if a PR gets comments after hours of silence, we still want to notify
+    ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r \
+        'sort_by(.time.created) | .[].id')
+    
+    if [[ -z "$ACTIVE_SESSIONS" ]]; then
+        return 0
+    fi
+    
+    # Extract PR numbers from active sessions, filtering by repo URL
+    for SESSION_ID in $ACTIVE_SESSIONS; do
+        MESSAGES=$(bash "${SCRIPT_DIR}/anvil" --messages "$SESSION_ID" --limit 100 --json 2>/dev/null)
+        
+        # Only look for PR URLs containing our repo path (ignore generic "PR #N" mentions)
+        if [[ -n "$REPO_PATH" ]]; then
+            SESSION_PR=$(echo "$MESSAGES" | jq -r \
+                --arg repo "$REPO_PATH" \
+                '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
+                 select(contains($repo)) | select(contains("/pull/")) | scan("/pull/([0-9]+)"; "g")] | 
+                 flatten | unique | .[]' 2>/dev/null | tail -1)
+        else
+            # Fallback: accept any PR URL
+            SESSION_PR=$(echo "$MESSAGES" | jq -r \
+                '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
+                 scan("/pull/([0-9]+)"; "g")] | 
+                 flatten | unique | .[]' 2>/dev/null | tail -1)
+        fi
+        
+        if [[ -n "$SESSION_PR" ]]; then
+            echo "$SESSION_PR"
+        fi
+    done | sort -u
+}
+
+# Main polling loop
+poll_once() {
+    echo "Checking for PR updates..." >&2
+    
+    # Find active PRs
+    local prs=$(find_active_prs)
+    
+    if [[ -z "$prs" ]]; then
+        echo "No active PRs found in sessions" >&2
+        return 0
+    fi
+    
+    echo "Monitoring PRs: $prs" >&2
+    
+    # Check each PR (continue on failure to avoid daemon crash)
+    for pr in $prs; do
+        check_pr "$pr" || true
+    done
+}
+
+# Run daemon or single check
+if [[ "$DAEMON_MODE" == "true" ]]; then
+    echo "Starting PR poll daemon (interval: ${INTERVAL}s, repo: $REPO_DIR)" >&2
+    echo "State file: $STATE_FILE" >&2
+    echo "OPENCODE_API: ${OPENCODE_API:-NOT SET}" >&2
+    echo "Press Ctrl+C to stop" >&2
+    
+    CYCLE=0
+    while true; do
+        CYCLE=$((CYCLE + 1))
+        echo "=== Cycle $CYCLE at $(date) ===" >&2
+        poll_once
+        echo "Sleeping for ${INTERVAL}s..." >&2
+        sleep "$INTERVAL"
+    done
+else
+    poll_once
+fi
