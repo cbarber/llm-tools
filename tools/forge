@@ -242,8 +242,8 @@ pr_view() {
     case "$FORGE_TYPE" in
         github)
             if [[ "$json_output" == true ]]; then
-                local fields="${json_fields:-body,title,state,number}"
-                gh pr view "$number" --json "$fields"
+                local fields="${json_fields:-body,title,state,number,comments}"
+                gh pr view "$number" --json "$fields" | jq '. + {comment_count: (.comments | length)}'
             else
                 # Show PR metadata
                 gh pr view "$number"
