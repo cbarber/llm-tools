@@ -160,23 +160,17 @@ Based on PR feedback, the simpler approach is extending `temper` with new workfl
 
 Extend existing `temper` to accept event arguments instead of adding new commands:
 
-**Usage:** `temper <event>` where event is one of: `init`, `pre-edit`, `post-edit`, `post-push`
+**Usage:** `temper [section]` (existing) or `temper --event <event-name>` (new)
 
-1. **`temper init`** - Already exists, called by existing `.opencode/plugin/temper/index.ts`
-   - Shows workflow state at session start
+Using `--event` flag avoids conflating with existing section-based invocation.
+Backwards compatible with `temper init`, `temper commit`, etc.
 
-2. **`temper pre-edit`** - New event, show before file modifications
-   - Extract Development Guidelines from AGENTS.md
-   - Show git status (staged, unstaged, untracked)
+**Event-based invocation:**
+- **`temper --event session.created`** - Session start (existing behavior via `temper init`)
+- **`temper --event file.edited`** - After file modifications
+- **`temper --event tool.execute.before`** - Before tool execution
 
-3. **`temper post-edit`** - New event, show after modifications before commit
-   - Display commit guidance (new or fixup?)
-   - List uncommitted changes  
-   - Show commits since origin/main (for fixup context)
-
-4. **`temper post-push`** - New event, show after git push
-   - Detect PR association (branch tracking remote)
-   - Display "📡 Subscribed to PR #N" message
+Plugin passes OpenCode event names directly - no logic in plugin, all logic in temper.
 
 ### Phase 2: Extend Existing OpenCode Plugin
 
@@ -192,23 +186,21 @@ export const TemperPlugin: Plugin = async ({ client, $ }) => {
       await injectTemperContext(client, $, sessionID)
     },
     
-    "file.edited": async () => {
-      // New: call temper post-edit after file modifications
-      const output = await $`bash tools/temper post-edit`.text()
-      // Inject as synthetic message or display inline
+    "file.edited": async (event) => {
+      // New: pass event directly to temper
+      const output = await $`bash tools/temper --event file.edited`.text()
+      // Log event data to understand shape: await Bun.write("/tmp/event.log", JSON.stringify(event))
     },
     
-    "tool.execute.before": async (input) => {
-      // New: call temper pre-edit before edits
-      if (input.tool === "edit" || input.tool === "write") {
-        const output = await $`bash tools/temper pre-edit`.text()
-      }
+    "tool.execute.before": async (event) => {
+      // New: pass event directly to temper
+      const output = await $`bash tools/temper --event tool.execute.before`.text()
     }
   }
 }
 ```
 
-This extends existing work, not duplicates it.
+**Key principle:** Plugin is thin wrapper - just forwards events. All logic in temper for easier debugging.
 
 ### Phase 3: Simple PR Subscription Tracking
 
@@ -229,14 +221,13 @@ Investigate git-absorb for auto-fixup after core hooks proven valuable.
 
 ## Temper Events
 
-| Event | Trigger | Purpose |
-|-------|---------|---------|
-| `temper init` | Session start | Show workflow state (existing) |
-| `temper pre-edit` | Before file modification | Show guidelines, git status |
-| `temper post-edit` | After modification | Show commit guidance, uncommitted changes |
-| `temper post-push` | After git push | Show PR subscription |
+| Invocation | OpenCode Event | Purpose |
+|------------|----------------|---------|
+| `temper init` or `temper --event session.created` | `session.created` (future) | Show workflow state |
+| `temper --event file.edited` | `file.edited` | Show commit guidance after modifications |
+| `temper --event tool.execute.before` | `tool.execute.before` | Show guidelines before edits |
 
-All events extract from `## Workflow / ### <event>` in AGENTS.md.
+Temper maps event name to AGENTS.md section: `## Workflow / ### <event-name>`
 
 ## Workflow State (Simplified)
 
@@ -277,15 +268,15 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
    - ~~Validate hook triggers~~ Simplified to 3 sections
    - ~~Confirm Go vs Bash decision~~ Bash/temper extension wins
 
-2. **Extend temper with event argument** (30 min)
-   - Accept event argument: `init`, `pre-edit`, `post-edit`, `post-push`
-   - Call `extract_subsection` with event name
-   - Backwards compatible with existing `temper init`
+2. **Extend temper with --event flag** (30 min)
+   - Add `--event <event-name>` flag (e.g., `file.edited`, `tool.execute.before`)
+   - Map event name to AGENTS.md section: `## Workflow / ### <event-name>`
+   - Backwards compatible with existing `temper init` section-based usage
 
 3. **Add AGENTS.md workflow event sections** (1 hour)
-   - Write `### pre-edit` section with guidelines + git status
-   - Write `### post-edit` section with commit guidance
-   - Write `### post-push` section with PR subscription
+   - Write `### file.edited` section with commit guidance
+   - Write `### tool.execute.before` section with guidelines
+   - Use OpenCode event names directly for simplicity
 
 4. **Update forge for post-push hook** (30 min)
    - Detect PR number after push
@@ -293,9 +284,10 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
    - Write `.git/pr-subscription` file
 
 5. **Extend existing OpenCode temper plugin** (1 hour)
-   - Add `file.edited` handler calling `temper post-edit`
-   - Add `tool.execute.before` handler calling `temper pre-edit`
-   - Update `.opencode/plugin/temper/index.ts` (already exists)
+   - Add `file.edited` handler: `temper --event file.edited`
+   - Add `tool.execute.before` handler: `temper --event tool.execute.before`
+   - Log event data initially to understand structure
+   - Thin wrapper - all logic in temper bash script
 
 6. **Testing** (1-2 hours)
    - Test each temper section manually
@@ -304,10 +296,10 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
 
 ### Implementation Tasks
 
-- llm-tools-dt3: Extend temper to accept event arguments (P1)
-- llm-tools-qxq: Add workflow event sections to AGENTS.md (P1)
+- llm-tools-dt3: Add --event flag to temper, map to AGENTS.md sections (P1)
+- llm-tools-qxq: Add event sections to AGENTS.md using OpenCode event names (P1)
 - llm-tools-sly: Update forge for PR subscription tracking (P2)
-- llm-tools-enu: Extend existing OpenCode temper plugin for file.edited/tool.execute.before (P2)
+- llm-tools-enu: Extend .opencode/plugin/temper/index.ts with thin event forwarding (P2)
 
 ## Success Metrics
 
