@@ -91,8 +91,14 @@ ${output.trim()}
 export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   const injectedSessions = new Set<string>();
   const logPath = `${directory}/.opencode/event.log`;
-
-  console.log(`[temper] Plugin initialized, logPath: ${logPath}`);
+  const absoluteLogPath = `/home/cbarber/src/llm-tools/.opencode/event.log`;
+  
+  // Test that plugin is loaded by writing to known location
+  try {
+    await Bun.write(absoluteLogPath, `[${new Date().toISOString()}] TemperPlugin loaded\n`, { append: true });
+  } catch (e) {
+    // Silent fail
+  }
 
   // Helper to log event data
   const logEvent = async (eventName: string, data: any) => {
@@ -146,6 +152,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
 
       injectedSessions.add(sessionID);
 
+      // Log that chat.message fired
+      try {
+        await Bun.write(absoluteLogPath, `[${new Date().toISOString()}] chat.message fired for session ${sessionID}\n`, { append: true });
+      } catch (e) {}
+
       // Inject using the same model/agent as the user message
       await injectTemperContext(client, $, sessionID, {
         model: output.message.model,
@@ -154,14 +165,35 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
     },
 
     "file.edited": async (input, output) => {
+      // Log with absolute path
+      try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] file.edited\n${JSON.stringify({ input, output }, null, 2)}\n`;
+        await Bun.write(absoluteLogPath, logEntry, { append: true });
+      } catch (e) {}
+      
       await logEvent("file.edited", { input, output });
     },
 
     "tool.execute.before": async (input, output) => {
+      // Log with absolute path
+      try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.before\n${JSON.stringify({ input, output }, null, 2)}\n`;
+        await Bun.write(absoluteLogPath, logEntry, { append: true });
+      } catch (e) {}
+      
       await logEvent("tool.execute.before", { input, output });
     },
 
     "tool.execute.after": async (input, output) => {
+      // Log with absolute path
+      try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.after\n${JSON.stringify({ input, output }, null, 2)}\n`;
+        await Bun.write(absoluteLogPath, logEntry, { append: true });
+      } catch (e) {}
+      
       await logEvent("tool.execute.after", { input, output });
     },
   };
