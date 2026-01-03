@@ -8,6 +8,7 @@ show_help() {
 temper - Extract workflow subsections from AGENTS.md
 
 Usage: temper [COMMAND]
+       temper --event EVENT_NAME
 
 Commands:
   init            Execute first bash block, show remaining text (default)
@@ -16,6 +17,11 @@ Commands:
   pull-request    Alias for pr
   complete        Show session completion workflow
   help            Show this help
+
+Options:
+  --event NAME    Extract section matching event pattern in header
+                  Example: temper --event pre-edit
+                  Matches: ### pre-edit (edit|write)
 
 Environment:
   AGENTS_MD       Path to AGENTS.md (default: AGENTS.md)
@@ -30,26 +36,24 @@ extract_subsection() {
     return 1
   fi
   
-  awk -v section="### $section_name" '
+  awk -v section="$section_name" '
     /^## Workflow$/ { in_workflow=1; next }
-    in_workflow && $0 == section { in_section=1; next }
+    in_workflow && /^### / {
+      if (match($0, /^### ([^ ]+)/, parts) && parts[1] == section) {
+        in_section=1
+        next
+      }
+    }
     in_workflow && in_section && /^###/ { exit }
     in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
     in_section { print }
   ' "$AGENTS_MD"
 }
 
-execute_init() {
-  set +o pipefail  # Disable pipefail to handle jq failures gracefully
+execute_bash_block() {
+  local content="$1"
   
-  local content
-  content=$(extract_subsection "init")
-  
-  if [[ -z "$content" ]]; then
-    echo "No init workflow found in $AGENTS_MD" >&2
-    set -o pipefail
-    return 1
-  fi
+  set +o pipefail
   
   local in_bash_block=0
   local bash_code=""
@@ -57,12 +61,13 @@ execute_init() {
   local found_first_block=0
   
   while IFS= read -r line; do
-    if [[ "$line" =~ ^\`\`\`bash$ ]]; then
-      in_bash_block=1
-      continue
-    elif [[ "$line" =~ ^\`\`\`$ ]] && [[ $in_bash_block -eq 1 ]]; then
-      in_bash_block=0
-      found_first_block=1
+    if [[ "$line" =~ ^\`\`\`(bash)?$ ]]; then
+      if [[ $in_bash_block -eq 1 ]]; then
+        in_bash_block=0
+        found_first_block=1
+      else
+        in_bash_block=1
+      fi
       continue
     fi
     
@@ -81,11 +86,70 @@ execute_init() {
     echo "$remaining_text"
   fi
   
-  set -o pipefail  # Re-enable pipefail
+  set -o pipefail
+}
+
+extract_event_section() {
+  local event_string="$1"
+  local debug="${TEMPER_DEBUG:-0}"
+  
+  if [[ ! -f "$AGENTS_MD" ]]; then
+    echo "Error: $AGENTS_MD not found" >&2
+    return 1
+  fi
+  
+  [[ "$debug" == "1" ]] && echo "[temper] Matching event: $event_string" >&2
+  
+  local content
+  content=$(awk -v event="$event_string" -v debug="$debug" '
+    /^##+ / {
+      if (match($0, /\(([^)]+)\)/, parts)) {
+        pattern = parts[1]
+        
+        if (debug == "1") {
+          print "[temper] Checking pattern: " pattern > "/dev/stderr"
+        }
+        
+        if (event ~ pattern) {
+          if (debug == "1") {
+            print "[temper] MATCH: " pattern > "/dev/stderr"
+          }
+          in_section=1
+          next
+        }
+      }
+    }
+    in_section && /^##+ / { exit }
+    in_section { print }
+  ' "$AGENTS_MD")
+  
+  execute_bash_block "$content"
+}
+
+execute_init() {
+  local content
+  content=$(extract_subsection "init")
+  
+  if [[ -z "$content" ]]; then
+    echo "No init workflow found in $AGENTS_MD" >&2
+    return 1
+  fi
+  
+  execute_bash_block "$content"
 }
 
 main() {
   local command="${1:-init}"
+  
+  # Handle --event flag
+  if [[ "$command" == "--event" ]]; then
+    if [[ -z "${2:-}" ]]; then
+      echo "Error: --event requires an event name" >&2
+      return 1
+    fi
+    extract_event_section "$2"
+    return
+  fi
   
   case "$command" in
     init)

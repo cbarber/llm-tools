@@ -96,10 +96,16 @@ EOF
   echo "Created opencode.json with cclsp MCP server and opencode-beads@0.3.0 plugin"
 fi
 
-# Add temper plugin to existing opencode.json if not already present
+# Copy temper plugin from nix store if not already present
+if [[ ! -d ".opencode/plugin/temper" ]] && [[ -n "${OPENCODE_PLUGIN_TEMPER_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_TEMPER_DIR" ]]; then
+  mkdir -p .opencode/plugin
+  cp -r "$OPENCODE_PLUGIN_TEMPER_DIR" .opencode/plugin/
+  echo "Copied temper plugin from nix store to .opencode/plugin/temper"
+fi
+
+# Add temper plugin to opencode.json if not already present
 if [[ -f "opencode.json" ]] && ! grep -q ".opencode/plugin/temper" opencode.json 2>/dev/null; then
   if [[ -d ".opencode/plugin/temper" ]]; then
-    # Add local temper plugin
     tmp=$(mktemp)
     jq '.plugin += ["./.opencode/plugin/temper"]' opencode.json > "$tmp" && mv "$tmp" opencode.json
     echo "Added temper plugin to opencode.json"
