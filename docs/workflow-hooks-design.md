@@ -56,33 +56,33 @@ Current bash tooling (`temper`, `forge`, `anvil`) is reactive - agents must reme
 ```bash
 # Pre-edit hook
 pre_edit() {
-    echo "## Workflow Guidelines"
-    grep "^## Development Guidelines" AGENTS.md
+    echo "## Development Guidelines"
+    # Use temper to extract specific section
+    awk '/^## Development Guidelines$/,/^## [^#]/' AGENTS.md
     echo ""
     echo "## Current Git Status"
     git status --short
 }
 
-# Post-edit hook (detect mixed concerns)
+# Post-edit hook (commit guidance)
 post_edit() {
-    local changed_files=$(git diff --name-only)
-    local concerns=0
-    
-    # Heuristic: count concern types by file patterns
-    echo "$changed_files" | grep -q "\.md$" && ((concerns++))
-    echo "$changed_files" | grep -q "\.sh$" && ((concerns++))
-    echo "$changed_files" | grep -q "\.nix$" && ((concerns++))
-    
-    if [[ $concerns -gt 1 ]]; then
-        echo "⚠️  Multiple concerns detected. Consider atomic commits:"
-        echo "$changed_files"
-    fi
+    echo "## Commit Guidance"
+    echo ""
+    echo "Uncommitted changes:"
+    git status --short
+    echo ""
+    echo "Commits since origin/main (for fixup context):"
+    git log --oneline origin/main..HEAD
+    echo ""
+    echo "Commit as: new atomic commit or fixup to existing commit above"
 }
 ```
 
-### Option 2: Go-Based Workflow Engine (Recommended)
+### Option 2: Go-Based Workflow Engine (Overengineered)
 
 **Approach:** New `workflows` tool in Go with MCP server integration
+
+**Why not recommended:** MCP servers don't receive events proactively - agents must call them explicitly. Go engine adds complexity without solving the core problem of getting agents to invoke hooks at the right time.
 
 **Pros:**
 - Event-driven hook system
@@ -152,121 +152,134 @@ func (h *PreEditHook) Execute(ctx WorkflowContext) error {
 
 ## Recommended Approach
 
-**Hybrid: Go workflow engine + MCP server + bash tool integration**
+**Enhanced Temper: Extend bash tooling with new workflow sections**
 
-### Phase 1: Core Workflow Engine (Go)
-- Git operations library (go-git)
-- Hook system with defined triggers
-- State management (PR subscriptions, workflow context)
-- JSON output for all operations
+Based on PR feedback, the simpler approach is extending `temper` with new workflow sections rather than building a Go engine. MCP servers don't receive events proactively, so hooks must be invoked explicitly by agents.
 
-### Phase 2: Essential Hooks
-1. **Pre-Edit Hook**
-   - Show development guidelines (terseness, atomicity)
-   - Display git status (staged, unstaged, untracked)
-   - Warn about mixed concerns
+### Phase 1: Extend Temper with New Sections
 
-2. **Post-Edit Hook**
-   - Detect multi-concern changes (heuristics + LLM?)
-   - Suggest commit or fixup
-   - Show uncommitted change summary
+Add new workflow sections to AGENTS.md:
 
-3. **Post-Push Hook**
-   - Detect PR association (branch tracking)
-   - Display "📡 Subscribed to PR #N"
-   - Store subscription in workflow state
+1. **`temper pre-edit`** - Show before file modifications
+   - Extract and display Development Guidelines from AGENTS.md using existing logic
+   - Show git status (staged, unstaged, untracked)
+   - Simpler than Go: leverages existing temper pattern
 
-### Phase 3: MCP Server Integration
-- Expose workflow state to agents
-- Hook invocation from agent context
-- Auto-inject workflow messages
+2. **`temper post-edit`** - Show after file modifications, before commit
+   - Display commit guidance (new or fixup?)
+   - List uncommitted changes
+   - Show commits since origin/main (for fixup context)
+   - Simpler reminder, not complex heuristics
 
-### Phase 4: Git-Absorb Integration
-- Research git-absorb for auto-fixup
-- Implement non-interactive fixup detection
-- Integrate into post-edit hook
+3. **`temper post-push`** - Show after git push
+   - Detect PR association (branch tracking remote)
+   - Display "📡 Subscribed to PR #N" message
+   - Make PR subscription explicit in session
 
-## Hook Triggers
+### Phase 2: OpenCode Plugin Integration (Pre-Edit)
 
-| Hook | Trigger | Purpose |
-|------|---------|---------|
-| pre-edit | Before file modification | Show guidelines, git status |
-| post-edit | After file modification | Detect mixed concerns, nudge commit |
-| pre-commit | Before `git commit` | Validate atomic nature |
-| post-commit | After `git commit` | Update workflow state |
-| pre-push | Before `git push` | Check commit quality |
-| post-push | After `git push` | Subscribe to PR, update state |
+For OpenCode to auto-invoke pre-edit hooks, investigate plugin capabilities:
+- Does OpenCode support pre-edit hooks in plugins?
+- Can opencode-beads plugin be extended for this?
+- Alternative: Document manual invocation pattern
 
-## Workflow State Schema
+### Phase 3: Simple PR Subscription Tracking
 
-```json
-{
-  "current_branch": "feature/foo",
-  "pr_subscriptions": [
-    {
-      "number": 12,
-      "branch": "feature/foo",
-      "subscribed_at": "2026-01-03T04:00:00Z"
-    }
-  ],
-  "last_edit": {
-    "timestamp": "2026-01-03T04:05:00Z",
-    "files_changed": ["tools/forge", "AGENTS.md"],
-    "concerns_detected": ["tooling", "docs"]
-  },
-  "commits_since_push": 2,
-  "uncommitted_changes": true
-}
+Post-push hook stores minimal state:
+```bash
+# After git push
+PR_NUM=$(forge pr view --json | jq -r '.number // empty')
+if [[ -n "$PR_NUM" ]]; then
+    echo "📡 Subscribed to PR #$PR_NUM"
+    # Store for anvil routing (simple file, not SQLite)
+    echo "$PR_NUM" > .git/pr-subscription
+fi
 ```
+
+### Phase 4: Git-Absorb Research (Optional)
+
+Investigate git-absorb for auto-fixup after core hooks proven valuable.
+
+## Temper Sections (Workflow Hooks)
+
+| Section | Agent Invocation | Purpose |
+|---------|------------------|---------|
+| `temper pre-edit` | Before file modification | Show guidelines from AGENTS.md, display git status |
+| `temper post-edit` | After modification, before commit | Show commit guidance, uncommitted changes, commits since origin/main |
+| `temper post-push` | After git push | Detect PR, display subscription message |
+
+All sections follow existing temper pattern: extract from `## Workflow` in AGENTS.md.
+
+## Workflow State (Simplified)
+
+No complex JSON schema. Simple file-based state:
+
+```bash
+# .git/pr-subscription (created by temper post-push)
+13
+
+# Read by anvil for PR routing
+PR_NUM=$(cat .git/pr-subscription 2>/dev/null || echo "")
+```
+
+Minimal state = minimal complexity. No SQLite, no JSON parsing.
 
 ## Integration with Existing Tools
 
 ### Temper
-- Keep current workflow doc extraction
-- Add hook invocation for workflow sections
-- Call Go workflow engine for state queries
+- Add new sections: `pre-edit`, `post-edit`, `post-push`
+- Each section extracts from `## Workflow` in AGENTS.md
+- `post-push` writes `.git/pr-subscription` file
+- No Go engine needed
 
 ### Forge
-- Add `forge pr subscribe` command
-- Call Go workflow engine for PR state
-- Integrate post-push hook
+- `forge pr view` already shows PR number
+- `temper post-push` uses this to detect subscription
+- No new forge commands needed
 
 ### Anvil
-- Query workflow state for PR routing
-- Subscribe to workflow state changes
-- Route based on explicit subscriptions
+- Read `.git/pr-subscription` for routing decisions
+- Simple file read, no API calls
+- Explicit subscription from temper post-push
 
 ## Development Plan
 
-1. **Design validation** (this doc)
-   - Review with stakeholders
-   - Validate hook triggers
-   - Confirm Go vs Bash decision
+1. **Design validation** (this doc) ✅
+   - ~~Review with stakeholders~~ PR #13 feedback received
+   - ~~Validate hook triggers~~ Simplified to 3 sections
+   - ~~Confirm Go vs Bash decision~~ Bash/temper extension wins
 
-2. **Prototype Go engine** (1-2 days)
-   - Basic hook system
-   - Git status integration
-   - JSON output
+2. **Extend temper with new sections** (1-2 hours)
+   - Add `pre-edit`, `post-edit`, `post-push` commands
+   - Follow existing `extract_subsection` pattern
+   - No new abstractions needed
 
-3. **Implement core hooks** (2-3 days)
-   - Pre-edit, post-edit, post-push
-   - Multi-concern detection
-   - PR subscription tracking
+3. **Add AGENTS.md workflow sections** (1 hour)
+   - Write `### pre-edit` section with guidelines extraction
+   - Write `### post-edit` section with commit guidance
+   - Write `### post-push` section with PR subscription
 
-4. **MCP server** (1-2 days)
-   - Workflow state queries
-   - Hook invocation
-   - Session integration
+4. **Update forge for post-push hook** (30 min)
+   - Detect PR number after push
+   - Display "📡 Subscribed to PR #N"
+   - Write `.git/pr-subscription` file
 
-5. **Git-absorb research** (1 day)
-   - Evaluate for llm-tools workflow
-   - Non-interactive usage
-   - Integration approach
+5. **OpenCode plugin investigation** (1-2 hours)
+   - Check if opencode supports pre-edit hooks
+   - Investigate extending opencode-beads plugin
+   - Document manual invocation if no plugin support
 
-6. **Integration testing** (2-3 days)
-   - Test with real agent sessions
-   - Validate hook timing
-   - Measure impact on commit quality
+6. **Testing** (1-2 hours)
+   - Test each temper section manually
+   - Validate PR subscription file creation
+   - Measure impact on agent workflow
+
+### Implementation Tasks
+
+- llm-tools-dt3: Extend temper with three new sections (P1)
+- llm-tools-qxq: Add workflow sections to AGENTS.md (P1)
+- llm-tools-sly: Update forge for PR subscription tracking (P2)
+- llm-tools-enu: Investigate OpenCode pre-edit plugin support (P3)
 
 ## Success Metrics
 
