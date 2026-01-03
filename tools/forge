@@ -469,9 +469,22 @@ pr_comments() {
                 local general_comments
                 general_comments=$(gh api "repos/{owner}/{repo}/issues/${number}/comments" --jq '.[] | "[general] @\(.user.login)\n\(.body)\n"' 2>/dev/null || echo "")
                 
-                # Fetch review comments (code-specific)
+                # Fetch review comments with threading context
+                local review_comments_raw
+                review_comments_raw=$(gh api "repos/{owner}/{repo}/pulls/${number}/comments" 2>/dev/null || echo "[]")
+                
+                # Build comment lookup map and format with threading context
                 local review_comments
-                review_comments=$(gh api "repos/{owner}/{repo}/pulls/${number}/comments" --jq '.[] | "[\(.id)] \(.path):\(.original_start_line // .start_line // .line)-\(.original_line // .line) @\(.user.login)\n\(.body)\n\(.diff_hunk)\n"' 2>/dev/null || echo "")
+                review_comments=$(echo "$review_comments_raw" | jq -r '
+                    # Build lookup map: id -> comment
+                    (reduce .[] as $c ({}; .[$c.id | tostring] = $c)) as $lookup |
+                    # Format each comment with reply context
+                    .[] | 
+                    (if .in_reply_to_id then 
+                        "  ↳ Reply to [\($lookup[.in_reply_to_id | tostring].id)] @\($lookup[.in_reply_to_id | tostring].user.login): \($lookup[.in_reply_to_id | tostring].body[:60])...\n" 
+                     else "" end) +
+                    "[\(.id)] \(.path):\(.original_start_line // .start_line // .line)-\(.original_line // .line) @\(.user.login)\n\(.body)\n\(.diff_hunk)\n"
+                ' 2>/dev/null || echo "")
                 
                 # Output both
                 if [[ -n "$general_comments" ]]; then
@@ -597,6 +610,10 @@ issue_show() {
 
 # Main command router
 case "${1:-}" in
+    --type)
+        # Return forge type for scripts
+        echo "$FORGE_TYPE"
+        ;;
     pr)
         case "${2:-}" in
             create) shift 2; pr_create "$@" ;;
