@@ -3,3 +3,4 @@
 .pr-poll.pid
 .pr-poll.log
 .direnv
+.opencode/event.log

@@ -27,15 +27,11 @@ cp agents/templates/default.md agents/templates/cbarber.md
 
 See `agents/templates/README.md` for details.
 
-## Development Guidelines
+## Development Guidelines 
 
 * Be succinct. Only provide examples if necessary
-* Code must be self-documenting. Comments explain WHY, not WHAT
-* Avoid function side effects. Clear input → output
-* Avoid deep nesting. Return early
 * Be strategic. Plan first, ask questions, then execute
 * Challenge assumptions with evidence
-* Delete code rather than commenting it out
 * **When git commands fail, STOP and ask for help**
 
 ## Repository Structure
@@ -189,8 +185,6 @@ Use `nix-init` to package new tools:
 
 This allows shared MCP servers and custom tooling across multiple agent environments.
 
-
-
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
@@ -275,7 +269,20 @@ fi
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
 
-### commit
+### edit (tool.execute.before:edit|write)
+
+* Code must be self-documenting. Comments explain WHY, not WHAT
+* Avoid function side effects. Clear input → output
+* Avoid deep nesting. Return early
+* Delete code rather than commenting it out
+
+### commit (tool.execute.after:edit|write)
+
+```
+git log --oneline origin/main...
+```
+
+Commit after edit. An atomic commit is an operation that applies a set of distinct changes as a single operation. Either target an existing unmerged commit with a fixup or create a new commit for this change.
 
 Format: `<type>(<scope>): <subject>`
 
@@ -302,7 +309,7 @@ Linux sandbox only mounted legacy file, breaking XDG-only users.
 Authored By: claude-code (claude-3.7-sonnet)
 ```
 
-### pull-request
+### pull-request (tool.execute.after:bash:.*git push.*)
 
 **IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
 
