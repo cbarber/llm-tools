@@ -8,6 +8,7 @@ show_help() {
 temper - Extract workflow subsections from AGENTS.md
 
 Usage: temper [COMMAND]
+       temper --event <event-name>
 
 Commands:
   init            Execute first bash block, show remaining text (default)
@@ -17,8 +18,17 @@ Commands:
   complete        Show session completion workflow
   help            Show this help
 
+Options:
+  --event <name>  Extract section based on event name (e.g., file.edited)
+                  Maps to ## Workflow / ### <event-name> in AGENTS.md
+
 Environment:
   AGENTS_MD       Path to AGENTS.md (default: AGENTS.md)
+
+Examples:
+  temper init                          # Section-based (existing)
+  temper --event file.edited           # Event-based (new)
+  temper --event tool.execute.before   # Event-based (new)
 EOF
 }
 
@@ -86,6 +96,17 @@ execute_init() {
 
 main() {
   local command="${1:-init}"
+  
+  # Handle --event flag
+  if [[ "$command" == "--event" ]]; then
+    if [[ -z "${2:-}" ]]; then
+      echo "Error: --event requires an event name" >&2
+      show_help >&2
+      return 1
+    fi
+    extract_subsection "$2"
+    return $?
+  fi
   
   case "$command" in
     init)
