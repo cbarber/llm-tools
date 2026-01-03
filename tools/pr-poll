@@ -173,11 +173,11 @@ find_active_prs() {
         return 0
     fi
     
-    # Find all sessions in this repo (search from newest to oldest)
+    # Find all sessions in this repo (sort by last update for multi-session PR work)
     # Don't filter by time - if a PR gets comments after hours of silence, we still want to notify
-    # Reverse order gives preference to most recent session when PR spans multiple sessions
+    # Sort by updated time to prioritize most recently active session
     ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r \
-        'sort_by(.time.created) | reverse | .[].id')
+        'sort_by(.time.updated) | reverse | .[].id')
     
     if [[ -z "$ACTIVE_SESSIONS" ]]; then
         return 0
@@ -187,18 +187,20 @@ find_active_prs() {
     for SESSION_ID in $ACTIVE_SESSIONS; do
         MESSAGES=$(bash "${SCRIPT_DIR}/anvil" --messages "$SESSION_ID" --limit 100 --json 2>/dev/null)
         
-        # Only look for PR URLs containing our repo path (ignore generic "PR #N" mentions)
+        # Look for PR references: full URLs with repo path, or "PR #NUMBER" mentions
         if [[ -n "$REPO_PATH" ]]; then
+            # Prefer full PR URLs with repo path, fall back to "PR #NUMBER" pattern
             SESSION_PR=$(echo "$MESSAGES" | jq -r \
                 --arg repo "$REPO_PATH" \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
-                 select(contains($repo)) | select(contains("/pull/")) | scan("/pull/([0-9]+)"; "g")] | 
+                 (select(contains($repo) and contains("/pull/")) | scan("/pull/([0-9]+)"; "g")), 
+                 (scan("PR #([0-9]+)"; "gi"))] | 
                  flatten | unique | .[]' 2>/dev/null | tail -1)
         else
-            # Fallback: accept any PR URL
+            # Fallback: accept PR URLs or "PR #NUMBER" pattern
             SESSION_PR=$(echo "$MESSAGES" | jq -r \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
-                 scan("/pull/([0-9]+)"; "g")] | 
+                 scan("(/pull/|PR #)([0-9]+)"; "gi") | .[1]] | 
                  flatten | unique | .[]' 2>/dev/null | tail -1)
         fi
         
