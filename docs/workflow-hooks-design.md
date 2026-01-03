@@ -156,50 +156,59 @@ func (h *PreEditHook) Execute(ctx WorkflowContext) error {
 
 Based on PR feedback, the simpler approach is extending `temper` with new workflow sections rather than building a Go engine. MCP servers don't receive events proactively, so hooks must be invoked explicitly by agents.
 
-### Phase 1: Extend Temper with New Sections
+### Phase 1: Extend Temper with Event Arguments
 
-Add new workflow sections to AGENTS.md:
+Extend existing `temper` to accept event arguments instead of adding new commands:
 
-1. **`temper pre-edit`** - Show before file modifications
-   - Extract and display Development Guidelines from AGENTS.md using existing logic
+**Usage:** `temper <event>` where event is one of: `init`, `pre-edit`, `post-edit`, `post-push`
+
+1. **`temper init`** - Already exists, called by existing `.opencode/plugin/temper/index.ts`
+   - Shows workflow state at session start
+
+2. **`temper pre-edit`** - New event, show before file modifications
+   - Extract Development Guidelines from AGENTS.md
    - Show git status (staged, unstaged, untracked)
-   - Simpler than Go: leverages existing temper pattern
 
-2. **`temper post-edit`** - Show after file modifications, before commit
+3. **`temper post-edit`** - New event, show after modifications before commit
    - Display commit guidance (new or fixup?)
-   - List uncommitted changes
+   - List uncommitted changes  
    - Show commits since origin/main (for fixup context)
-   - Simpler reminder, not complex heuristics
 
-3. **`temper post-push`** - Show after git push
+4. **`temper post-push`** - New event, show after git push
    - Detect PR association (branch tracking remote)
    - Display "📡 Subscribed to PR #N" message
-   - Make PR subscription explicit in session
 
-### Phase 2: OpenCode Plugin Integration
+### Phase 2: Extend Existing OpenCode Plugin
 
-OpenCode plugins support `file.edited` events ([docs](https://opencode.ai/docs/plugins/#events)):
+Existing plugin at `.opencode/plugin/temper/index.ts` already calls `temper init`.
+Extend it to call `temper <event>` for file/tool events:
 
 ```typescript
-// .opencode/plugin/workflow-hooks.ts
-export const WorkflowHooks = async ({ $, directory }) => {
+// Extend .opencode/plugin/temper/index.ts
+export const TemperPlugin: Plugin = async ({ client, $ }) => {
   return {
-    "file.edited": async ({ path }) => {
-      // Run temper post-edit after file modifications
-      await $`temper post-edit`
+    "chat.message": async () => {
+      // Existing: inject temper init at session start
+      await injectTemperContext(client, $, sessionID)
     },
     
-    "tool.execute.before": async (input, output) => {
-      // Run temper pre-edit before edits
+    "file.edited": async () => {
+      // New: call temper post-edit after file modifications
+      const output = await $`bash tools/temper post-edit`.text()
+      // Inject as synthetic message or display inline
+    },
+    
+    "tool.execute.before": async (input) => {
+      // New: call temper pre-edit before edits
       if (input.tool === "edit" || input.tool === "write") {
-        await $`temper pre-edit`
+        const output = await $`bash tools/temper pre-edit`.text()
       }
     }
   }
 }
 ```
 
-This makes workflow hooks automatic for OpenCode - no manual invocation needed.
+This extends existing work, not duplicates it.
 
 ### Phase 3: Simple PR Subscription Tracking
 
@@ -218,15 +227,16 @@ fi
 
 Investigate git-absorb for auto-fixup after core hooks proven valuable.
 
-## Temper Sections (Workflow Hooks)
+## Temper Events
 
-| Section | Agent Invocation | Purpose |
-|---------|------------------|---------|
-| `temper pre-edit` | Before file modification | Show guidelines from AGENTS.md, display git status |
-| `temper post-edit` | After modification, before commit | Show commit guidance, uncommitted changes, commits since origin/main |
-| `temper post-push` | After git push | Detect PR, display subscription message |
+| Event | Trigger | Purpose |
+|-------|---------|---------|
+| `temper init` | Session start | Show workflow state (existing) |
+| `temper pre-edit` | Before file modification | Show guidelines, git status |
+| `temper post-edit` | After modification | Show commit guidance, uncommitted changes |
+| `temper post-push` | After git push | Show PR subscription |
 
-All sections follow existing temper pattern: extract from `## Workflow` in AGENTS.md.
+All events extract from `## Workflow / ### <event>` in AGENTS.md.
 
 ## Workflow State (Simplified)
 
@@ -267,13 +277,13 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
    - ~~Validate hook triggers~~ Simplified to 3 sections
    - ~~Confirm Go vs Bash decision~~ Bash/temper extension wins
 
-2. **Extend temper with new sections** (1-2 hours)
-   - Add `pre-edit`, `post-edit`, `post-push` commands
-   - Follow existing `extract_subsection` pattern
-   - No new abstractions needed
+2. **Extend temper with event argument** (30 min)
+   - Accept event argument: `init`, `pre-edit`, `post-edit`, `post-push`
+   - Call `extract_subsection` with event name
+   - Backwards compatible with existing `temper init`
 
-3. **Add AGENTS.md workflow sections** (1 hour)
-   - Write `### pre-edit` section with guidelines extraction
+3. **Add AGENTS.md workflow event sections** (1 hour)
+   - Write `### pre-edit` section with guidelines + git status
    - Write `### post-edit` section with commit guidance
    - Write `### post-push` section with PR subscription
 
@@ -282,10 +292,10 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
    - Display "📡 Subscribed to PR #N"
    - Write `.git/pr-subscription` file
 
-5. **Create OpenCode workflow-hooks plugin** (1-2 hours)
-   - Hook `file.edited` event to run `temper post-edit`
-   - Hook `tool.execute.before` for edit/write to run `temper pre-edit`
-   - Package as `.opencode/plugin/workflow-hooks.ts`
+5. **Extend existing OpenCode temper plugin** (1 hour)
+   - Add `file.edited` handler calling `temper post-edit`
+   - Add `tool.execute.before` handler calling `temper pre-edit`
+   - Update `.opencode/plugin/temper/index.ts` (already exists)
 
 6. **Testing** (1-2 hours)
    - Test each temper section manually
@@ -294,10 +304,10 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
 
 ### Implementation Tasks
 
-- llm-tools-dt3: Extend temper with three new sections (P1)
-- llm-tools-qxq: Add workflow sections to AGENTS.md (P1)
+- llm-tools-dt3: Extend temper to accept event arguments (P1)
+- llm-tools-qxq: Add workflow event sections to AGENTS.md (P1)
 - llm-tools-sly: Update forge for PR subscription tracking (P2)
-- llm-tools-enu: Create OpenCode workflow-hooks plugin (P2) - updated scope after confirming file.edited event support
+- llm-tools-enu: Extend existing OpenCode temper plugin for file.edited/tool.execute.before (P2)
 
 ## Success Metrics
 
