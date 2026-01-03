@@ -169,17 +169,8 @@ fi
 # Auto-launch opencode unless disabled
 # Skip if already in sandbox (prevent infinite loop)
 # Note: Don't use exec so background daemon (pr-poll) can survive
-if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
-  echo "Already in sandbox, starting OpenCode directly..."
-  command opencode --port "${OPENCODE_PORT}"
-elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
-  # Use sandbox if enabled (default: enabled)
-  if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-    echo "Launching OpenCode in sandbox (disable with AGENT_SANDBOX=false)..."
-    "$AGENT_SANDBOX_SCRIPT" opencode --port "${OPENCODE_PORT}"
-  else
-    command opencode --port "${OPENCODE_PORT}"
-  fi
+if [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
+  opencode
 else
   echo "OpenCode environment ready. Run 'opencode' to start."
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
