@@ -88,8 +88,20 @@ ${output.trim()}
   }
 }
 
-export const TemperPlugin: Plugin = async ({ client, $ }) => {
+export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   const injectedSessions = new Set<string>();
+  const logPath = `${directory}/.opencode/event.log`;
+
+  // Helper to log event data
+  const logEvent = async (eventName: string, data: any) => {
+    try {
+      const timestamp = new Date().toISOString();
+      const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] ${eventName}\n${JSON.stringify(data, null, 2)}\n`;
+      await Bun.write(logPath, logEntry, { append: true });
+    } catch (error) {
+      console.error(`[temper] Failed to log event ${eventName}:`, error);
+    }
+  };
 
   return {
     "chat.message": async (_input, output) => {
@@ -129,6 +141,18 @@ export const TemperPlugin: Plugin = async ({ client, $ }) => {
         model: output.message.model,
         agent: output.message.agent,
       });
+    },
+
+    "file.edited": async (input, output) => {
+      await logEvent("file.edited", { input, output });
+    },
+
+    "tool.execute.before": async (input, output) => {
+      await logEvent("tool.execute.before", { input, output });
+    },
+
+    "tool.execute.after": async (input, output) => {
+      await logEvent("tool.execute.after", { input, output });
     },
   };
 };
