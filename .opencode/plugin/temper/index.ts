@@ -120,6 +120,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   };
 
   return {
+    // Generic event handler - catches ALL events
+    event: async ({ event }) => {
+      try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] event (generic)\nType: ${event.type}\n${JSON.stringify(event, null, 2)}\n`;
+        await Bun.write(absoluteLogPath, logEntry, { append: true });
+      } catch (e) {}
+    },
+
     "chat.message": async (_input, output) => {
       const sessionID = output.message.sessionID;
 
