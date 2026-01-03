@@ -173,10 +173,11 @@ find_active_prs() {
         return 0
     fi
     
-    # Find all sessions in this repo (search from oldest to newest)
+    # Find all sessions in this repo (search from newest to oldest)
     # Don't filter by time - if a PR gets comments after hours of silence, we still want to notify
+    # Reverse order gives preference to most recent session when PR spans multiple sessions
     ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r \
-        'sort_by(.time.created) | .[].id')
+        'sort_by(.time.created) | reverse | .[].id')
     
     if [[ -z "$ACTIVE_SESSIONS" ]]; then
         return 0

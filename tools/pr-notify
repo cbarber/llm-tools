@@ -38,8 +38,8 @@ if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
     exit 0
 fi
 
-# Get list of session IDs sorted by creation time (oldest first)
-ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r 'sort_by(.time.created) | .[].id')
+# Get list of session IDs sorted by creation time (newest first for multi-session PR work)
+ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r 'sort_by(.time.created) | reverse | .[].id')
 
 if [[ -z "$ACTIVE_SESSIONS" ]]; then
     echo "No sessions found in $REPO_DIR" >&2
@@ -127,6 +127,9 @@ EOF
         echo "  DEBUG: Using OPENCODE_API=${OPENCODE_API:-not set}" >&2
         if bash "${SCRIPT_DIR}/anvil" --session "$SESSION_ID" "$PR_CONTEXT" 2>&1 | grep -q "✓"; then
             echo "  ✓ PR update injected" >&2
+            # Only notify the most recent session (sessions sorted newest-first)
+            echo "  Stopping after first successful notification" >&2
+            break
         else
             echo "  ✗ Failed to inject" >&2
         fi
