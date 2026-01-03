@@ -10,6 +10,14 @@ STATE_FILE="${REPO_DIR}/.pr-poll-state.json"
 INTERVAL=${PR_POLL_INTERVAL:-30}
 DAEMON_MODE=false
 
+# Check if repo uses GitHub (pr-poll only supports GitHub currently)
+FORGE_TYPE=$(bash "${SCRIPT_DIR}/forge" --type 2>/dev/null || echo "unknown")
+if [[ "$FORGE_TYPE" != "github" ]]; then
+    echo "pr-poll only supports GitHub repositories (detected: $FORGE_TYPE)" >&2
+    echo "Skipping PR polling." >&2
+    exit 0
+fi
+
 # Get git remote URL to filter sessions working on this specific repo
 GIT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
 if [[ -n "$GIT_REMOTE" ]]; then
