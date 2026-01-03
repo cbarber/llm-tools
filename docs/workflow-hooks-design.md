@@ -176,12 +176,30 @@ Add new workflow sections to AGENTS.md:
    - Display "📡 Subscribed to PR #N" message
    - Make PR subscription explicit in session
 
-### Phase 2: OpenCode Plugin Integration (Pre-Edit)
+### Phase 2: OpenCode Plugin Integration
 
-For OpenCode to auto-invoke pre-edit hooks, investigate plugin capabilities:
-- Does OpenCode support pre-edit hooks in plugins?
-- Can opencode-beads plugin be extended for this?
-- Alternative: Document manual invocation pattern
+OpenCode plugins support `file.edited` events ([docs](https://opencode.ai/docs/plugins/#events)):
+
+```typescript
+// .opencode/plugin/workflow-hooks.ts
+export const WorkflowHooks = async ({ $, directory }) => {
+  return {
+    "file.edited": async ({ path }) => {
+      // Run temper post-edit after file modifications
+      await $`temper post-edit`
+    },
+    
+    "tool.execute.before": async (input, output) => {
+      // Run temper pre-edit before edits
+      if (input.tool === "edit" || input.tool === "write") {
+        await $`temper pre-edit`
+      }
+    }
+  }
+}
+```
+
+This makes workflow hooks automatic for OpenCode - no manual invocation needed.
 
 ### Phase 3: Simple PR Subscription Tracking
 
@@ -264,10 +282,10 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
    - Display "📡 Subscribed to PR #N"
    - Write `.git/pr-subscription` file
 
-5. **OpenCode plugin investigation** (1-2 hours)
-   - Check if opencode supports pre-edit hooks
-   - Investigate extending opencode-beads plugin
-   - Document manual invocation if no plugin support
+5. **Create OpenCode workflow-hooks plugin** (1-2 hours)
+   - Hook `file.edited` event to run `temper post-edit`
+   - Hook `tool.execute.before` for edit/write to run `temper pre-edit`
+   - Package as `.opencode/plugin/workflow-hooks.ts`
 
 6. **Testing** (1-2 hours)
    - Test each temper section manually
@@ -279,7 +297,7 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
 - llm-tools-dt3: Extend temper with three new sections (P1)
 - llm-tools-qxq: Add workflow sections to AGENTS.md (P1)
 - llm-tools-sly: Update forge for PR subscription tracking (P2)
-- llm-tools-enu: Investigate OpenCode pre-edit plugin support (P3)
+- llm-tools-enu: Create OpenCode workflow-hooks plugin (P2) - updated scope after confirming file.edited event support
 
 ## Success Metrics
 
