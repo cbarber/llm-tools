@@ -182,8 +182,6 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
         const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.before\n${JSON.stringify({ input, output }, null, 2)}\n`;
         await Bun.write(absoluteLogPath, logEntry, { append: true });
       } catch (e) {}
-      
-      await logEvent("tool.execute.before", { input, output });
     },
 
     "tool.execute.after": async (input, output) => {
@@ -193,8 +191,6 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
         const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.after\n${JSON.stringify({ input, output }, null, 2)}\n`;
         await Bun.write(absoluteLogPath, logEntry, { append: true });
       } catch (e) {}
-      
-      await logEvent("tool.execute.after", { input, output });
     },
   };
 };
