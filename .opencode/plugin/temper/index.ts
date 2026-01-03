@@ -171,8 +171,6 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
         const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] file.edited\n${JSON.stringify({ input, output }, null, 2)}\n`;
         await Bun.write(absoluteLogPath, logEntry, { append: true });
       } catch (e) {}
-      
-      await logEvent("file.edited", { input, output });
     },
 
     "tool.execute.before": async (input, output) => {
