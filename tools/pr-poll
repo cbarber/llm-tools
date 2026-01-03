@@ -76,9 +76,13 @@ get_pr_state() {
         return 1
     fi
     
-    # Get total comment count (general + review)
+    # Get total comment count (general + review), excluding bot replies
     local comments=$(bash "${SCRIPT_DIR}/forge" pr comments "$pr_number" --json 2>/dev/null || echo '{"general":[],"review":[]}')
-    local comment_count=$(echo "$comments" | jq '(.general | length) + (.review | length)')
+    # Filter out comments ending with agent signature (bot replies don't trigger notifications)
+    local comment_count=$(echo "$comments" | jq '
+        (.general | map(select(.body | endswith("*🤖 Posted by agent*") | not)) | length) +
+        (.review | map(select(.body | endswith("*🤖 Posted by agent*") | not)) | length)
+    ')
     
     # Add comment_count and timestamp to state
     echo "$state" | jq --argjson count "$comment_count" '. + {comment_count: $count, last_check: now}'
