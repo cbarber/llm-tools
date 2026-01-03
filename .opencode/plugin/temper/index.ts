@@ -92,14 +92,24 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   const injectedSessions = new Set<string>();
   const logPath = `${directory}/.opencode/event.log`;
 
+  console.log(`[temper] Plugin initialized, logPath: ${logPath}`);
+
   // Helper to log event data
   const logEvent = async (eventName: string, data: any) => {
     try {
       const timestamp = new Date().toISOString();
       const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] ${eventName}\n${JSON.stringify(data, null, 2)}\n`;
-      await Bun.write(logPath, logEntry, { append: true });
+      
+      // Force sync write to ensure it hits disk
+      const file = Bun.file(logPath);
+      const existing = await file.exists() ? await file.text() : "";
+      await Bun.write(logPath, existing + logEntry);
     } catch (error) {
-      console.error(`[temper] Failed to log event ${eventName}:`, error);
+      // Try to write error to a known location
+      await Bun.write(`${directory}/.opencode/plugin-error.log`, 
+        `[${new Date().toISOString()}] Failed to log ${eventName}: ${error}\n`,
+        { append: true }
+      );
     }
   };
 
