@@ -6,6 +6,7 @@
  */
 
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+import { appendFile } from "node:fs/promises";
 
 type OpencodeClient = PluginInput["client"];
 
@@ -93,6 +94,10 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   const logPath = `${directory}/.opencode/event.log`;
   const absoluteLogPath = `/home/cbarber/src/llm-tools/.opencode/event.log`;
   
+  // Track last injection time to throttle messages
+  const lastInjection = new Map<string, number>();
+  const THROTTLE_MS = 60000; // 1 minute between injections
+  
   // Test that plugin is loaded by writing to known location
   try {
     await Bun.write(absoluteLogPath, `[${new Date().toISOString()}] TemperPlugin loaded\n`, { append: true });
@@ -105,17 +110,44 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
     try {
       const timestamp = new Date().toISOString();
       const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] ${eventName}\n${JSON.stringify(data, null, 2)}\n`;
-      
-      // Force sync write to ensure it hits disk
-      const file = Bun.file(logPath);
-      const existing = await file.exists() ? await file.text() : "";
-      await Bun.write(logPath, existing + logEntry);
+      await appendFile(absoluteLogPath, logEntry)
     } catch (error) {
       // Try to write error to a known location
-      await Bun.write(`${directory}/.opencode/plugin-error.log`, 
+      await appendFile(
+        `${directory}/.opencode/plugin-error.log`, 
         `[${new Date().toISOString()}] Failed to log ${eventName}: ${error}\n`,
-        { append: true }
       );
+    }
+  };
+
+  // Helper to inject workflow message (throttled)
+  const injectWorkflowMessage = async (
+    sessionID: string,
+    hookName: string,
+    message: string
+  ) => {
+    const key = `${sessionID}:${hookName}`;
+    const now = Date.now();
+    const last = lastInjection.get(key) || 0;
+    
+    // Throttle: only inject if THROTTLE_MS has passed
+    if (now - last < THROTTLE_MS) {
+      return;
+    }
+    
+    lastInjection.set(key, now);
+    
+    try {
+      await client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          noReply: true,
+          parts: [{ type: "text", text: message, synthetic: true }],
+        },
+      });
+    } catch (error) {
+      // Silent fail
+      await logEvent("injection-failed", { hookName, error: String(error) });
     }
   };
 
@@ -152,10 +184,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
 
       injectedSessions.add(sessionID);
 
-      // Log that chat.message fired
-      try {
-        await Bun.write(absoluteLogPath, `[${new Date().toISOString()}] chat.message fired for session ${sessionID}\n`, { append: true });
-      } catch (e) {}
+      logEvent(`chat.message fired for session ${sessionID}`, {});
 
       // Inject using the same model/agent as the user message
       await injectTemperContext(client, $, sessionID, {
@@ -166,29 +195,38 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
 
     "file.edited": async (input, output) => {
       // Log with absolute path
-      try {
-        const timestamp = new Date().toISOString();
-        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] file.edited\n${JSON.stringify({ input, output }, null, 2)}\n`;
-        await Bun.write(absoluteLogPath, logEntry, { append: true });
-      } catch (e) {}
+      logEvent("file.edited", { input, output })
     },
 
     "tool.execute.before": async (input, output) => {
-      // Log with absolute path
-      try {
-        const timestamp = new Date().toISOString();
-        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.before\n${JSON.stringify({ input, output }, null, 2)}\n`;
-        await Bun.write(absoluteLogPath, logEntry, { append: true });
-      } catch (e) {}
+      // Log event data
+      logEvent("tool.execute.before", { input, output });
+      
+      // POC: Hook edit/write tools to show pre-edit guidance
+      const tool = input.tool;
+      const sessionID = input.sessionID;
+      
+      if (tool === "edit" || tool === "write") {
+        const filePath = output.args?.filePath || "unknown";
+        const message = `## 🔧 Pre-Edit Workflow Check
+
+You're about to modify: \`${filePath}\`
+
+**Before editing, ensure:**
+- Working tree is clean (run \`git status\` if unsure)
+- Changes will be atomic (single logical concern)
+- You understand the full scope of this change
+
+**Commit guidance:** Keep commits atomic - one logical change per commit.
+`;
+        
+        await injectWorkflowMessage(sessionID, "pre-edit", message);
+      }
     },
 
     "tool.execute.after": async (input, output) => {
       // Log with absolute path
-      try {
-        const timestamp = new Date().toISOString();
-        const logEntry = `\n${"=".repeat(80)}\n[${timestamp}] tool.execute.after\n${JSON.stringify({ input, output }, null, 2)}\n`;
-        await Bun.write(absoluteLogPath, logEntry, { append: true });
-      } catch (e) {}
+      logEvent("tool.execute.after", { input, output })
     },
   };
 };

@@ -1,4 +1,4 @@
-# OpenCode Event Discovery - Final Findings
+# OpenCode Event Discovery - CORRECTED Findings
 
 ## Testing Environment
 - OpenCode Version: 1.0.224 (latest)
@@ -7,10 +7,12 @@
 
 ## What Events Actually Fire
 
-### ✅ tool.execute.before (bash only)
-**Status:** WORKS
-**Triggers:** Bash tool execution
+### ✅ tool.execute.before (ALL TOOLS)
+**Status:** WORKS FOR ALL TOOLS
+**Triggers:** bash, read, edit, write, and all other tool executions
 **Data Structure:**
+
+**Bash:**
 ```json
 {
   "input": {
@@ -27,15 +29,79 @@
 }
 ```
 
-### ❌ tool.execute.before (read/edit/write)
-**Status:** DOES NOT FIRE
-**Tested:** read, edit, write tools
-**Result:** No events captured for any file operation tools
+**Write:**
+```json
+{
+  "input": {
+    "tool": "write",
+    "sessionID": "ses_...",
+    "callID": "toolu_..."
+  },
+  "output": {
+    "args": {
+      "filePath": "...",
+      "content": "..."
+    }
+  }
+}
+```
 
-### ❌ tool.execute.after
-**Status:** DOES NOT FIRE (or fails silently)
-**Expected:** Should fire after tool completion
-**Result:** No events captured despite handler being defined
+**Edit:**
+```json
+{
+  "input": {
+    "tool": "edit",
+    "sessionID": "ses_...",
+    "callID": "toolu_..."
+  },
+  "output": {
+    "args": {
+      "filePath": "...",
+      "oldString": "...",
+      "newString": "..."
+    }
+  }
+}
+```
+
+**Read:**
+```json
+{
+  "input": {
+    "tool": "read",
+    "sessionID": "ses_...",
+    "callID": "toolu_..."
+  },
+  "output": {
+    "args": {
+      "filePath": "..."
+    }
+  }
+}
+```
+
+### ✅ tool.execute.after (ALL TOOLS)
+**Status:** WORKS FOR ALL TOOLS
+**Triggers:** After bash, read, edit, write, and all other tool executions complete
+**Rich Data:** Includes file content, diffs (for edit), diagnostics, exit codes
+
+**Edit tool after event includes full unified diff:**
+```json
+{
+  "input": {
+    "tool": "edit",
+    "sessionID": "ses_...",
+    "callID": "toolu_..."
+  },
+  "output": {
+    "metadata": {
+      "diagnostics": {},
+      "diff": "Index: /path/to/file.txt\n===================================================================\n--- /path/to/file.txt\n+++ /path/to/file.txt\n@@ -1,1 +1,3 @@\n-old content\n+new content\n",
+      "filepath": "/path/to/file.txt"
+    }
+  }
+}
+```
 
 ### ❌ file.edited
 **Status:** DOES NOT EXIST
@@ -68,33 +134,37 @@ From `https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/plugin/s
 - `file.watcher.updated` (docs mention but doesn't exist)
 - Individual tool hooks for read/edit/write
 
-## Critical Limitations
+## Key Discovery
 
-1. **No file operation events** - Can't hook read/edit/write tools
-2. **Bash only** - tool.execute.before only fires for bash
-3. **No after events** - tool.execute.after doesn't fire
-4. **No file change events** - No way to detect when files are modified
+**PREVIOUS CONCLUSION WAS WRONG** due to broken logging (append mode not working).
 
-## Implications for Workflow Hooks
+After fixing the plugin logging bugs:
+- ✅ Events fire for ALL tools (not just bash)
+- ✅ Rich event data is available (file paths, content, diffs)
+- ✅ Both before and after hooks work
 
-**Original Plan (won't work):**
-- Hook file.edited to show commit guidance ❌
-- Hook tool.execute.before for edit/write to show guidelines ❌
+## What IS Possible
 
-**What's Actually Possible:**
-- Hook bash commands only (git commit, git push, etc.) ✓
-- Detect git operations through bash tool ✓
-- Manual temper invocation ✓
+**✅ Original workflow hooks plan CAN be implemented:**
+- Pre-Edit Hook (tool.execute.before for edit/write) - Show development guidelines, git status
+- Post-Edit Hook (tool.execute.after for edit) - Show commit guidance, detect fixup opportunities
+- Post-Push Hook (bash tool "git push" pattern) - Subscribe to PR, display subscription status
 
-**Recommended Approach:**
-1. Hook `tool.execute.before` for bash
-2. Detect git commands (commit, push, etc.)
-3. Inject temper output for relevant git operations
-4. Abandon automatic file-based hooks
+**✅ Rich pattern matching capabilities:**
+- Match by tool type (edit vs write vs read)
+- Match by file path patterns (*.md vs *.ts)
+- Access full event data (file content, diffs, command args)
+
+**✅ Context-aware workflow injection:**
+- Pass event data to temper for context-aware output
+- Different guidance for different file types
+- Detect git operations in bash commands
 
 ## Next Steps
 
-1. Design bash-only workflow hooks
-2. Pattern match git commands in bash tool args
-3. Call appropriate temper sections for git operations
-4. Update AGENTS.md with bash-triggered workflow sections
+1. ✅ Correct FINAL_FINDINGS.md (this file)
+2. Create comprehensive event data reference with real examples from log
+3. Design pattern matching system for mapping events to AGENTS.md sections
+4. Create proof-of-concept: hook edit tool to inject simple workflow message
+5. Reopen blocked beads issues (llm-tools-qxq, llm-tools-enu, llm-tools-sly)
+6. Update workflow hooks design based on newly discovered capabilities
