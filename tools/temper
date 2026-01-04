@@ -46,29 +46,32 @@ extract_subsection() {
 }
 
 extract_event_section() {
-  local event_name="$1"
+  local event_pattern="$1"
   
   if [[ ! -f "$AGENTS_MD" ]]; then
     echo "Error: $AGENTS_MD not found" >&2
     return 1
   fi
   
-  # Match headers like: ### pre-edit (edit|write)
-  # Extract section name before the pattern
-  awk -v event="$event_name" '
-    /^## Workflow$/ { in_workflow=1; next }
-    in_workflow && /^### / {
-      # Extract section name and pattern from header
-      match($0, /^### ([^ ]+)( \(.*\))?$/, parts)
-      section_name = parts[1]
-      
-      if (section_name == event) {
-        in_section=1
-        next
+  # Match headers with event patterns like:
+  # ## Development Guidelines (tool.execute.before:edit|write)
+  # ### commit (tool.execute.after:edit|write)
+  # ### pull-request (tool.execute.after:bash:git push)
+  
+  awk -v event="$event_pattern" '
+    /^##+ / {
+      # Extract section pattern from header
+      if (match($0, /\(([^)]+)\)/, parts)) {
+        pattern = parts[1]
+        
+        # Check if event matches pattern
+        if (pattern == event) {
+          in_section=1
+          next
+        }
       }
     }
-    in_workflow && in_section && /^###/ { exit }
-    in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
+    in_section && /^##+ / { exit }
     in_section { print }
   ' "$AGENTS_MD"
 }

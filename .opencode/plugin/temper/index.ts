@@ -202,15 +202,17 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
       // Log event data
       logEvent("tool.execute.before", { input, output });
       
-      // Hook edit/write tools to show pre-edit guidance from AGENTS.md
+      // Hook edit/write tools to show dev guidelines from AGENTS.md
       const tool = input.tool;
       const sessionID = input.sessionID;
       
       if (tool === "edit" || tool === "write") {
         try {
-          const guidance = await $`bash tools/temper --event pre-edit`.text();
+          // Match pattern: tool.execute.before:edit|write
+          const eventPattern = "tool.execute.before:edit|write";
+          const guidance = await $`bash tools/temper --event ${eventPattern}`.text();
           if (guidance && guidance.trim().length > 0) {
-            await injectWorkflowMessage(sessionID, "pre-edit", guidance);
+            await injectWorkflowMessage(sessionID, "dev-guidelines", guidance);
           }
         } catch {
           // Silent fail if temper or AGENTS.md not available
@@ -225,26 +227,29 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
       const tool = input.tool;
       const sessionID = input.sessionID;
       
-      // Hook edit tool to show post-edit guidance
-      if (tool === "edit") {
+      // Hook edit/write to show commit guidance
+      if (tool === "edit" || tool === "write") {
         try {
-          const guidance = await $`bash tools/temper --event post-edit`.text();
+          // Match pattern: tool.execute.after:edit|write
+          const eventPattern = "tool.execute.after:edit|write";
+          const guidance = await $`bash tools/temper --event ${eventPattern}`.text();
           if (guidance && guidance.trim().length > 0) {
-            await injectWorkflowMessage(sessionID, "post-edit", guidance);
+            await injectWorkflowMessage(sessionID, "commit", guidance);
           }
         } catch {
           // Silent fail
         }
       }
       
-      // Hook git push to show post-push guidance
+      // Hook git push to show PR workflow
       if (tool === "bash") {
         const command = output.args?.command || "";
         if (/git push/.test(command)) {
           try {
-            const guidance = await $`bash tools/temper --event post-push`.text();
+            const eventPattern = "tool.execute.after:bash:git push";
+            const guidance = await $`bash tools/temper --event ${eventPattern}`.text();
             if (guidance && guidance.trim().length > 0) {
-              await injectWorkflowMessage(sessionID, "post-push", guidance);
+              await injectWorkflowMessage(sessionID, "pull-request", guidance);
             }
           } catch {
             // Silent fail

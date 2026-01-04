@@ -27,7 +27,7 @@ cp agents/templates/default.md agents/templates/cbarber.md
 
 See `agents/templates/README.md` for details.
 
-## Development Guidelines
+## Development Guidelines (tool.execute.before:edit|write)
 
 * Be succinct. Only provide examples if necessary
 * Code must be self-documenting. Comments explain WHY, not WHAT
@@ -275,7 +275,7 @@ fi
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
 
-### commit
+### commit (tool.execute.after:edit|write)
 
 Format: `<type>(<scope>): <subject>`
 
@@ -302,7 +302,7 @@ Linux sandbox only mounted legacy file, breaking XDG-only users.
 Authored By: claude-code (claude-3.7-sonnet)
 ```
 
-### pull-request
+### pull-request (tool.execute.after:bash:git push)
 
 **IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
 
@@ -368,27 +368,6 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    ```
 
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
-
-### pre-edit (edit|write)
-
-Before editing files:
-- Run `git status` to check for uncommitted changes
-- Ensure changes will be atomic (single logical concern)
-- Understand the full scope of the change
-
-### post-edit (edit)
-
-After editing files:
-- Consider if changes need a commit
-- Check if related to existing commit (use `git commit --fixup=<sha>`)
-- Run tests if code was modified
-
-### post-push (bash:git push)
-
-After successful push:
-- Check if PR was created or updated
-- Extract PR number from output
-- Subscribe to PR notifications
 
 ## Quick Reference (by frequency)
 
