@@ -8,6 +8,7 @@ show_help() {
 temper - Extract workflow subsections from AGENTS.md
 
 Usage: temper [COMMAND]
+       temper --event EVENT_NAME
 
 Commands:
   init            Execute first bash block, show remaining text (default)
@@ -16,6 +17,11 @@ Commands:
   pull-request    Alias for pr
   complete        Show session completion workflow
   help            Show this help
+
+Options:
+  --event NAME    Extract section matching event pattern in header
+                  Example: temper --event pre-edit
+                  Matches: ### pre-edit (edit|write)
 
 Environment:
   AGENTS_MD       Path to AGENTS.md (default: AGENTS.md)
@@ -33,6 +39,34 @@ extract_subsection() {
   awk -v section="### $section_name" '
     /^## Workflow$/ { in_workflow=1; next }
     in_workflow && $0 == section { in_section=1; next }
+    in_workflow && in_section && /^###/ { exit }
+    in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
+    in_section { print }
+  ' "$AGENTS_MD"
+}
+
+extract_event_section() {
+  local event_name="$1"
+  
+  if [[ ! -f "$AGENTS_MD" ]]; then
+    echo "Error: $AGENTS_MD not found" >&2
+    return 1
+  fi
+  
+  # Match headers like: ### pre-edit (edit|write)
+  # Extract section name before the pattern
+  awk -v event="$event_name" '
+    /^## Workflow$/ { in_workflow=1; next }
+    in_workflow && /^### / {
+      # Extract section name and pattern from header
+      match($0, /^### ([^ ]+)( \(.*\))?$/, parts)
+      section_name = parts[1]
+      
+      if (section_name == event) {
+        in_section=1
+        next
+      }
+    }
     in_workflow && in_section && /^###/ { exit }
     in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
     in_section { print }
@@ -86,6 +120,16 @@ execute_init() {
 
 main() {
   local command="${1:-init}"
+  
+  # Handle --event flag
+  if [[ "$command" == "--event" ]]; then
+    if [[ -z "${2:-}" ]]; then
+      echo "Error: --event requires an event name" >&2
+      return 1
+    fi
+    extract_event_section "$2"
+    return
+  fi
   
   case "$command" in
     init)

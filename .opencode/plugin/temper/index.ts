@@ -202,31 +202,55 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
       // Log event data
       logEvent("tool.execute.before", { input, output });
       
-      // POC: Hook edit/write tools to show pre-edit guidance
+      // Hook edit/write tools to show pre-edit guidance from AGENTS.md
       const tool = input.tool;
       const sessionID = input.sessionID;
       
       if (tool === "edit" || tool === "write") {
-        const filePath = output.args?.filePath || "unknown";
-        const message = `## 🔧 Pre-Edit Workflow Check
-
-You're about to modify: \`${filePath}\`
-
-**Before editing, ensure:**
-- Working tree is clean (run \`git status\` if unsure)
-- Changes will be atomic (single logical concern)
-- You understand the full scope of this change
-
-**Commit guidance:** Keep commits atomic - one logical change per commit.
-`;
-        
-        await injectWorkflowMessage(sessionID, "pre-edit", message);
+        try {
+          const guidance = await $`bash tools/temper --event pre-edit`.text();
+          if (guidance && guidance.trim().length > 0) {
+            await injectWorkflowMessage(sessionID, "pre-edit", guidance);
+          }
+        } catch {
+          // Silent fail if temper or AGENTS.md not available
+        }
       }
     },
 
     "tool.execute.after": async (input, output) => {
-      // Log with absolute path
-      logEvent("tool.execute.after", { input, output })
+      // Log event data
+      logEvent("tool.execute.after", { input, output });
+      
+      const tool = input.tool;
+      const sessionID = input.sessionID;
+      
+      // Hook edit tool to show post-edit guidance
+      if (tool === "edit") {
+        try {
+          const guidance = await $`bash tools/temper --event post-edit`.text();
+          if (guidance && guidance.trim().length > 0) {
+            await injectWorkflowMessage(sessionID, "post-edit", guidance);
+          }
+        } catch {
+          // Silent fail
+        }
+      }
+      
+      // Hook git push to show post-push guidance
+      if (tool === "bash") {
+        const command = output.args?.command || "";
+        if (/git push/.test(command)) {
+          try {
+            const guidance = await $`bash tools/temper --event post-push`.text();
+            if (guidance && guidance.trim().length > 0) {
+              await injectWorkflowMessage(sessionID, "post-push", guidance);
+            }
+          } catch {
+            // Silent fail
+          }
+        }
+      }
     },
   };
 };

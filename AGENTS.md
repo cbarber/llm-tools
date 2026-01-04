@@ -369,6 +369,27 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
 
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
+### pre-edit (edit|write)
+
+Before editing files:
+- Run `git status` to check for uncommitted changes
+- Ensure changes will be atomic (single logical concern)
+- Understand the full scope of the change
+
+### post-edit (edit)
+
+After editing files:
+- Consider if changes need a commit
+- Check if related to existing commit (use `git commit --fixup=<sha>`)
+- Run tests if code was modified
+
+### post-push (bash:git push)
+
+After successful push:
+- Check if PR was created or updated
+- Extract PR number from output
+- Subscribe to PR notifications
+
 ## Quick Reference (by frequency)
 
 **Session start:**
