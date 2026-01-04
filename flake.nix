@@ -36,7 +36,17 @@
         devShells = {
           claude-code = self.packages.${system}.claude-code;
           opencode = self.packages.${system}.opencode;
-          default = self.packages.${system}.claude-code;
+          default = {
+            name = "dev-shell";
+            buildInputs =
+              with pkgs;
+              [
+                typescript
+                typescript-language-server
+                vtsls
+                bun
+              ];
+          };
         };
       }
     );

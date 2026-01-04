@@ -2,3 +2,4 @@
 .pr-poll-state.json
 .pr-poll.pid
 .pr-poll.log
+.direnv
