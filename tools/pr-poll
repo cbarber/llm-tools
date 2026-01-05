@@ -190,22 +190,22 @@ find_active_prs() {
         # Look for PR references: full URLs with repo path, or "PR #NUMBER" mentions
         if [[ -n "$REPO_PATH" ]]; then
             # Prefer full PR URLs with repo path, fall back to "PR #NUMBER" pattern
-            SESSION_PR=$(echo "$MESSAGES" | jq -r \
+            SESSION_PRS=$(echo "$MESSAGES" | jq -r \
                 --arg repo "$REPO_PATH" \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
                  (select(contains($repo) and contains("/pull/")) | scan("/pull/([0-9]+)"; "g")), 
                  (scan("PR #([0-9]+)"; "gi"))] | 
-                 flatten | unique | .[]' 2>/dev/null | tail -1)
+                 flatten | unique | .[]' 2>/dev/null)
         else
             # Fallback: accept PR URLs or "PR #NUMBER" pattern
-            SESSION_PR=$(echo "$MESSAGES" | jq -r \
+            SESSION_PRS=$(echo "$MESSAGES" | jq -r \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
                  scan("(/pull/|PR #)([0-9]+)"; "gi") | .[1]] | 
-                 flatten | unique | .[]' 2>/dev/null | tail -1)
+                 flatten | unique | .[]' 2>/dev/null)
         fi
         
-        if [[ -n "$SESSION_PR" ]]; then
-            echo "$SESSION_PR"
+        if [[ -n "$SESSION_PRS" ]]; then
+            echo "$SESSION_PRS"
         fi
     done | sort -u
 }
