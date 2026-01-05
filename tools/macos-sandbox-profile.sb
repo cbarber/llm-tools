@@ -143,6 +143,8 @@
   (subpath "/usr/share")
   (subpath "/Library")
   (subpath "/System/Library")
+  (subpath "/var")
+  (subpath "/private/var")
   
   ;; SSL/TLS certificates (HTTPS)
   (subpath "/etc/ssl")
