@@ -28,7 +28,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bubblewrap
       
+      - name: Verify bubblewrap installation
+        run: |
+          which bwrap
+          bwrap --version
+      
       - name: Run sandbox tests
         run: |
           chmod +x tools/test-agent-sandbox.sh
+          # Set BWRAP_PATH to the system-installed bwrap
+          export BWRAP_PATH=$(which bwrap)
           bash tools/test-agent-sandbox.sh
