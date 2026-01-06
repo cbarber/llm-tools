@@ -363,17 +363,17 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
 3. Update beads (close/update issues)
 4. Create/update PRs and push:
    ```bash
-   # For stacked PRs (agents/* branches)
-   if command -v spr >/dev/null 2>&1; then
-     spr diff  # Creates/updates PRs for new commits
-     spr status  # Show what's in flight
-   fi
-   
-   # Push to remote
+   # Push to remote FIRST
    git pull --rebase
    bd sync
    git push --force-with-lease
    git status  # MUST show "up to date with origin"
+   
+   # Then update PRs (for stacked PRs on agents/* branches)
+   if command -v spr >/dev/null 2>&1 && [[ -f .git/spr.db ]]; then
+     bash tools/spr-wrapper diff --all --update-message -m "rebase"  # Use descriptive message: "rebase", "fixup squashed", "review feedback", etc.
+     bash tools/spr-wrapper list  # Show what's in flight
+   fi
    ```
    If `--force-with-lease` fails, STOP and ask for help.
 
