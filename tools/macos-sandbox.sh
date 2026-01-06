@@ -57,7 +57,6 @@ fi
 # Add home directory parameters for readable/writable paths
 SANDBOX_PARAMS+=("-DHOME_CONFIG_OPENCODE=$HOME/.config/opencode")
 SANDBOX_PARAMS+=("-DHOME_CONFIG_NIXSMITH=$HOME/.config/nixsmith")
-SANDBOX_PARAMS+=("-DHOME_CLAUDE_JSON=$HOME/.claude.json")
 SANDBOX_PARAMS+=("-DHOME_CLAUDE=$HOME/.claude")
 SANDBOX_PARAMS+=("-DHOME_CACHE_OPENCODE=$HOME/.cache/opencode")
 SANDBOX_PARAMS+=("-DHOME_CACHE_CLAUDE=$HOME/.cache/claude")
@@ -73,15 +72,51 @@ SANDBOX_PARAMS+=("-DHOME_NPM=$HOME/.npm")
 SANDBOX_PARAMS+=("-DHOME_SHARE_PNPM=$HOME/.local/share/pnpm")
 SANDBOX_PARAMS+=("-DHOME_BUN=$HOME/.bun")
 
-# Add agent SSH key paths (read-only access)
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITHUB=$HOME/.ssh/agent-github")
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITHUB_PUB=$HOME/.ssh/agent-github.pub")
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITLAB=$HOME/.ssh/agent-gitlab")
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITLAB_PUB=$HOME/.ssh/agent-gitlab.pub")
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITEA=$HOME/.ssh/agent-gitea")
-SANDBOX_PARAMS+=("-DHOME_SSH_AGENT_GITEA_PUB=$HOME/.ssh/agent-gitea.pub")
-SANDBOX_PARAMS+=("-DHOME_SSH_CONFIG_AGENT=$HOME/.ssh/config.agent")
-SANDBOX_PARAMS+=("-DHOME_SSH_KNOWN_HOSTS=$HOME/.ssh/known_hosts")
+# Add conditional file paths (read/write) - only if they exist
+# Note: sandbox-exec will abort if (literal ...) references non-existent files
+CONDITIONAL_READ_RULES=""
+CONDITIONAL_WRITE_RULES=""
+
+if [[ -f "$HOME/.claude.json" ]]; then
+  SANDBOX_PARAMS+=("-DHOME_CLAUDE_JSON=$HOME/.claude.json")
+  CONDITIONAL_READ_RULES+="  (literal (param \"HOME_CLAUDE_JSON\"))"$'\n'
+  CONDITIONAL_WRITE_RULES+="  (literal (param \"HOME_CLAUDE_JSON\"))"$'\n'
+fi
+
+# Add agent SSH key paths (read-only access) - only if they exist
+SSH_KEY_FILES=(
+  "$HOME/.ssh/agent-github"
+  "$HOME/.ssh/agent-github.pub"
+  "$HOME/.ssh/agent-gitlab"
+  "$HOME/.ssh/agent-gitlab.pub"
+  "$HOME/.ssh/agent-gitea"
+  "$HOME/.ssh/agent-gitea.pub"
+  "$HOME/.ssh/config.agent"
+  "$HOME/.ssh/known_hosts"
+)
+
+for i in "${!SSH_KEY_FILES[@]}"; do
+  key_file="${SSH_KEY_FILES[$i]}"
+  if [[ -f "$key_file" ]]; then
+    PARAM_NAME="HOME_SSH_KEY_$i"
+    CONDITIONAL_READ_RULES+="  (literal (param \"$PARAM_NAME\"))"$'\n'
+    SANDBOX_PARAMS+=("-D$PARAM_NAME=$key_file")
+  fi
+done
+
+# Append conditional file rules if any exist
+if [[ -n "$CONDITIONAL_READ_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n;; Conditional files (dynamically added if they exist)\n'
+  PROFILE_CONTENT+="(allow file-read*"$'\n'
+  PROFILE_CONTENT+="$CONDITIONAL_READ_RULES"
+  PROFILE_CONTENT+=")"
+fi
+
+if [[ -n "$CONDITIONAL_WRITE_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n(allow file-write*'$'\n'
+  PROFILE_CONTENT+="$CONDITIONAL_WRITE_RULES"
+  PROFILE_CONTENT+=")"
+fi
 
 # Handle BWRAP_EXTRA_PATHS by adding read and write permissions
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
