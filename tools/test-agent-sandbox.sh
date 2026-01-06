@@ -72,35 +72,64 @@ echo "======================================"
 echo "Project dir: $PROJECT_DIR"
 echo "Sandbox script: $SANDBOX_SCRIPT"
 echo ""
+echo "=== Pre-Sandbox Environment ==="
+echo "HOST PATH: $PATH"
+echo ""
+echo "Utilities BEFORE sandbox:"
+for util in ls cat grep sed awk find git; do
+    command -v "$util" 2>/dev/null && echo "  $util: $(command -v $util)" || echo "  $util: NOT FOUND"
+done
+echo ""
+echo "=== Testing Sandbox Environment ==="
+echo "Sandbox PATH: $("$SANDBOX_SCRIPT" bash -c 'echo $PATH')"
+echo ""
+echo "Utilities INSIDE sandbox:"
+for util in ls cat grep sed awk find git; do
+    "$SANDBOX_SCRIPT" bash -c "command -v $util" 2>/dev/null && echo "  $util: $("$SANDBOX_SCRIPT" bash -c "command -v $util")" || echo "  $util: NOT FOUND"
+done
+echo ""
+echo "Debugging: Is /nix mounted in sandbox?"
+"$SANDBOX_SCRIPT" bash -c 'ls -la /nix 2>&1' | head -3
+echo ""
+echo "Debugging: Can we directly execute ls from /nix/store?"
+"$SANDBOX_SCRIPT" bash -c '/nix/store/d75200gb22v7p0703h5jrkgg8bqydk5q-coreutils-9.8/bin/ls --version 2>&1' | head -1
+echo ""
+echo "=== Running Tests ==="
+echo ""
 
-# TEST 1: File access outside project directory
-log_test "File access outside project directory"
+# TEST 1: File access outside project directory (except /tmp)
+log_test "File access outside project directory (except /tmp)"
 
-# Create a test file outside project
-TEMP_OUTSIDE=$(mktemp)
+# /tmp is intentionally mounted for agent work directory
+# Test that HOME root is NOT accessible even if project is a subdirectory of HOME
+TEMP_OUTSIDE="$HOME/sandbox-test-secret.txt"
 echo "secret data" > "$TEMP_OUTSIDE"
 
-# Try to read it from inside sandbox (should fail)
+# Try to read it from inside sandbox (should fail even if project is in HOME)
 if "$SANDBOX_SCRIPT" cat "$TEMP_OUTSIDE" 2>/dev/null; then
-    log_fail "Sandbox allowed access to file outside project: $TEMP_OUTSIDE"
+    log_fail "Sandbox allowed access to HOME root: $TEMP_OUTSIDE"
+    rm -f "$TEMP_OUTSIDE"
 else
-    log_pass "Sandbox correctly blocked access to file outside project"
+    log_pass "Sandbox correctly blocked access to HOME root (only project dir accessible)"
+    rm -f "$TEMP_OUTSIDE"
 fi
-rm -f "$TEMP_OUTSIDE"
 
-# TEST 2: Access to HOME directory
-log_test "Access to HOME directory"
+# TEST 2: Access to HOME directory siblings
+log_test "Access to HOME directory siblings"
 
-# Check if project is in HOME - if so, HOME will be partially accessible
-if [[ "$PROJECT_DIR" =~ ^$HOME ]]; then
-    echo "  Skipped (project is in HOME directory - HOME will be partially accessible)"
+# Even if project is in HOME, sandbox should only mount the project path
+# Test access to a HOME sibling directory that's not the project
+TEST_SIBLING="$HOME/.sandbox-test-sibling-dir"
+mkdir -p "$TEST_SIBLING"
+echo "sibling data" > "$TEST_SIBLING/secret.txt"
+
+# Try to access the sibling directory (should fail)
+if "$SANDBOX_SCRIPT" cat "$TEST_SIBLING/secret.txt" 2>/dev/null; then
+    log_fail "Sandbox allowed access to HOME sibling directory: $TEST_SIBLING"
+    rm -rf "$TEST_SIBLING"
 else
-    # Try to list home directory (should fail)
-    if "$SANDBOX_SCRIPT" ls "$HOME" 2>/dev/null | grep -q .; then
-        log_fail "Sandbox allowed access to HOME directory"
-    else
-        log_pass "Sandbox correctly blocked access to HOME directory"
-    fi
+    log_pass "Sandbox correctly blocked access to HOME siblings (only project path accessible)"
+    rm -rf "$TEST_SIBLING"
 fi
 
 # TEST 3: Access to current project files
@@ -113,14 +142,14 @@ else
     log_fail "Sandbox blocked access to project files"
 fi
 
-# TEST 4: Work directory creation and access
-log_test "Work directory creation and environment variable"
+# TEST 4: Work directory environment variable
+log_test "Work directory environment variable"
 
 WORK_DIR_PATH=$("$SANDBOX_SCRIPT" bash -c 'echo $AGENT_WORK_DIR')
-if [[ -n "$WORK_DIR_PATH" ]] && [[ "$WORK_DIR_PATH" == "/tmp/agent-work" ]]; then
+if [[ -n "$WORK_DIR_PATH" ]] && [[ "$WORK_DIR_PATH" == "/tmp" ]]; then
     log_pass "AGENT_WORK_DIR environment variable set correctly: $WORK_DIR_PATH"
 else
-    log_fail "AGENT_WORK_DIR not set or incorrect: '$WORK_DIR_PATH'"
+    log_fail "AGENT_WORK_DIR not set or incorrect: '$WORK_DIR_PATH' (expected: /tmp)"
 fi
 
 # TEST 5: Write access to work directory
@@ -132,29 +161,19 @@ else
     log_fail "Cannot write to work directory"
 fi
 
-# TEST 6: Cleanup on normal exit
-log_test "Cleanup on normal exit"
+# TEST 6: /tmp write access
+log_test "/tmp write access"
 
-# Run sandbox and capture the temp dir it creates
-CLEANUP_TEST=$(mktemp -d -t test-cleanup-XXXXXX)
-cat > "$CLEANUP_TEST/check-cleanup.sh" << 'EOF'
-#!/usr/bin/env bash
-# Find the agent temp directory
-AGENT_TEMP=$(ls -dt /tmp/agent-* 2>/dev/null | head -n1)
-if [[ -n "$AGENT_TEMP" ]]; then
-    echo "$AGENT_TEMP"
-fi
-EOF
-chmod +x "$CLEANUP_TEST/check-cleanup.sh"
+# Verify sandbox can write to /tmp (needed for agent work directory)
+TEMP_TEST_FILE=$(mktemp -u -t sandbox-test-XXXXXX)
+"$SANDBOX_SCRIPT" bash -c "echo test > $TEMP_TEST_FILE"
 
-# This is tricky - the temp dir is created by agent-sandbox.sh and cleaned up on exit
-# We'll just verify the script has the trap set up correctly
-if grep -q "trap.*rm -rf.*EXIT" "$SANDBOX_SCRIPT"; then
-    log_pass "Cleanup trap is configured in sandbox script"
+if [[ -f "$TEMP_TEST_FILE" ]]; then
+    rm -f "$TEMP_TEST_FILE"
+    log_pass "Sandbox can write to /tmp"
 else
-    log_fail "No cleanup trap found in sandbox script"
+    log_fail "Cannot write to /tmp from sandbox"
 fi
-rm -rf "$CLEANUP_TEST"
 
 # TEST 7: Git access
 log_test "Git tool access"
@@ -169,26 +188,30 @@ fi
 log_test "Git commands in project directory"
 
 cd "$PROJECT_DIR"
-if "$SANDBOX_SCRIPT" git status 2>/dev/null | grep -q "On branch"; then
+git_output=$("$SANDBOX_SCRIPT" git status 2>&1)
+if echo "$git_output" | grep -qE "(On branch|HEAD detached|nothing to commit)"; then
     log_pass "Can run git commands in project directory"
 else
-    log_fail "Cannot run git commands in project directory"
+    log_fail "Cannot run git commands. Output: $git_output"
 fi
 
 # TEST 9: Basic shell utilities
 log_test "Basic shell utilities (ls, cat, grep, etc.)"
 
 UTILS_OK=true
+missing_utils=()
 for util in ls cat grep sed awk find; do
-    if ! "$SANDBOX_SCRIPT" which "$util" &>/dev/null; then
-        log_fail "Utility '$util' not available in sandbox"
+    if ! "$SANDBOX_SCRIPT" bash -c "command -v $util" &>/dev/null; then
+        missing_utils+=("$util")
         UTILS_OK=false
-        break
     fi
 done
 
 if $UTILS_OK; then
     log_pass "All basic shell utilities are available"
+else
+    sandbox_path=$("$SANDBOX_SCRIPT" bash -c 'echo $PATH')
+    log_fail "Missing utilities: ${missing_utils[*]}. Sandbox PATH: $sandbox_path"
 fi
 
 # TEST 10: /nix store access (read-only)
@@ -213,10 +236,15 @@ fi
 # TEST 11: Network access
 log_test "Network access"
 
-if "$SANDBOX_SCRIPT" bash -c 'echo test | nc -w1 8.8.8.8 53 2>/dev/null || ping -c1 -W1 8.8.8.8 >/dev/null 2>&1'; then
-    log_pass "Network access is available"
+# Use curl instead of ping (ping requires CAP_NET_RAW which may not be available in CI)
+if command -v curl &>/dev/null; then
+    if "$SANDBOX_SCRIPT" curl -s --max-time 5 https://www.google.com &>/dev/null; then
+        log_pass "Network access is working"
+    else
+        log_fail "Network access failed (curl to google.com failed)"
+    fi
 else
-    log_fail "Network access is blocked"
+    echo "  Skipped (curl not available)"
 fi
 
 # TEST 12: Process information access
@@ -254,19 +282,29 @@ else
     log_fail "Performance overhead is high (${OVERHEAD_MS}ms for 10 iterations)"
 fi
 
-# TEST 14: SSH key access (optional feature)
-log_test "SSH key access (optional via AGENT_SANDBOX_SSH=true)"
+# TEST 14: SSH key access control
+log_test "SSH key access control"
 
 if [[ -d "$HOME/.ssh" ]]; then
-    # Without the flag, should not have access
-    if "$SANDBOX_SCRIPT" ls "$HOME/.ssh" 2>/dev/null | grep -q .; then
-        log_fail "SSH directory accessible without AGENT_SANDBOX_SSH flag"
+    # Sandbox mounts agent-* keys by default (agent-github, agent-gitea, etc.) for git operations
+    # AGENT_SANDBOX_SSH=true mounts the full ~/.ssh directory including personal keys
+    
+    # Create a test personal key file
+    TEST_KEY="$HOME/.ssh/test-personal-key"
+    echo "personal key" > "$TEST_KEY"
+    
+    # Default behavior: personal keys should NOT be accessible
+    if "$SANDBOX_SCRIPT" cat "$TEST_KEY" 2>/dev/null | grep -q "personal"; then
+        log_fail "Personal SSH keys accessible by default (should require AGENT_SANDBOX_SSH=true)"
+        rm -f "$TEST_KEY"
     else
-        # With the flag, should have access
-        if AGENT_SANDBOX_SSH=true "$SANDBOX_SCRIPT" ls "$HOME/.ssh" 2>/dev/null | grep -q .; then
-            log_pass "SSH directory correctly controlled by AGENT_SANDBOX_SSH flag"
+        # With AGENT_SANDBOX_SSH=true: personal keys SHOULD be accessible
+        if AGENT_SANDBOX_SSH=true "$SANDBOX_SCRIPT" cat "$TEST_KEY" 2>/dev/null | grep -q "personal"; then
+            log_pass "Personal keys require AGENT_SANDBOX_SSH=true (agent keys always available)"
+            rm -f "$TEST_KEY"
         else
-            log_fail "SSH directory not accessible even with AGENT_SANDBOX_SSH=true"
+            log_fail "Personal keys not accessible even with AGENT_SANDBOX_SSH=true"
+            rm -f "$TEST_KEY"
         fi
     fi
 else
