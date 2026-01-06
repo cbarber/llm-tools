@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Wrapper for spr that automatically provides GitHub authentication
+# Uses the same token mechanism as forge (gh/tea)
+
+set -euo pipefail
+
+NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
+
+# Load GitHub token from same source as forge
+if [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
+  TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
+elif [[ -n "${GH_TOKEN:-}" ]]; then
+  TOKEN="$GH_TOKEN"
+elif [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  TOKEN="$GITHUB_TOKEN"
+else
+  TOKEN=""
+fi
+
+if [[ -z "$TOKEN" ]]; then
+  echo "Error: No GitHub token found. Set GH_TOKEN or GITHUB_TOKEN environment variable."
+  exit 1
+fi
+
+# Pass token to spr before the subcommand
+exec spr --github-auth-token "$TOKEN" "$@"
