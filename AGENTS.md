@@ -270,11 +270,13 @@ fi
 ```
 
 **Next action based on branch state:**
-- **On agents/* branch** → Add commits, use `spr diff` to create/update PRs
+- **On agents/* branch** → Add commits, use `spr diff` to create/update PRs, STAY ON BRANCH
 - **On main, clean** → Pick issue, create feature branch OR switch to agents/* branch
 - **On feature branch, PR merged** → Return to main, create new branch
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
+
+**IMPORTANT:** Permanent agent branches (`agents/*`) are long-lived. Stay on the branch across sessions. Only switch away when intentionally working on something else.
 
 ### edit (tool.execute.before:edit|write)
 
@@ -374,6 +376,8 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    git status  # MUST show "up to date with origin"
    ```
    If `--force-with-lease` fails, STOP and ask for help.
+
+5. **Stay on agents/* branch** - Do NOT switch back to main. The branch is permanent.
 
 5. Handoff for context:
    Provide brief context about what was accomplished for session continuity:
