@@ -1,0 +1,34 @@
+name: Test Linux Sandbox
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/test-agent-sandbox.sh'
+      - '.github/workflows/test-linux-sandbox.yml'
+  pull_request:
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/test-agent-sandbox.sh'
+      - '.github/workflows/test-linux-sandbox.yml'
+  workflow_dispatch:
+
+jobs:
+  test-linux:
+    name: Test Sandbox on Linux
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+      
+      - name: Run sandbox tests
+        run: |
+          chmod +x tools/test-agent-sandbox.sh
+          bash tools/test-agent-sandbox.sh
