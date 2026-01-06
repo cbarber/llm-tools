@@ -2,7 +2,7 @@ name: Test macOS Sandbox
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/macos-sandbox-security ]
     paths:
       - 'tools/agent-sandbox.sh'
       - 'tools/macos-sandbox.sh'
