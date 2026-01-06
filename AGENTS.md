@@ -256,6 +256,12 @@ git status --short --branch
 
 bash tools/forge pr status
 
+if command -v spr >/dev/null 2>&1 && [[ -f .git/spr.db ]]; then
+  echo ""
+  echo "📚 Stacked PRs:"
+  spr status
+fi
+
 if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
   echo ""
   echo "📋 Available work:"
@@ -264,7 +270,8 @@ fi
 ```
 
 **Next action based on branch state:**
-- **On main, clean** → Pick issue, create feature branch
+- **On agents/* branch** → Add commits, use `spr diff` to create/update PRs
+- **On main, clean** → Pick issue, create feature branch OR switch to agents/* branch
 - **On feature branch, PR merged** → Return to main, create new branch
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
@@ -352,8 +359,15 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
 1. File issues for remaining work
 2. Run quality gates (tests, linters, builds)
 3. Update beads (close/update issues)
-4. Push to remote:
+4. Create/update PRs and push:
    ```bash
+   # For stacked PRs (agents/* branches)
+   if command -v spr >/dev/null 2>&1; then
+     spr diff  # Creates/updates PRs for new commits
+     spr status  # Show what's in flight
+   fi
+   
+   # Push to remote
    git pull --rebase
    bd sync
    git push --force-with-lease
