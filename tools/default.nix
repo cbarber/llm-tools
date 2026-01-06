@@ -33,8 +33,8 @@ let
   
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   
-  spr = pkgs.callPackage ./spr.nix { };
-  git-absorb = pkgs.callPackage ./git-absorb.nix { };
+  spr = pkgs.spr;
+  git-absorb = pkgs.git-absorb;
 in
 {
   inherit cclsp claude-code-scripts beads tea temper spr git-absorb;

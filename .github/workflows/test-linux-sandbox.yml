@@ -1,0 +1,54 @@
+name: Test Linux Sandbox
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/test-agent-sandbox.sh'
+      - '.github/workflows/test-linux-sandbox.yml'
+  pull_request:
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/test-agent-sandbox.sh'
+      - '.github/workflows/test-linux-sandbox.yml'
+  workflow_dispatch:
+
+jobs:
+  test-linux:
+    name: Test Sandbox on Linux
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v9
+      
+      - name: Configure AppArmor for bubblewrap
+        run: |
+          # Create AppArmor profile for Nix-installed bwrap
+          sudo tee /etc/apparmor.d/nix-bwrap << 'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          
+          profile nix-bwrap /nix/store/*/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          
+          # Load the profile
+          sudo apparmor_parser -r /etc/apparmor.d/nix-bwrap
+      
+      - name: Run sandbox tests
+        run: |
+          # Use nix shell to get bubblewrap, but don't run the full opencode shell setup
+          # AUTO_LAUNCH=false prevents opencode from starting
+          # PR_POLL_DAEMON=false prevents pr-poll from starting
+          export AUTO_LAUNCH=false
+          export PR_POLL_DAEMON=false
+          export SKIP_AGENT_SETUP=true
+          export AGENT_SANDBOX_DEBUG=true
+          
+          nix develop .#opencode --command bash tools/test-agent-sandbox.sh
