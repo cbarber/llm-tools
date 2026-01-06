@@ -371,7 +371,7 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
    
    # Then update PRs (for stacked PRs on agents/* branches)
    if command -v spr >/dev/null 2>&1 && [[ -f .git/spr.db ]]; then
-     bash tools/spr-wrapper diff --all  # Updates PRs to match pushed commits
+     bash tools/spr-wrapper diff --all --update-message -m "address review feedback"  # Updates PRs to match pushed commits
      bash tools/spr-wrapper list  # Show what's in flight
    fi
    ```
