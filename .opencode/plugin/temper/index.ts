@@ -222,5 +222,26 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
         console.error(`[temper] Hook failed for ${eventString}:`, error);
       }
     },
+
+    "experimental.session.compacting": async (input) => {
+      logEvent("experimental.session.compacting", { input });
+      
+      try {
+        // Run temper complete to get state snapshot
+        const state = await $`bash tools/temper complete`.text();
+        
+        if (!state || state.trim().length === 0) {
+          return {};
+        }
+        
+        // Return context to be included in compaction
+        return {
+          context: `## Session State at Compaction\n\n${state.trim()}\n`,
+        };
+      } catch (error) {
+        console.error("[temper] Compaction hook failed:", error);
+        return {};
+      }
+    },
   };
 };
