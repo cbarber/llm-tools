@@ -1,4 +1,4 @@
-;; macOS Sandbox Profile for Agent Isolation
+;; macOS Sandbox Profile for Agent Isolation  
 ;; This profile provides similar restrictions to the bubblewrap configuration
 ;; 
 ;; Base permissions inspired by OpenAI Codex and Chrome's sandbox:
