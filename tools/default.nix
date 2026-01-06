@@ -32,9 +32,12 @@ let
   tea = pkgs.tea;
   
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
+  
+  spr = pkgs.callPackage ./spr.nix { };
+  git-absorb = pkgs.callPackage ./git-absorb.nix { };
 in
 {
-  inherit cclsp claude-code-scripts beads tea temper;
+  inherit cclsp claude-code-scripts beads tea temper spr git-absorb;
 
   all = [
     cclsp
@@ -42,5 +45,7 @@ in
     beads
     tea
     temper
+    spr
+    git-absorb
   ];
 }
