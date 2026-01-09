@@ -17,13 +17,29 @@ jobs:
       contents: read
 
     steps:
+      - name: Debug info
+        run: |
+          echo "Comment body: '${{ github.event.comment.body }}'"
+          echo "Is PR: ${{ github.event.issue.pull_request != null }}"
+          echo "PR number: ${{ github.event.issue.number }}"
+      
+      - name: Check if should approve
+        id: check
+        run: |
+          if [[ "${{ github.event.comment.body }}" == "🚀" ]] || [[ "${{ github.event.comment.body }}" == ":rocket:" ]]; then
+            echo "should_approve=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_approve=false" >> $GITHUB_OUTPUT
+          fi
       - name: Auto-approve PR
+        if: steps.check.outputs.should_approve == 'true' && github.event.issue.pull_request
         run: gh pr review ${{ github.event.issue.number }} --approve --body "Approved via 🚀 comment"
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
 
       - name: Add reaction to comment
+        if: steps.check.outputs.should_approve == 'true'
         uses: actions/github-script@v7
         with:
           script: |
