@@ -11,8 +11,7 @@
   fetchgit,
   fetchurl,
   ...
-}:
-{
+}: {
   "@biomejs/biome@1.9.4" = fetchurl {
     url = "https://registry.npmjs.org/@biomejs/biome/-/biome-1.9.4.tgz";
     hash = "sha512-1rkd7G70+o9KkTn5KLmDYXihGoTaIGO9PIIN2ZB7UJxFrWw04CZHPYiMRjYsaDvVV7hP1dYNRLxSANLaBFGpog==";

@@ -1,13 +1,18 @@
-{ lib, stdenv, makeWrapper, jq, libnotify }:
-
+{
+  lib,
+  stdenv,
+  makeWrapper,
+  jq,
+  libnotify,
+}:
 stdenv.mkDerivation {
   pname = "claude-code-scripts";
   version = "0.1.0";
 
   src = ./.;
 
-  nativeBuildInputs = [ makeWrapper ];
-  buildInputs = [ jq libnotify ];
+  nativeBuildInputs = [makeWrapper];
+  buildInputs = [jq libnotify];
 
   dontBuild = true;
 
@@ -15,7 +20,7 @@ stdenv.mkDerivation {
     runHook preInstall
 
     mkdir -p $out/bin
-    
+
     # Copy scripts to bin directory
     cp ${./claude-code-scripts}/smart-lint $out/bin/
     cp ${./claude-code-scripts}/smart-test $out/bin/
@@ -23,14 +28,14 @@ stdenv.mkDerivation {
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
     cp ${./claude-code-scripts}/git-to-bare-worktree $out/bin/
     cp ${./fix-beads-hooks} $out/bin/
-    
+
     # Make scripts executable
     chmod +x $out/bin/*
-    
+
     # Wrap scripts with runtime dependencies
     for script in smart-lint smart-test notify; do
       wrapProgram $out/bin/$script \
-        --prefix PATH : ${lib.makeBinPath [ jq libnotify ]}
+        --prefix PATH : ${lib.makeBinPath [jq libnotify]}
     done
 
     runHook postInstall
