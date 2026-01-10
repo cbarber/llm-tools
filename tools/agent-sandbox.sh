@@ -460,5 +460,15 @@ if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   done
 fi
 
+# Workaround: Claude Code's hook system spawns /bin/sh which doesn't exist on NixOS
+# Bug observed in Claude Code 2.0.76-2.1.3. Only apply when running claude.
+if [[ "${CLAUDECODE:-}" == "1" ]]; then
+  SH_PATH="$(command -v sh)"
+  if [[ -n "$SH_PATH" && -x "$SH_PATH" ]]; then
+    BWRAP_ARGS+=(--dir /bin)
+    BWRAP_ARGS+=(--ro-bind "$SH_PATH" /bin/sh)
+  fi
+fi
+
 # Run command in sandbox
 exec "$BWRAP" "${BWRAP_ARGS[@]}" "$@"
