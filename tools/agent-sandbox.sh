@@ -262,6 +262,15 @@ BWRAP_ARGS=(
   --setenv IN_AGENT_SANDBOX "1"
 )
 
+# Nix configuration (required for nix-shell, flakes, etc.)
+# NixOS uses /etc/static/nix with symlinks from /etc/nix
+if [[ -d /etc/static/nix ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/static/nix /etc/static/nix)
+fi
+if [[ -d /etc/nix ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/nix /etc/nix)
+fi
+
 # SSL/TLS certificates (required for HTTPS and nix operations)
 if [[ -d /etc/ssl ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/ssl /etc/ssl)

@@ -256,6 +256,12 @@ git status --short --branch
 
 bash tools/forge pr status
 
+if command -v spr >/dev/null 2>&1 && [[ -f .git/spr.db ]]; then
+  echo ""
+  echo "📚 Stacked PRs:"
+  spr status
+fi
+
 if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
   echo ""
   echo "📋 Available work:"
@@ -264,10 +270,13 @@ fi
 ```
 
 **Next action based on branch state:**
-- **On main, clean** → Pick issue, create feature branch
+- **On agents/* branch** → Add commits, use `spr diff` to create/update PRs, STAY ON BRANCH
+- **On main, clean** → Pick issue, create feature branch OR switch to agents/* branch
 - **On feature branch, PR merged** → Return to main, create new branch
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
+
+**IMPORTANT:** Permanent agent branches (`agents/*`) are long-lived. Stay on the branch across sessions. Only switch away when intentionally working on something else.
 
 ### edit (tool.execute.before:edit|write)
 
@@ -352,14 +361,23 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
 1. File issues for remaining work
 2. Run quality gates (tests, linters, builds)
 3. Update beads (close/update issues)
-4. Push to remote:
+4. Create/update PRs and push:
    ```bash
+   # Push to remote FIRST
    git pull --rebase
    bd sync
    git push --force-with-lease
    git status  # MUST show "up to date with origin"
+   
+   # Then update PRs (for stacked PRs on agents/* branches)
+   if command -v spr >/dev/null 2>&1 && [[ -f .git/spr.db ]]; then
+     bash tools/spr-wrapper diff --all --update-message -m "rebase"  # Use descriptive message: "rebase", "fixup squashed", "review feedback", etc.
+     bash tools/spr-wrapper list  # Show what's in flight
+   fi
    ```
    If `--force-with-lease` fails, STOP and ask for help.
+
+5. **Stay on agents/* branch** - Do NOT switch back to main. The branch is permanent.
 
 5. Handoff for context:
    Provide brief context about what was accomplished for session continuity:
