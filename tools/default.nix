@@ -31,16 +31,19 @@ let
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
   tea = pkgs.tea;
   
+  spr = pkgs.callPackage ./spr { };
+  
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
 in
 {
-  inherit cclsp claude-code-scripts beads tea temper;
+  inherit cclsp claude-code-scripts beads tea spr temper;
 
   all = [
     cclsp
     claude-code-scripts
     beads
     tea
+    spr
     temper
   ];
 }
