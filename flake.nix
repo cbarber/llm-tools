@@ -8,30 +8,27 @@
     bun2nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-      bun2nix,
-    }:
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    bun2nix,
+  }:
     flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+      system: let
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
-          overlays = [ (import ./overlays) ];
+          overlays = [(import ./overlays)];
         };
         tools = import ./tools {
           inherit pkgs;
           bun2nix = bun2nix.packages.${system}.default;
         };
-      in
-      {
+      in {
         packages = {
-          claude-code = import ./agents/claude-code { inherit pkgs tools; };
-          opencode = import ./agents/opencode { inherit pkgs tools; };
+          claude-code = import ./agents/claude-code {inherit pkgs tools;};
+          opencode = import ./agents/opencode {inherit pkgs tools;};
         };
 
         devShells = {
@@ -39,14 +36,12 @@
           opencode = self.packages.${system}.opencode;
           default = {
             name = "dev-shell";
-            buildInputs =
-              with pkgs;
-              [
-                typescript
-                typescript-language-server
-                vtsls
-                bun
-              ];
+            buildInputs = with pkgs; [
+              typescript
+              typescript-language-server
+              vtsls
+              bun
+            ];
           };
         };
       }

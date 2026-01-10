@@ -1,10 +1,11 @@
-{ pkgs, tools }:
-
+{
+  pkgs,
+  tools,
+}:
 pkgs.mkShell {
   name = "claude-code-shell";
 
-  buildInputs =
-    with pkgs;
+  buildInputs = with pkgs;
     [
       claude-code
       findutils
