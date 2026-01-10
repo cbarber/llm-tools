@@ -1,10 +1,11 @@
-{ pkgs, tools }:
-
+{
+  pkgs,
+  tools,
+}:
 pkgs.mkShell {
   name = "opencode-shell";
 
-  buildInputs =
-    with pkgs;
+  buildInputs = with pkgs;
     [
       opencode
       findutils

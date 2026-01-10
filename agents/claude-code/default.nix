@@ -1,10 +1,11 @@
-{ pkgs, tools }:
-
+{
+  pkgs,
+  tools,
+}:
 pkgs.mkShell {
   name = "claude-code-shell";
 
-  buildInputs =
-    with pkgs;
+  buildInputs = with pkgs;
     [
       claude-code
       findutils
@@ -15,6 +16,7 @@ pkgs.mkShell {
     ++ tools.all;
 
   shellHook = ''
+    export CLAUDECODE=1
     export AGENTS_TEMPLATES_DIR="${../templates}"
     export AGENTS_TEMPLATE_DEFAULT="${../templates/default.md}"
     export SETTINGS_TEMPLATE="${./settings.template.json}"
