@@ -247,11 +247,11 @@ BWRAP_ARGS=(
 
   # Namespace isolation
   --unshare-all
-  --share-net  # Allow network access
-  
+  --share-net # Allow network access
+
   # Die with parent (cleanup if parent dies)
   --die-with-parent
-  
+
   # Preserve PATH and mark that we're in sandbox
   --setenv PATH "$PATH"
   --setenv IN_AGENT_SANDBOX "1"
@@ -309,6 +309,11 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
+# Nix configuration (required for nix-shell, flakes, etc.)
+# NixOS uses /etc/static/nix with symlinks from /etc/nix
+[[ -d /etc/static/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/static/nix")
+[[ -d /etc/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/nix")
+
 # SSL/TLS certificates (required for HTTPS and nix operations)
 [[ -d /etc/ssl ]] && SANDBOX_MOUNTS_RO+=("/etc/ssl")
 [[ -d /etc/pki ]] && SANDBOX_MOUNTS_RO+=("/etc/pki")
@@ -327,7 +332,7 @@ fi
 
 # Bind mount all directories in PATH (read-only)
 # This ensures all commands available to the parent are available in the sandbox
-IFS=':' read -ra PATH_DIRS <<< "$PATH"
+IFS=':' read -ra PATH_DIRS <<<"$PATH"
 for dir in "${PATH_DIRS[@]}"; do
   if [[ -d "$dir" ]]; then
     # Skip if already covered by /nix bind or if in HOME directory
@@ -355,19 +360,19 @@ if [[ -e "$HOME/.gitconfig" ]]; then
   gitconfig_target=$(readlink -f "$HOME/.gitconfig")
   gitconfig_dir=$(dirname "$gitconfig_target")
   SANDBOX_MOUNTS_RO+=("$gitconfig_target:$HOME/.gitconfig")
-  
+
   # Mount files referenced by includeIf directives
   while IFS= read -r include_path; do
     # Expand tilde to $HOME
     expanded_path="${include_path/#\~/$HOME}"
-    
+
     # If path is relative, resolve it relative to gitconfig's directory
     if [[ "$expanded_path" != /* ]]; then
       expanded_path="$gitconfig_dir/$expanded_path"
     fi
-    
+
     resolved_path=$(readlink -f "$expanded_path" 2>/dev/null || echo "$expanded_path")
-    
+
     [[ -f "$resolved_path" ]] && SANDBOX_MOUNTS_RO+=("$resolved_path")
   done < <(grep -A1 '^\[includeIf' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 fi
@@ -425,18 +430,18 @@ done
 # SANDBOX_EXTRA_RO="/path/one:/path/two:~/path/three"
 # SANDBOX_EXTRA_RW="/workspace:/data"
 if [[ -n "${SANDBOX_EXTRA_RO:-}" ]]; then
-  IFS=':' read -ra EXTRA_RO <<< "$SANDBOX_EXTRA_RO"
+  IFS=':' read -ra EXTRA_RO <<<"$SANDBOX_EXTRA_RO"
   SANDBOX_MOUNTS_RO+=("${EXTRA_RO[@]}")
 fi
 
 if [[ -n "${SANDBOX_EXTRA_RW:-}" ]]; then
-  IFS=':' read -ra EXTRA_RW <<< "$SANDBOX_EXTRA_RW"
+  IFS=':' read -ra EXTRA_RW <<<"$SANDBOX_EXTRA_RW"
   SANDBOX_MOUNTS_RW+=("${EXTRA_RW[@]}")
 fi
 
 # Backward compatibility: BWRAP_EXTRA_PATHS (deprecated, use SANDBOX_EXTRA_RW)
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
-  IFS=':' read -ra EXTRA_PATHS <<< "$BWRAP_EXTRA_PATHS"
+  IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
   SANDBOX_MOUNTS_RW+=("${EXTRA_PATHS[@]}")
 fi
 
@@ -446,29 +451,29 @@ build_mounts() {
   shift
   local mounts=("$@")
   local pwd_path="$(pwd)"
-  
+
   for mount in "${mounts[@]}"; do
     # Skip empty entries
     [[ -z "$mount" ]] && continue
-    
+
     # Parse source:dest (if no colon, dest = source)
-    IFS=':' read -r src dest <<< "$mount"
+    IFS=':' read -r src dest <<<"$mount"
     [[ -z "$dest" ]] && dest="$src"
-    
+
     # Expand tilde in paths
     src="${src/#\~/$HOME}"
     dest="${dest/#\~/$HOME}"
-    
+
     # Skip if source doesn't exist
     [[ ! -e "$src" ]] && continue
-    
+
     # Create parent directory if needed for remapped paths
     # Only needed when src != dest (remapped paths like gitconfig)
     if [[ "$src" != "$dest" ]]; then
       local parent=$(dirname "$dest")
       BWRAP_ARGS+=(--dir "$parent")
     fi
-    
+
     # Add the mount
     if [[ "$mode" == "rw" ]]; then
       BWRAP_ARGS+=(--bind "$src" "$dest")
