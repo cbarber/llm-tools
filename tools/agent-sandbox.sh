@@ -445,6 +445,15 @@ if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   SANDBOX_MOUNTS_RW+=("${EXTRA_PATHS[@]}")
 fi
 
+# Workaround: Agent hook systems may spawn /bin/sh which doesn't exist on NixOS
+# Add /bin/sh mount if needed (cross-platform via mount array)
+if [[ "${CLAUDECODE:-}" == "1" ]] || [[ "${OPENCODE:-}" == "1" ]]; then
+  SH_PATH="$(command -v sh)"
+  if [[ -n "$SH_PATH" && -x "$SH_PATH" ]]; then
+    SANDBOX_MOUNTS_RO+=("$SH_PATH:/bin/sh")
+  fi
+fi
+
 # Build mount arguments from arrays (Docker-style source:dest syntax)
 build_mounts() {
   local mode=$1
