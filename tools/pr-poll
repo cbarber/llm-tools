@@ -189,6 +189,11 @@ check_pr() {
     local curr_pr_state=$(echo "$current_state" | jq -r '.state')
     local prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
     
+    # Treat null/empty as unknown (happens when state file is empty or PR not yet tracked)
+    if [[ "$prev_pr_state" == "null" || -z "$prev_pr_state" ]]; then
+        prev_pr_state="unknown"
+    fi
+    
     # Get comment IDs for comparison
     local curr_comment_ids=$(echo "$current_state" | jq -r '.comment_ids // []')
     local prev_comment_ids=$(echo "$previous_state" | jq -r '.comment_ids // []')
