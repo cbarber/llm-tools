@@ -67,6 +67,87 @@ if [[ ! -f "$STATE_FILE" ]]; then
     echo '{}' > "$STATE_FILE"
 fi
 
+# Format a single comment for display
+format_comment() {
+    local comment="$1"
+    local is_reply="$2"  # true if this is a reply in a thread
+    
+    local id=$(echo "$comment" | jq -r '.id')
+    local author=$(echo "$comment" | jq -r '.user.login')
+    local body=$(echo "$comment" | jq -r '.body')
+    local path=$(echo "$comment" | jq -r '.path // "general"')
+    local position=$(echo "$comment" | jq -r '.position // .original_position // "null"')
+    local diff_hunk=$(echo "$comment" | jq -r '.diff_hunk // ""')
+    
+    local output=""
+    if [[ "$is_reply" == "true" ]]; then
+        output="  ↳ Reply to previous comment\n"
+    fi
+    
+    output+="[$id] $path:$position @$author\n"
+    output+="$body\n"
+    
+    if [[ -n "$diff_hunk" ]]; then
+        output+="$diff_hunk\n"
+    fi
+    
+    echo -e "$output"
+}
+
+# Build thread context for a comment (walks up to root, then formats entire thread)
+build_comment_thread() {
+    local all_comments="$1"
+    local comment_id="$2"
+    
+    # Find the comment
+    local comment=$(echo "$all_comments" | jq --argjson id "$comment_id" '
+        (.general + .review) | map(select(.id == $id)) | .[0]
+    ')
+    
+    if [[ "$comment" == "null" ]]; then
+        return
+    fi
+    
+    # Walk up to find root comment
+    local root_id="$comment_id"
+    local current_id="$comment_id"
+    while true; do
+        local in_reply_to=$(echo "$all_comments" | jq --argjson id "$current_id" '
+            (.general + .review) | map(select(.id == $id)) | .[0].in_reply_to_id // null
+        ')
+        if [[ "$in_reply_to" == "null" ]]; then
+            root_id="$current_id"
+            break
+        fi
+        current_id="$in_reply_to"
+        root_id="$current_id"
+    done
+    
+    # Collect all comments in thread (root + all descendants)
+    local thread_comments=$(echo "$all_comments" | jq --argjson root "$root_id" '
+        (.general + .review) as $all |
+        # Find root and all comments that reply to root (directly or indirectly)
+        $all | map(select(
+            .id == $root or .in_reply_to_id == $root
+        ))
+    ')
+    
+    # Format thread
+    local output=""
+    local is_first=true
+    while IFS= read -r thread_comment; do
+        if [[ "$is_first" == "true" ]]; then
+            output+=$(format_comment "$thread_comment" "false")
+            is_first=false
+        else
+            output+="\n"
+            output+=$(format_comment "$thread_comment" "true")
+        fi
+    done < <(echo "$thread_comments" | jq -c '.[]')
+    
+    echo -e "$output"
+}
+
 # Get current PR state from forge
 get_pr_state() {
     local pr_number="$1"
@@ -76,16 +157,18 @@ get_pr_state() {
         return 1
     fi
     
-    # Get total comment count (general + review), excluding bot replies
+    # Get all comments (including bot comments for state tracking)
     local comments=$(bash "${SCRIPT_DIR}/forge" pr comments "$pr_number" --json 2>/dev/null || echo '{"general":[],"review":[]}')
-    # Filter out comments ending with agent signature (bot replies don't trigger notifications)
-    local comment_count=$(echo "$comments" | jq '
-        (.general | map(select(.body | endswith("*🤖 Posted by agent*") | not)) | length) +
-        (.review | map(select(.body | endswith("*🤖 Posted by agent*") | not)) | length)
+    
+    # Track ALL comment IDs in state (including bot comments)
+    local all_comment_ids=$(echo "$comments" | jq '
+        (.general + .review) | map(.id)
     ')
     
-    # Add comment_count and timestamp to state
-    echo "$state" | jq --argjson count "$comment_count" '. + {comment_count: $count, last_check: now}'
+    echo "$state" | jq \
+        --argjson ids "$all_comment_ids" \
+        --argjson comments "$comments" \
+        '. + {comment_ids: $ids, comments: $comments, last_check: now}'
 }
 
 # Check for changes and notify if needed
@@ -99,17 +182,36 @@ check_pr() {
         return 1
     fi
     
-    # Get previous state from file
-    local previous_state=$(jq -r --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
+    # Get previous state from file (keep as JSON, not raw string)
+    local previous_state=$(jq --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
     
     # Extract fields for comparison
     local curr_pr_state=$(echo "$current_state" | jq -r '.state')
-    local curr_comments=$(echo "$current_state" | jq -r '.comment_count')
     local prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
-    local prev_comments=$(echo "$previous_state" | jq -r '.comment_count // 0')
+    
+    # Get comment IDs for comparison
+    local curr_comment_ids=$(echo "$current_state" | jq -r '.comment_ids // []')
+    local prev_comment_ids=$(echo "$previous_state" | jq -r '.comment_ids // []')
+    
+    # Find new comment IDs (excluding bot comments for notification)
+    local new_comment_ids=$(echo "$curr_comment_ids" | jq -r --argjson prev "$prev_comment_ids" '
+        map(select(. as $id | $prev | index($id) | not))
+    ')
+    
+    # Filter out bot comments from new comment IDs
+    local all_comments=$(echo "$current_state" | jq -r '.comments')
+    local new_non_bot_ids=$(echo "$all_comments" | jq -r --argjson new_ids "$new_comment_ids" '
+        (.general + .review) | 
+        map(select(
+            (.id as $id | $new_ids | index($id) != null) and
+            (.body | endswith("*🤖 Posted by agent*") | not)
+        )) | 
+        map(.id)
+    ')
     
     # Detect changes
     local changes=()
+    local new_comment_threads=""
     if [[ "$prev_pr_state" == "unknown" ]]; then
         echo "First check for PR #$pr_number - no notification" >&2
     else
@@ -117,16 +219,25 @@ check_pr() {
             changes+=("Status changed: $prev_pr_state → $curr_pr_state")
         fi
         
-        if [[ "$curr_comments" -gt "$prev_comments" ]]; then
-            local new_count=$((curr_comments - prev_comments))
-            changes+=("$new_count new comment(s)")
+        # Check for new non-bot comments
+        local new_ids_array=($(echo "$new_non_bot_ids" | jq -r '.[]'))
+        if [[ ${#new_ids_array[@]} -gt 0 ]]; then
+            changes+=("${#new_ids_array[@]} new comment(s)")
+            
+            new_comment_threads+="New comments:\n\n"
+            for comment_id in "${new_ids_array[@]}"; do
+                local thread=$(build_comment_thread "$all_comments" "$comment_id")
+                new_comment_threads+="$thread"
+                new_comment_threads+="\n---\n\n"
+            done
         fi
     fi
     
-    # Update state file
+    # Update state file (remove comments field to avoid storing large data)
+    local state_to_store=$(echo "$current_state" | jq 'del(.comments)')
     local new_state=$(jq \
         --arg pr "$pr_number" \
-        --argjson state "$current_state" \
+        --argjson state "$state_to_store" \
         '.[$pr] = $state' \
         "$STATE_FILE")
     echo "$new_state" > "$STATE_FILE"
@@ -136,8 +247,9 @@ check_pr() {
         local title=$(echo "$current_state" | jq -r '.title')
         local change_summary=$(printf '%s\n' "${changes[@]}")
         
-        local notification=$(cat <<EOF
-<pr-update>
+        # Build notification with optional comment threads
+        local total_comments=$(echo "$curr_comment_ids" | jq 'length')
+        local notification="<pr-update>
 🔔 PR #$pr_number Update:
 
 $title
@@ -146,12 +258,20 @@ Changes:
 $change_summary
 
 Current status: $curr_pr_state
-Comments: $curr_comments
+Comments: $total_comments
+"
+        
+        # Add new comment threads if any
+        if [[ -n "$new_comment_threads" ]]; then
+            notification+="
+---
 
-Run \`forge pr view $pr_number\` for details.
-</pr-update>
-EOF
-)
+$(echo -e "$new_comment_threads")"
+        fi
+        
+        notification+="
+Run \`forge pr view $pr_number\` for full details.
+</pr-update>"
         
         echo "Changes detected for PR #$pr_number:" >&2
         echo "$change_summary" >&2
