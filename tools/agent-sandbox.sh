@@ -262,6 +262,15 @@ BWRAP_ARGS=(
   --setenv IN_AGENT_SANDBOX "1"
 )
 
+# Nix configuration (required for nix-shell, flakes, etc.)
+# NixOS uses /etc/static/nix with symlinks from /etc/nix
+if [[ -d /etc/static/nix ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/static/nix /etc/static/nix)
+fi
+if [[ -d /etc/nix ]]; then
+  BWRAP_ARGS+=(--ro-bind /etc/nix /etc/nix)
+fi
+
 # SSL/TLS certificates (required for HTTPS and nix operations)
 if [[ -d /etc/ssl ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/ssl /etc/ssl)
@@ -449,6 +458,16 @@ if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
       BWRAP_ARGS+=(--bind "$expanded_path" "$expanded_path")
     fi
   done
+fi
+
+# Workaround: Claude Code's hook system spawns /bin/sh which doesn't exist on NixOS
+# Bug observed in Claude Code 2.0.76-2.1.3. Only apply when running claude.
+if [[ "${CLAUDECODE:-}" == "1" ]]; then
+  SH_PATH="$(command -v sh)"
+  if [[ -n "$SH_PATH" && -x "$SH_PATH" ]]; then
+    BWRAP_ARGS+=(--dir /bin)
+    BWRAP_ARGS+=(--ro-bind "$SH_PATH" /bin/sh)
+  fi
 fi
 
 # Run command in sandbox

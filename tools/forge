@@ -463,15 +463,15 @@ pr_comments() {
         github)
             if [[ "$json_output" == true ]]; then
                 # Return both general and review comments as JSON
-                echo '{"general":' && gh api "repos/{owner}/{repo}/issues/${number}/comments" && echo ',"review":' && gh api "repos/{owner}/{repo}/pulls/${number}/comments" && echo '}'
+                echo '{"general":' && gh api "repos/{owner}/{repo}/issues/${number}/comments" --paginate && echo ',"review":' && gh api "repos/{owner}/{repo}/pulls/${number}/comments" --paginate && echo '}'
             else
                 # Fetch general comments (issue/PR conversation)
                 local general_comments
-                general_comments=$(gh api "repos/{owner}/{repo}/issues/${number}/comments" --jq '.[] | "[general] @\(.user.login)\n\(.body)\n"' 2>/dev/null || echo "")
+                general_comments=$(gh api "repos/{owner}/{repo}/issues/${number}/comments" --paginate --jq '.[] | "[general] @\(.user.login)\n\(.body)\n"' 2>/dev/null || echo "")
                 
                 # Fetch review comments with threading context
                 local review_comments_raw
-                review_comments_raw=$(gh api "repos/{owner}/{repo}/pulls/${number}/comments" 2>/dev/null || echo "[]")
+                review_comments_raw=$(gh api "repos/{owner}/{repo}/pulls/${number}/comments" --paginate 2>/dev/null || echo "[]")
                 
                 # Build comment lookup map and format with threading context
                 local review_comments
