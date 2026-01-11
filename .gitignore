@@ -4,3 +4,8 @@
 .pr-poll.log
 .direnv
 .opencode/event.log
+.spr.yml
+.spr.state
+result
+tools/*/result
+tools/*/flake.lock
