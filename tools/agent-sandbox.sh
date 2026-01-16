@@ -356,7 +356,33 @@ if [[ -e "$HOME/.config/git/config" ]]; then
 fi
 if [[ -e "$HOME/.gitconfig" ]]; then
   gitconfig_target=$(readlink -f "$HOME/.gitconfig")
+  gitconfig_dir=$(dirname "$gitconfig_target")
   BWRAP_ARGS+=(--ro-bind "$gitconfig_target" "$HOME/.gitconfig")
+  
+  # Mount files referenced by includeIf directives
+  # Extract paths from includeIf sections (format: [includeIf "..."] followed by path = ...)
+  while IFS= read -r include_path; do
+    # Expand tilde to $HOME
+    expanded_path="${include_path/#\~/$HOME}"
+    
+    # If path is relative, resolve it relative to gitconfig's directory
+    if [[ "$expanded_path" != /* ]]; then
+      expanded_path="$gitconfig_dir/$expanded_path"
+    fi
+    
+    resolved_path=$(readlink -f "$expanded_path" 2>/dev/null || echo "$expanded_path")
+    
+    if [[ -f "$resolved_path" ]]; then
+      # Mount the included config file
+      BWRAP_ARGS+=(--ro-bind "$resolved_path" "$resolved_path")
+      
+      # Ensure parent directory structure exists in sandbox
+      parent_dir=$(dirname "$resolved_path")
+      if [[ -d "$parent_dir" ]] && [[ ! "$parent_dir" =~ ^$HOME/.config ]]; then
+        BWRAP_ARGS+=(--dir "$parent_dir")
+      fi
+    fi
+  done < <(grep -A1 '^\[includeIf' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 fi
 
 # Config directories
