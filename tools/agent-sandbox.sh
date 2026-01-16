@@ -262,6 +262,33 @@ BWRAP_ARGS=(
   --setenv IN_AGENT_SANDBOX "1"
 )
 
+# Git directory discovery and mounting
+# Use git rev-parse to discover all git directories (works for regular repos, worktrees, and bare repos)
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  # Get the git directory for this worktree/repo
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+  if [[ -n "$git_dir" ]]; then
+    # Resolve to absolute path (may be relative like ".git")
+    git_dir_abs=$(cd "$(pwd)" && cd "$git_dir" && pwd)
+    
+    # Mount the git directory (read-write for commit/push/pull)
+    if [[ -d "$git_dir_abs" ]]; then
+      BWRAP_ARGS+=(--bind "$git_dir_abs" "$git_dir_abs")
+      
+      # Get the common git dir (shared objects, refs, config for worktrees)
+      # For regular repos, this equals git_dir. For worktrees, points to main repo's .git/
+      common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+      if [[ -n "$common_git_dir" ]]; then
+        common_git_dir_abs=$(cd "$(pwd)" && cd "$common_git_dir" && pwd)
+        # Only mount if different from worktree's git dir
+        if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
+          BWRAP_ARGS+=(--bind "$common_git_dir_abs" "$common_git_dir_abs")
+        fi
+      fi
+    fi
+  fi
+fi
+
 # SSL/TLS certificates (required for HTTPS and nix operations)
 if [[ -d /etc/ssl ]]; then
   BWRAP_ARGS+=(--ro-bind /etc/ssl /etc/ssl)
