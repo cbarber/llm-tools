@@ -256,30 +256,32 @@ else
     log_fail "/proc is not accessible"
 fi
 
-# TEST 13: Performance impact
-log_test "Performance impact measurement"
+# TEST 13: Sandbox startup performance
+log_test "Sandbox startup performance (10 iterations)"
 
-echo -n "Measuring performance overhead... "
+echo -n "Measuring startup overhead... "
 
 # Run a simple command 10 times without sandbox
 TIME_WITHOUT=$(bash -c 'start=$(date +%s%N); for i in {1..10}; do ls /nix/store > /dev/null 2>&1; done; end=$(date +%s%N); echo $((end - start))')
 
-# Run the same command 10 times with sandbox
+# Run the same command 10 times with sandbox (measures startup cost, not runtime)
 TIME_WITH=$(bash -c "start=\$(date +%s%N); for i in {1..10}; do '$SANDBOX_SCRIPT' ls /nix/store > /dev/null 2>&1; done; end=\$(date +%s%N); echo \$((end - start))")
 
 OVERHEAD=$((TIME_WITH - TIME_WITHOUT))
 OVERHEAD_MS=$((OVERHEAD / 1000000))
+OVERHEAD_PER_START=$((OVERHEAD_MS / 10))
 PERCENT=$((OVERHEAD * 100 / TIME_WITHOUT))
 
 echo ""
-echo "  Without sandbox: ${TIME_WITHOUT}ns"
-echo "  With sandbox:    ${TIME_WITH}ns"
-echo "  Overhead:        ${OVERHEAD_MS}ms (${PERCENT}% slower)"
+echo "  Without sandbox: ${TIME_WITHOUT}ns ($(($TIME_WITHOUT / 10000000))ms per iteration)"
+echo "  With sandbox:    ${TIME_WITH}ns ($(($TIME_WITH / 10000000))ms per iteration)"
+echo "  Startup overhead: ${OVERHEAD_PER_START}ms per sandbox start"
+echo "  Total overhead:   ${OVERHEAD_MS}ms (${PERCENT}% slower for 10 starts)"
 
 if [[ $OVERHEAD_MS -lt 1000 ]]; then
-    log_pass "Performance overhead is acceptable (<1s for 10 iterations)"
+    log_pass "Sandbox startup overhead acceptable (<1s for 10 iterations, ~${OVERHEAD_PER_START}ms per start)"
 else
-    log_fail "Performance overhead is high (${OVERHEAD_MS}ms for 10 iterations)"
+    log_fail "Sandbox startup overhead high (${OVERHEAD_MS}ms for 10 iterations, ~${OVERHEAD_PER_START}ms per start)"
 fi
 
 # TEST 14: SSH key access control
