@@ -313,72 +313,105 @@ Linux sandbox only mounted legacy file, breaking XDG-only users.
 Authored By: claude-code (claude-3.7-sonnet)
 ```
 
-### pull-request (tool.execute.after:bash:.*git push.*)
+**Rewriting commit messages:**
 
-**IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
+To change a commit message further back in history, use `amend!` commits:
 
-Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/forge --help` before attempting direct API calls.
-
-**Workflow:**
 ```bash
-# Create PR
-git push -u origin <branch>
-bash tools/forge pr create --title "..." --body "..."
+# Get the subject line of the commit to reword
+git log --format="%s" -1 <commit-hash>
 
-# View PR (includes all comments)
-bash tools/forge pr view 123
+# Create amend commit (subject = "amend! <original-subject>", body = new full message)
+git commit --allow-empty -m "amend! <original-subject>" -m "<new-full-message-including-subject>"
 
-# View all comments only
-bash tools/forge pr comments 1
-
-# Reply to specific review comment
-bash tools/forge pr review-reply 1 123456789 "Fixed in commit abc123"
+# Apply via autosquash
+git rebase --autosquash origin/main
 ```
 
-**PR body must explain:**
-- WHY the change was made (motivation, rationale)
-- Link to beads issue if applicable
-- What's blocking completion (if using --draft)
+Example:
+```bash
+# Reword commit abc123 "feat(foo): add bar"
+git commit --allow-empty -m "amend! feat(foo): add bar" -m "feat(foo): add bar
+
+New body explaining why without outdated details.
+
+Authored By: claude-code (claude-3.7-sonnet)"
+
+git rebase --autosquash origin/main
+```
+
+### pull-request (tool.execute.after:bash:.*spr update.*)
+
+**Default workflow: Stacked PRs with spr**
+
+Each commit becomes its own PR, stacked on previous commits. This enables independent review and landing of logical changes.
+
+**Setup:**
+```bash
+# Create feature branch (use `-` not `/` - spr fails with slashes)
+git checkout -b feat-description
+
+# Set branch to track origin/main (required for spr)
+git branch --set-upstream-to=origin/main
+```
+
+**Creating PRs:**
+```bash
+# After creating commits, create/update all PRs in the stack
+export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
+spr update
+```
+
+**Viewing PR status:**
+```bash
+# View all PRs in stack with check/approval status
+spr status
+
+# View specific PR comments (use forge for this)
+bash tools/forge pr view 123
+bash tools/forge pr comments 123
+```
 
 **Addressing review feedback:**
 ```bash
 # Option 1: Automatic fixup with git-absorb
 git add <changed-files>
 git absorb                            # Automatically creates fixups for staged changes
-git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
+git rebase --autosquash origin/main   # Squash fixups
 
 # Option 2: Manual fixup
 git commit --fixup=<sha>              # Fix specific commit
-git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
+git rebase --autosquash origin/main   # Squash fixups
 
-git push --force-with-lease
+# Update PRs after fixing
+spr update
 ```
+
+**Replying to review comments:**
+```bash
+bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
+```
+
+**Landing changes:**
+```bash
+# Once PRs are approved, merge entire stack
+spr merge
+```
+
+**Key points:**
+- Each commit = one PR for independent review
+- `spr update` creates/updates all PRs automatically
+- `spr merge` lands all approved PRs at once
+- NEVER merge via GitHub UI (breaks the stack)
+- NEVER use `git push` - use `spr update` instead
+- Branch must track `origin/main` (spr compares HEAD to tracking branch)
 
 **git-absorb workflow:**
 - Stage changes you want to fix: `git add <files>`
 - Run `git absorb` to automatically create fixup commits
 - It matches hunks to the commits that last modified them
 - Then squash with `git rebase --autosquash origin/main`
-
-**Stacked PRs with spr:**
-
-For multiple related commits as separate PRs, use spr (stacked pull requests). Each commit becomes its own PR, stacked on previous commits.
-
-Branch naming: Use `-` not `/` (e.g., `feat-foo` not `feat/foo` - spr fails with slashes).
-
-Workflow:
-```bash
-spr update  # Create/update PRs for all unpushed commits
-spr status  # View PR stack status
-spr merge   # Merge all approved PRs in the stack
-```
-
-Key points:
-- `spr update` creates/updates PRs automatically
-- `spr merge` lands all mergeable PRs at once
-- Never merge via GitHub UI (breaks the stack)
-- Branch must track `origin/main`, not the remote feature branch (spr compares HEAD to tracking branch)
-- Use git-absorb or `git commit --fixup=<sha>` + `git rebase --autosquash` for review feedback
+- Update PRs with `spr update`
 
 See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
 
