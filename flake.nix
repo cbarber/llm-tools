@@ -37,7 +37,7 @@
         devShells = {
           claude-code = self.packages.${system}.claude-code;
           opencode = self.packages.${system}.opencode;
-          default = {
+          default = pkgs.mkShell {
             name = "dev-shell";
             buildInputs =
               with pkgs;
