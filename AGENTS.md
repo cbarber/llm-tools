@@ -27,7 +27,11 @@ cp agents/templates/default.md agents/templates/cbarber.md
 
 See `agents/templates/README.md` for details.
 
-## Development Guidelines 
+## Agent Environment
+
+You are running in a sandboxed environment by default. The sandbox isolates filesystem access while allowing read-write to the current project directory and necessary git directories. Check `IN_AGENT_SANDBOX` environment variable to confirm sandbox status.
+
+## Development Guidelines
 
 * Be succinct. Only provide examples if necessary
 * Be strategic. Plan first, ask questions, then execute
