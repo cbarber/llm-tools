@@ -266,26 +266,43 @@ SANDBOX_MOUNTS_RW+=("$(pwd)")
 SANDBOX_MOUNTS_RW+=("/tmp")
 
 # Git directory discovery and mounting
-# Use git rev-parse to discover all git directories (works for regular repos, worktrees, and bare repos)
+# Use git commands to discover git directories, then mount repo root + git directories
+# This allows git to traverse from CWD up to the repository without hitting filesystem boundaries
 if git rev-parse --git-dir >/dev/null 2>&1; then
+  debug_sandbox "Git repository detected"
+
   # Get the git directory for this worktree/repo
   git_dir=$(git rev-parse --git-dir 2>/dev/null)
   if [[ -n "$git_dir" ]]; then
     # Resolve to absolute path (may be relative like ".git")
     git_dir_abs=$(cd "$(pwd)" && cd "$git_dir" && pwd)
-    
+    debug_sandbox "Git dir: $git_dir_abs"
+
     # Mount the git directory (read-write for commit/push/pull)
     if [[ -d "$git_dir_abs" ]]; then
       SANDBOX_MOUNTS_RW+=("$git_dir_abs")
-      
+      debug_sandbox "Mounted git dir (RW): $git_dir_abs"
+
       # Get the common git dir (shared objects, refs, config for worktrees)
       # For regular repos, this equals git_dir. For worktrees, points to main repo's .git/
       common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
       if [[ -n "$common_git_dir" ]]; then
         common_git_dir_abs=$(cd "$(pwd)" && cd "$common_git_dir" && pwd)
+        debug_sandbox "Common git dir: $common_git_dir_abs"
+
         # Only mount if different from worktree's git dir
         if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
           SANDBOX_MOUNTS_RW+=("$common_git_dir_abs")
+          debug_sandbox "Mounted common git dir (RW): $common_git_dir_abs"
+
+          # Mount the repo root (parent of the bare/common repo)
+          # This allows git to traverse from worktree to bare repo
+          repo_root=$(dirname "$common_git_dir_abs")
+          pwd_path="$(pwd)"
+          if [[ "$repo_root" != "$pwd_path" ]]; then
+            SANDBOX_MOUNTS_RO+=("$repo_root")
+            debug_sandbox "Mounted repo root (RO): $repo_root"
+          fi
         fi
       fi
     fi
