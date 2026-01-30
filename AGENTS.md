@@ -313,6 +313,33 @@ Linux sandbox only mounted legacy file, breaking XDG-only users.
 Authored By: claude-code (claude-3.7-sonnet)
 ```
 
+**Rewriting commit messages:**
+
+To change a commit message further back in history, use `amend!` commits:
+
+```bash
+# Get the subject line of the commit to reword
+git log --format="%s" -1 <commit-hash>
+
+# Create amend commit (subject = "amend! <original-subject>", body = new full message)
+git commit --allow-empty -m "amend! <original-subject>" -m "<new-full-message-including-subject>"
+
+# Apply via autosquash
+git rebase --autosquash origin/main
+```
+
+Example:
+```bash
+# Reword commit abc123 "feat(foo): add bar"
+git commit --allow-empty -m "amend! feat(foo): add bar" -m "feat(foo): add bar
+
+New body explaining why without outdated details.
+
+Authored By: claude-code (claude-3.7-sonnet)"
+
+git rebase --autosquash origin/main
+```
+
 ### pull-request (tool.execute.after:bash:.*git push.*)
 
 **IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
