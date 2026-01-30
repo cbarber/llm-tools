@@ -14,7 +14,8 @@ let
   opencode = {
     version = "1.1.43";
     srcHash = "sha256-+CBqfdK3mw5qnl4sViFEcTSslW0sOE53AtryD2MdhTI=";
-    nodeModulesHash = "sha256-xzstLGcOaZx9x3jUL2chvZQ3pYtAiXJ7joNrZwADrY8=";
+    # Hash calculated with pinned bun 1.3.6
+    nodeModulesHash = "sha256-zkinMkPR1hCBbB5BIuqozQZDpjX4eiFXjM6lpwUx1fM=";
   };
 
   # ============================================================================
@@ -39,8 +40,19 @@ in
         hash = opencode.srcHash;
       };
       # Override node_modules FOD with new src and hash
+      # Pin bun version to ensure reproducible builds across nixpkgs updates
       node_modules = old.node_modules.overrideAttrs (oldNm: {
         inherit version src;
+        nativeBuildInputs = [
+          (prev.bun.overrideAttrs (oldBun: {
+            version = "1.3.6";
+            src = prev.fetchurl {
+              url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.6/bun-linux-x64.zip";
+              hash = "sha256-bq+bs/BdzNsGa2e1xzVp3LglSbRStM/nW9QLcQVKEP0=";
+            };
+          }))
+          oldNm.nativeBuildInputs
+        ];
         outputHash = opencode.nodeModulesHash;
       });
     })
