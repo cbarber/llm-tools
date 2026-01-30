@@ -46,6 +46,7 @@
                 typescript-language-server
                 vtsls
                 bun
+                tools.spr
               ];
           };
         };
