@@ -111,8 +111,8 @@ print_blocker_instructions() {
   echo "" >&2
 
   case "$blocker" in
-    apparmor_userns)
-      cat >&2 <<EOF
+  apparmor_userns)
+    cat >&2 <<EOF
 Your system uses AppArmor to restrict user namespaces (Ubuntu 23.10+).
 bubblewrap needs an AppArmor profile to create sandboxes.
 
@@ -149,10 +149,10 @@ Option 2: Run without sandbox
   AGENT_SANDBOX=false nix develop .#claude-code
 
 EOF
-      ;;
+    ;;
 
-    kernel_userns)
-      cat >&2 <<EOF
+  kernel_userns)
+    cat >&2 <<EOF
 Your kernel has unprivileged user namespaces disabled.
 bubblewrap requires this feature for sandboxing.
 
@@ -168,10 +168,10 @@ Or run without sandbox:
   AGENT_SANDBOX=false nix develop .#claude-code
 
 EOF
-      ;;
+    ;;
 
-    selinux)
-      cat >&2 <<EOF
+  selinux)
+    cat >&2 <<EOF
 SELinux is blocking bubblewrap from creating user namespaces.
 
 Option 1: Create SELinux policy for bwrap
@@ -188,10 +188,10 @@ Or run without sandbox:
   AGENT_SANDBOX=false nix develop .#claude-code
 
 EOF
-      ;;
+    ;;
 
-    container)
-      cat >&2 <<EOF
+  container)
+    cat >&2 <<EOF
 You're running inside a container (Docker/LXC/Kubernetes).
 Nested user namespaces are typically restricted by the container runtime.
 
@@ -203,10 +203,10 @@ Options:
    AGENT_SANDBOX=false nix develop .#claude-code
 
 EOF
-      ;;
+    ;;
 
-    *)
-      cat >&2 <<EOF
+  *)
+    cat >&2 <<EOF
 bubblewrap failed to create a sandbox for an unknown reason.
 
 Debug information:
@@ -221,7 +221,7 @@ Please report this issue with the above details at:
   https://github.com/cbarber/llm-tools/issues
 
 EOF
-      ;;
+    ;;
   esac
 
   echo "═══════════════════════════════════════════════════════════════════" >&2
@@ -244,7 +244,7 @@ BWRAP_ARGS=(
   # Essential system directories
   --dev-bind /dev /dev
   --proc /proc
-  
+
   # Namespace isolation
   --unshare-all
   --share-net  # Allow network access
