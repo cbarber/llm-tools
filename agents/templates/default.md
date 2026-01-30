@@ -125,32 +125,37 @@ Authored By: claude-code (claude-3.7-sonnet)"
 git rebase --autosquash origin/main
 ```
 
-### pull-request (tool.execute.after:bash:git push)
+### pull-request (tool.execute.after:bash:.*spr update.*)
 
-**IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
+**Default workflow: Stacked PRs with spr**
 
-Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/forge --help` before attempting direct API calls.
+Each commit becomes its own PR, stacked on previous commits. This enables independent review and landing of logical changes.
 
-**Workflow:**
+**Setup:**
 ```bash
-# Create PR
-git push -u origin <branch>
-bash tools/forge pr create --title "..." --body "..."
+# Create feature branch (use `-` not `/` - spr fails with slashes)
+git checkout -b feat-description
 
-# View PR (includes all comments)
-bash tools/forge pr view 123
-
-# View all comments only
-bash tools/forge pr comments 1
-
-# Reply to specific review comment
-bash tools/forge pr review-reply 1 123456789 "Fixed in commit abc123"
+# Set branch to track origin/main (required for spr)
+git branch --set-upstream-to=origin/main
 ```
 
-**PR body must explain:**
-- WHY the change was made (motivation, rationale)
-- Link to beads issue if applicable
-- What's blocking completion (if using --draft)
+**Creating PRs:**
+```bash
+# After creating commits, create/update all PRs in the stack
+export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
+spr update
+```
+
+**Viewing PR status:**
+```bash
+# View all PRs in stack with check/approval status
+spr status
+
+# View specific PR comments (use forge for this)
+bash tools/forge pr view 123
+bash tools/forge pr comments 123
+```
 
 **Addressing review feedback:**
 ```bash
@@ -163,34 +168,40 @@ git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER us
 git commit --fixup=<sha>              # Fix specific commit
 git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
 
-git push --force-with-lease
+# Update PRs after fixing
+spr update
 ```
+
+**Replying to review comments:**
+```bash
+bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
+```
+
+**Landing changes:**
+```bash
+# Once PRs are approved, merge entire stack
+spr merge
+```
+
+**Key points:**
+- Each commit = one PR for independent review
+- `spr update` creates/updates all PRs automatically
+- `spr merge` lands all approved PRs at once
+- NEVER merge via GitHub UI (breaks the stack)
+- NEVER use `git push` - use `spr update` instead
+- NEVER use `git rebase -i` - use `git rebase --autosquash` (non-interactive)
+- Branch must track `origin/main` (spr compares HEAD to tracking branch)
 
 **git-absorb workflow:**
 - Stage changes you want to fix: `git add <files>`
 - Run `git absorb` to automatically create fixup commits
 - It matches hunks to the commits that last modified them
 - Then squash with `git rebase --autosquash origin/main`
+- Update PRs with `spr update`
 
-**Stacked PRs with spr:**
+**IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
 
-For multiple related commits as separate PRs, use spr (stacked pull requests). Each commit becomes its own PR, stacked on previous commits.
-
-Branch naming: Use `-` not `/` (e.g., `feat-foo` not `feat/foo` - spr fails with slashes).
-
-Workflow:
-```bash
-spr update  # Create/update PRs for all unpushed commits
-spr status  # View PR stack status
-spr merge   # Merge all approved PRs in the stack
-```
-
-Key points:
-- `spr update` creates/updates PRs automatically
-- `spr merge` lands all mergeable PRs at once
-- Never merge via GitHub UI (breaks the stack)
-- Branch must track `origin/main`, not the remote feature branch (spr compares HEAD to tracking branch)
-- Use git-absorb or `git commit --fixup=<sha>` + `git rebase --autosquash` for review feedback
+Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/forge --help` before attempting direct API calls.
 
 See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
 
