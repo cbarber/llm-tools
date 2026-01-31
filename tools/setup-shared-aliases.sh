@@ -40,6 +40,20 @@ git() {
 
 export -f git
 
+# spr wrapper to auto-load GitHub token
+spr() {
+  # Auto-load GITHUB_TOKEN if available
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    local token_file="${HOME}/.config/nixsmith/github-token"
+    if [[ -f "$token_file" ]]; then
+      export GITHUB_TOKEN=$(cat "$token_file")
+    fi
+  fi
+  
+  command spr "$@"
+}
+export -f spr
+
 # Make agent-sandbox available as a command
 agent-sandbox() {
   "$AGENT_SANDBOX_SCRIPT" "$@"
