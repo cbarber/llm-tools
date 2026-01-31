@@ -103,25 +103,29 @@ fi
 if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   echo "Initializing beads for task tracking..."
   
-  # Support custom branch via BD_BRANCH (useful for protected branches)
   branch_arg=""
   if [[ -n "${BD_BRANCH:-}" ]]; then
     branch_arg="--branch ${BD_BRANCH}"
-    echo "  Using branch: ${BD_BRANCH}"
-    # Export BD_BRANCH so daemon can see it when started later
-    export BD_BRANCH
   fi
   
   if bd init --quiet $branch_arg 2>/dev/null; then
-    # Start daemon with auto-commit if using a separate branch
     if [[ -n "${BD_BRANCH:-}" ]]; then
-      bd daemon --start --auto-commit 2>/dev/null || true
+      sed -i "s/^# sync-branch:.*/sync-branch: \"${BD_BRANCH}\"/" .beads/config.yaml
       echo "Beads initialized with auto-commit to branch: ${BD_BRANCH}"
     else
       echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
     fi
-    
     echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+  fi
+fi
+
+# Start daemon if sync-branch is configured
+if [[ -d ".beads" && -f ".beads/config.yaml" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+  if grep -q "^sync-branch:" .beads/config.yaml 2>/dev/null; then
+    if ! bd daemon --status --json 2>/dev/null | jq -e '.running' >/dev/null 2>&1; then
+      bd daemon --start --auto-commit 2>/dev/null || true
+      echo "Started beads daemon with auto-commit"
+    fi
   fi
 fi
 

@@ -22,6 +22,7 @@ pkgs.mkShell {
     export TOOLS_DIR="${../../tools}"
     export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
     export OPENCODE_PLUGIN_TEMPER_DIR="${../../.opencode/plugin/temper}"
+    export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
 
     source ${./setup-shell.sh}
   '';
