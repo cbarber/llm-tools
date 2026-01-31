@@ -100,6 +100,30 @@ extract_fod_hash() {
   fi
 }
 
+# Update overlay file with new values
+update_overlay() {
+  local package="$1" version="$2" src_hash="$3" fod_hash="$4"
+  
+  info "Updating $OVERLAY_FILE..."
+  
+  # Create backup
+  cp "$OVERLAY_FILE" "$OVERLAY_FILE.bak"
+  
+  # Update the overlay using sed
+  if [[ "$package" == "opencode" ]]; then
+    sed -i "/opencode = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
+    sed -i "/opencode = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$src_hash\";/" "$OVERLAY_FILE"
+    sed -i "/opencode = {/,/};/ s/nodeModulesHash = \"[^\"]*\";/nodeModulesHash = \"$fod_hash\";/" "$OVERLAY_FILE"
+  elif [[ "$package" == "claude-code" ]]; then
+    sed -i "/claude-code = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
+    sed -i "/claude-code = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$src_hash\";/" "$OVERLAY_FILE"
+    sed -i "/claude-code = {/,/};/ s/npmDepsHash = \"[^\"]*\";/npmDepsHash = \"$fod_hash\";/" "$OVERLAY_FILE"
+  fi
+  
+  success "Updated $OVERLAY_FILE"
+  info "Backup saved to $OVERLAY_FILE.bak"
+}
+
 # Update opencode
 update_opencode() {
   local version="${1:-}"
@@ -122,28 +146,39 @@ update_opencode() {
 
   success "Source hash: $src_hash"
 
-  echo ""
-  echo "============================================================================"
-  echo "Update overlays/default.nix with these values:"
-  echo "============================================================================"
-  echo ""
-  echo "  opencode = {"
-  echo "    version = \"$version\";"
-  echo "    srcHash = \"$src_hash\";"
-  echo "    nodeModulesHash = \"sha256-PLACEHOLDER\";  # See below"
-  echo "  };"
-  echo ""
-  echo "============================================================================"
-  echo "To get nodeModulesHash:"
-  echo "============================================================================"
-  echo ""
-  echo "1. Update the overlay with the values above (use empty string for nodeModulesHash)"
-  echo "2. Run: nix build .#opencode 2>&1 | grep 'got:'"
-  echo "3. Copy the sha256-... hash to nodeModulesHash"
-  echo ""
+  # Temporarily update overlay with empty FOD hash
+  info "Temporarily updating overlay with empty nodeModulesHash..."
+  update_overlay "opencode" "$version" "$src_hash" ""
 
-  warn "Note: nodeModulesHash requires a build attempt to discover."
-  warn "Set nodeModulesHash = \"\" first, then build to get the actual hash."
+  # Attempt build to get the correct hash
+  info "Building to discover nodeModulesHash (this will fail, that's expected)..."
+  local node_modules_hash
+  node_modules_hash=$(extract_fod_hash "packages.x86_64-linux.opencode")
+
+  if [[ -z "$node_modules_hash" ]]; then
+    error "Failed to extract nodeModulesHash from build output"
+    error "Restoring backup..."
+    mv "$OVERLAY_FILE.bak" "$OVERLAY_FILE"
+    exit 1
+  fi
+
+  success "Node modules hash: $node_modules_hash"
+
+  # Update overlay with the correct hash
+  update_overlay "opencode" "$version" "$src_hash" "$node_modules_hash"
+  
+  # Remove backup
+  rm -f "$OVERLAY_FILE.bak"
+
+  echo ""
+  success "Successfully updated opencode to version $version"
+  echo ""
+  echo "Changes made to $OVERLAY_FILE:"
+  echo "  version: $version"
+  echo "  srcHash: $src_hash"
+  echo "  nodeModulesHash: $node_modules_hash"
+  echo ""
+  warn "Please verify the build works: nix build .#opencode"
 }
 
 # Update claude-code
