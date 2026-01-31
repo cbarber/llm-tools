@@ -109,6 +109,19 @@ if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   fi
 fi
 
+# Start beads daemon for existing repos with sync-branch configured
+if [[ -d ".beads" && -f ".beads/config.yaml" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+  # Check if sync-branch is configured in config.yaml
+  if grep -q "^sync-branch:" .beads/config.yaml 2>/dev/null; then
+    # Check if daemon is already running
+    if ! bd daemon --status --json 2>/dev/null | jq -e '.running' >/dev/null 2>&1; then
+      sync_branch=$(grep "^sync-branch:" .beads/config.yaml | awk '{print $2}' | tr -d '"')
+      bd daemon --start --auto-commit 2>/dev/null || true
+      echo "Started beads daemon with auto-commit to branch: ${sync_branch}"
+    fi
+  fi
+fi
+
 # Run agent setup (SSH keys + API tokens)
 # Scripts check if setup is needed and exit early if not
 if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; then
