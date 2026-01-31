@@ -75,6 +75,9 @@ execute_bash_block() {
       bash_code+="$line"$'\n'
     elif [[ $found_first_block -eq 1 ]]; then
       remaining_text+="$line"$'\n'
+    else
+      # No bash block found yet, collect as remaining text
+      remaining_text+="$line"$'\n'
     fi
   done <<< "$content"
   
@@ -82,6 +85,7 @@ execute_bash_block() {
     eval "$bash_code"
   fi
   
+  # Output remaining text (or all content if no bash block)
   if [[ -n "$remaining_text" ]]; then
     echo "$remaining_text"
   fi
