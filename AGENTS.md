@@ -358,7 +358,6 @@ git branch --set-upstream-to=origin/main
 **Creating PRs:**
 ```bash
 # After creating commits, create/update all PRs in the stack
-export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
 spr update
 ```
 
