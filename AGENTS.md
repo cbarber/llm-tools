@@ -1,31 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Purpose
-
-This repository provides experimental environments for LLM agent tools, MCPs (Model Context Protocols), and supporting tools. Each environment is configured via Nix flakes that construct development shells with pre-loaded configurations and tooling.
-
-## Configuration Templates
-
-Agent shells auto-generate config files on first run via `agents/*/setup-*.sh` scripts. To update default configurations:
-- Edit templates in setup scripts (e.g., `agents/opencode/setup-mcp.sh`)
-- NOT the generated files (opencode.json, .mcp.json, cclsp.json)
-
-### User-Specific AGENTS.md Templates
-
-Create personalized templates in `agents/templates/${USER}.md` to customize agent instructions. The shell automatically selects:
-
-1. `agents/templates/${USER}.md` (if exists)
-2. `agents/templates/default.md` (fallback)
-
-Example:
-```bash
-cp agents/templates/default.md agents/templates/cbarber.md
-# Edit with personal preferences
-```
-
-See `agents/templates/README.md` for details.
+This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when working with code in this repository.
 
 ## Agent Environment
 
@@ -34,203 +9,13 @@ You are running in a sandboxed environment by default. The sandbox isolates file
 ## Development Guidelines
 
 * Be succinct. Only provide examples if necessary
+* Code must be self-documenting. Comments explain WHY, not WHAT
+* Avoid function side effects. Clear input → output
+* Avoid deep nesting. Return early
 * Be strategic. Plan first, ask questions, then execute
 * Challenge assumptions with evidence
+* Delete code rather than commenting it out
 * **When git commands fail, STOP and ask for help**
-
-## Repository Structure
-
-```
-llm-tools/
-├── flake.nix                 # Root flake exposing all agents
-├── flake.lock               # Version pinning for reproducible builds
-├── agents/
-│   └── claude-code/
-│       ├── default.nix      # Claude Code shell environment
-│       └── claude.md.template  # Shared CLAUDE.md template
-├── tools/
-│   └── default.nix         # Framework for shared MCP and agent tools
-└── prompt                   # Original development guidelines
-```
-
-## Usage
-
-### Remote Usage (Recommended)
-
-```bash
-# Enter Claude Code environment from any directory
-nix develop github:cbarber/llm-tools#claude-code
-
-# This will:
-# 1. Check for authentication (API key or browser)
-# 2. Search for existing CLAUDE.md files in precedence order
-# 3. Create CLAUDE.local.md template if no CLAUDE files found
-# 4. Launch Claude Code automatically
-```
-
-### Local Development
-
-```bash
-# Clone and enter development mode
-git clone https://github.com/cbarber/llm-tools
-cd llm-tools
-nix develop .#claude-code
-
-# Validate flake structure
-nix flake check
-
-# Update dependencies
-nix flake update
-```
-
-## Architecture
-
-### Agent Environments
-
-Each agent in `agents/` provides an isolated development shell with:
-
-- Agent-specific tooling and configurations
-- Shared tools from the `tools/` directory
-- Authentication handling (API key + browser auth)
-- Automatic CLAUDE.md template provisioning
-- Auto-launch into the agent environment
-
-### Tool Sharing
-
-The `tools/default.nix` framework allows:
-
-- Common MCP servers across multiple agents
-- Custom tool packaging with nix-init
-- Shared dependency management
-- Reproducible tool versions via flake.lock
-
-### CLAUDE.md Precedence
-
-The shell checks for CLAUDE files in this order:
-
-1. Current directory: `CLAUDE.md` or `CLAUDE.local.md`
-2. Parent directories: Walk up tree checking each level
-3. Child directories: Recursive search (on-demand by Claude)
-4. Home directory: `~/.claude/CLAUDE.md`
-
-If none found, creates `CLAUDE.local.md` from template.
-
-## Common Commands
-
-```bash
-# Test flake validation
-nix flake check
-
-# Build specific agent
-nix build .#claude-code
-
-# Enter specific environment
-nix develop .#claude-code
-
-# Update all inputs
-nix flake update
-
-# Package new tools with nix-init
-nix-shell -p nix-init --run "nix-init"
-```
-
-## Beads Integration
-
-Beads (bd) provides task tracking and memory management. Auto-initializes on first shell entry (disable with `BD_SKIP_SETUP=true`).
-
-**Agent Integration:**
-- **Claude Code**: Hooks auto-inject `bd prime` context on session start/compaction
-- **OpenCode**: [opencode-beads](https://github.com/joshuadavidthomas/opencode-beads) plugin (v0.3.0) provides context injection and `/bd-*` commands
-  - Pinned version in opencode.json: `"plugin": ["opencode-beads@0.3.0"]`
-  - OpenCode auto-installs to `~/.cache/opencode/node_modules/` on first use
-  - No project pollution - installed globally per-user
-
-**Branch Configuration:**
-
-For protected branches, use a separate sync branch:
-```bash
-export BD_BRANCH=beads-sync  # Commits to beads-sync via git worktrees
-```
-
-Without `BD_BRANCH`, commits go to current branch.
-
-**Essential Commands:**
-
-```bash
-bd ready              # Show available work
-bd create "Task" -p 1 # Create task
-bd show <id>          # View details
-bd sync               # Sync to git
-```
-
-## Authentication
-
-Claude Code supports two authentication methods:
-
-- **Browser authentication** (default for subscription users)
-- **API key authentication** via `ANTHROPIC_API_KEY`
-
-The shell sources API keys from:
-
-1. Current directory `.env` file
-2. `~/.config/claude/.env` file
-3. Environment variables
-
-If no API key found, uses browser authentication automatically.
-
-## Tool Integration
-
-Use `nix-init` to package new tools:
-
-1. Create tool directory in `tools/`
-2. Run `nix-init` to generate package.nix
-3. Import in `tools/default.nix`
-4. Add to agent buildInputs as needed
-
-This allows shared MCP servers and custom tooling across multiple agent environments.
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push --force-with-lease
-   git status  # MUST show "up to date with origin"
-   ```
-   If `git push --force-with-lease` fails, STOP and request manual intervention.
-
-5. **Clean up** - Remove debug code, temp files
-6. **Verify** - All changes committed AND pushed
-7. **Session complete** - Next session will auto-load current state via temper
-
-**Handoff for context:**
-Provide brief context about what was accomplished for session continuity:
-```
-Recent Work:
-- Completed llm-tools-xxx: Brief summary of what changed and why
-
-PR Status:
-<EXECUTE: bash tools/forge pr status and paste output here>
-
-Context:
-- Any non-obvious decisions or gotchas for next session
-```
-
-Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If force-with-lease fails, abort and request help
 
 ## Workflow
 
@@ -273,7 +58,7 @@ fi
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
 
-### edit (tool.execute.before:edit|write)
+### dev-guidelines (tool.execute.before:edit|write)
 
 * Code must be self-documenting. Comments explain WHY, not WHAT
 * Avoid function side effects. Clear input → output
@@ -358,7 +143,7 @@ git branch --set-upstream-to=origin/main
 **Creating PRs:**
 ```bash
 # After creating commits, create/update all PRs in the stack
-export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
+# (GITHUB_TOKEN auto-loaded by spr wrapper)
 spr update
 ```
 
@@ -395,6 +180,7 @@ bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc12
 **Landing changes:**
 ```bash
 # Once PRs are approved, merge entire stack
+# (auto-answers prompts via spr wrapper)
 spr merge
 ```
 
@@ -451,24 +237,14 @@ See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference
 
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
-## Quick Reference (by frequency)
+**Rules:**
+- NEVER say "ready to push when you are" - YOU push
+- NEVER stop before pushing
+- Next session will auto-load state via temper
 
-**Session start:**
-- Run `temper init` to check state and pick work
-- See [Workflow: init](#init)
+## Quick Reference
 
-**Every commit:**
-- Run `temper commit` to review commit format
-- See [Workflow: commit](#commit)
-
-**Before PR:**
-- Run `temper pr` to review PR workflow
-- See [Workflow: pull-request](#pull-request)
-
-**Every session end:**
-- Run `temper complete` for completion checklist
-- See [Workflow: complete](#complete) and [Landing the Plane](#landing-the-plane)
-
-**As needed:**
-- [Development Guidelines](#development-guidelines) - Code style, terseness
-- [Beads Integration](#beads-integration) - Task tracking workflow
+**Session start:** Run `temper init` - check state and pick work
+**Every commit:** Run `temper commit` - review commit format
+**Before PR:** Run `temper pr` - review PR workflow
+**Session end:** Run `temper complete` - completion checklist
