@@ -24,6 +24,7 @@ pkgs.mkShell {
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
     export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
+    export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
 
     source ${./setup-shell.sh}
   '';
