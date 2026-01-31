@@ -40,7 +40,7 @@ git() {
 
 export -f git
 
-# spr wrapper to auto-load GitHub token
+# spr wrapper to auto-load GitHub token and handle prompts
 spr() {
   # Auto-load GITHUB_TOKEN if available
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
@@ -50,7 +50,12 @@ spr() {
     fi
   fi
   
-  command spr "$@"
+  # For merge command, auto-answer prompts with 'y'
+  if [[ "${1:-}" == "merge" ]]; then
+    yes | command spr "$@"
+  else
+    command spr "$@"
+  fi
 }
 export -f spr
 
