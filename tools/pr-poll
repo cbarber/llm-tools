@@ -254,6 +254,22 @@ check_pr() {
         
         # Build notification with optional comment threads
         local total_comments=$(echo "$curr_comment_ids" | jq 'length')
+        
+        # Check if we're in an spr-managed branch (has spr/ remote branches)
+        local spr_stack_status=""
+        if git branch -r 2>/dev/null | grep -q "origin/spr/"; then
+            # Get spr status for stack context (spr alias handles token loading)
+            local spr_status=$(spr status 2>/dev/null || echo "")
+            if [[ -n "$spr_status" ]]; then
+                spr_stack_status="
+
+Stack Status:
+\`\`\`
+$spr_status
+\`\`\`"
+            fi
+        fi
+        
         local notification="<pr-update>
 🔔 PR #$pr_number Update:
 
@@ -264,17 +280,19 @@ $change_summary
 
 Current status: $curr_pr_state
 Comments: $total_comments
-"
+$spr_stack_status"
         
         # Add new comment threads if any
         if [[ -n "$new_comment_threads" ]]; then
             notification+="
+
 ---
 
 $(echo -e "$new_comment_threads")"
         fi
         
         notification+="
+
 Run \`forge pr view $pr_number\` for full details.
 </pr-update>"
         
