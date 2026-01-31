@@ -35,6 +35,25 @@ jobs:
             echo "has_updates=true" >> $GITHUB_ENV
           fi
       
+      - name: Update overlay package hashes
+        if: env.has_updates == 'true'
+        run: |
+          # Get current package versions from overlay
+          OPENCODE_VERSION=$(grep -A3 'opencode = {' overlays/default.nix | grep 'version =' | sed 's/.*"\(.*\)".*/\1/')
+          CLAUDE_VERSION=$(grep -A3 'claude-code = {' overlays/default.nix | grep 'version =' | sed 's/.*"\(.*\)".*/\1/')
+          
+          echo "Updating opencode $OPENCODE_VERSION overlay hashes..."
+          ./tools/update-package.sh opencode "$OPENCODE_VERSION" || echo "Opencode update failed, continuing..."
+          
+          echo "Updating claude-code $CLAUDE_VERSION overlay hashes..."  
+          ./tools/update-package.sh claude-code "$CLAUDE_VERSION" || echo "Claude-code update failed, continuing..."
+          
+          # Check if overlay was updated
+          if ! git diff --quiet overlays/default.nix; then
+            echo "Overlay hashes updated"
+            git add overlays/default.nix
+          fi
+      
       - name: Generate update summary
         if: env.has_updates == 'true'
         run: |
