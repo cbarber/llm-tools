@@ -199,20 +199,47 @@ pr_create() {
         echo ""
     fi
     
+    local result exit_code pr_number
+    
     case "$FORGE_TYPE" in
         github)
             local args=(--title "$title")
             [[ -n "$body" ]] && args+=(--body "$body")
             [[ "$draft" == true ]] && args+=(--draft)
-            gh pr create "${args[@]}"
+            result=$(gh pr create "${args[@]}" 2>&1)
+            exit_code=$?
+            echo "$result"
+            
+            if [[ $exit_code -eq 0 ]] && [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+                pr_number=$(echo "$result" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+' | tail -1)
+            fi
             ;;
         gitea)
             local args=(--title "$title")
             [[ -n "$body" ]] && args+=(--description "$body")
             [[ "$draft" == true ]] && args+=(--draft)
-            run_tea pr create "${args[@]}"
+            result=$(run_tea pr create "${args[@]}" 2>&1)
+            exit_code=$?
+            echo "$result"
+            
+            if [[ $exit_code -eq 0 ]] && [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+                pr_number=$(echo "$result" | grep -oE '#[0-9]+' | grep -oE '[0-9]+' | tail -1)
+            fi
             ;;
     esac
+    
+    if [[ -n "${pr_number:-}" ]]; then
+        local repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        local pid_file="${repo_dir}/.pr-poll.pid"
+        local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        
+        if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+            echo "Starting PR polling daemon for PR #$pr_number" >&2
+            nohup bash "${script_dir}/pr-poll" --daemon --pr "$pr_number" >> "${repo_dir}/.pr-poll.log" 2>&1 &
+        fi
+    fi
+    
+    return ${exit_code:-0}
 }
 
 pr_view() {
