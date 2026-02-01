@@ -12,20 +12,32 @@ set -euo pipefail
 
 REPO_DIR="${1:-.}"
 
-if [[ ! -d "$REPO_DIR/.git/hooks" ]]; then
-  echo "Error: $REPO_DIR/.git/hooks not found" >&2
-  echo "Run this from a git repository or provide a path" >&2
+# Use git to find hooks directory (supports both standard repos and bare worktrees)
+if ! cd "$REPO_DIR" 2>/dev/null; then
+  echo "Error: Directory $REPO_DIR not found" >&2
   exit 1
 fi
 
-echo "Patching beads git hooks in: $REPO_DIR"
+if ! git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
+  echo "Error: Not a git repository: $REPO_DIR" >&2
+  exit 1
+fi
+
+hooks_dir="$git_common_dir/hooks"
+
+if [[ ! -d "$hooks_dir" ]]; then
+  echo "Error: Hooks directory not found: $hooks_dir" >&2
+  exit 1
+fi
+
+echo "Patching beads git hooks in: $hooks_dir"
 echo
 
 patched=0
-for hook in "$REPO_DIR/.git/hooks/pre-commit" \
-            "$REPO_DIR/.git/hooks/post-checkout" \
-            "$REPO_DIR/.git/hooks/post-merge" \
-            "$REPO_DIR/.git/hooks/pre-push"; do
+for hook in "$hooks_dir/pre-commit" \
+            "$hooks_dir/post-checkout" \
+            "$hooks_dir/post-merge" \
+            "$hooks_dir/pre-push"; do
   if [[ ! -f "$hook" ]]; then
     continue
   fi
@@ -52,5 +64,5 @@ if [[ $patched -eq 0 ]]; then
   echo "No hooks needed patching"
 else
   echo "Patched $patched hook(s) successfully"
-  echo "Test with: $REPO_DIR/.git/hooks/post-checkout HEAD HEAD 1"
+  echo "Test with: $hooks_dir/post-checkout HEAD HEAD 1"
 fi
