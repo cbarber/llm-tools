@@ -7,8 +7,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 STATE_FILE="${REPO_DIR}/.pr-poll-state.json"
+PID_FILE="${REPO_DIR}/.pr-poll.pid"
 INTERVAL=${PR_POLL_INTERVAL:-30}
 DAEMON_MODE=false
+SESSION_ID=""
+WATCH_PRS=""
 
 # Check if repo uses GitHub (pr-poll only supports GitHub currently)
 FORGE_TYPE=$(bash "${SCRIPT_DIR}/forge" --type 2>/dev/null || echo "unknown")
@@ -40,14 +43,28 @@ while [[ $# -gt 0 ]]; do
             DAEMON_MODE=true
             shift
             ;;
+        --session)
+            SESSION_ID="$2"
+            shift 2
+            ;;
+        --pr)
+            WATCH_PRS="$2"
+            shift 2
+            ;;
         --help|-h)
             cat <<EOF
 PR polling daemon - monitors PR status and notifies on changes
 
 Usage:
-  pr-poll                    # Run once, check for changes
-  pr-poll --daemon           # Run continuously (every 30s)
-  pr-poll --interval 60      # Custom interval in seconds
+  pr-poll                              # Run once, check for changes
+  pr-poll --daemon                     # Run continuously (every 30s)
+  pr-poll --daemon --session <id>      # Session-scoped daemon
+  pr-poll --daemon --session <id> --pr <nums>  # Watch specific PRs
+  pr-poll --interval 60                # Custom interval in seconds
+
+Session-scoped daemon:
+  Started by spr/forge wrappers for specific session + PRs.
+  Stops when session ends or PRs are closed.
 
 State file: ${REPO_DIR}/.pr-poll-state.json
 
@@ -66,6 +83,29 @@ done
 if [[ ! -f "$STATE_FILE" ]]; then
     echo '{}' > "$STATE_FILE"
 fi
+
+save_state_atomic() {
+    local pr="$1"
+    local state="$2"
+    
+    local state_to_store=$(echo "$state" | jq 'del(.comments)')
+    
+    local current_state=$(cat "$STATE_FILE" 2>/dev/null || echo '{}')
+    
+    local new_state=$(echo "$current_state" | jq \
+        --arg pr "$pr" \
+        --argjson state "$state_to_store" \
+        '.[$pr] = $state')
+    
+    if ! echo "$new_state" | jq empty 2>/dev/null; then
+        echo "ERROR: Invalid JSON generated, aborting write" >&2
+        return 1
+    fi
+    
+    local temp_file="${STATE_FILE}.tmp.$$"
+    echo "$new_state" > "$temp_file"
+    mv "$temp_file" "$STATE_FILE"
+}
 
 # Format a single comment for display
 format_comment() {
@@ -174,36 +214,30 @@ get_pr_state() {
 # Check for changes and notify if needed
 check_pr() {
     local pr_number="$1"
+    local explicit_session="${2:-}"
     
-    # Get current state
     local current_state=$(get_pr_state "$pr_number")
     if [[ "$current_state" == "{}" ]]; then
         echo "Failed to fetch PR #$pr_number state" >&2
         return 1
     fi
     
-    # Get previous state from file (keep as JSON, not raw string)
     local previous_state=$(jq --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
     
-    # Extract fields for comparison
     local curr_pr_state=$(echo "$current_state" | jq -r '.state')
     local prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
     
-    # Treat null/empty as unknown (happens when state file is empty or PR not yet tracked)
     if [[ "$prev_pr_state" == "null" || -z "$prev_pr_state" ]]; then
         prev_pr_state="unknown"
     fi
     
-    # Get comment IDs for comparison
     local curr_comment_ids=$(echo "$current_state" | jq -r '.comment_ids // []')
     local prev_comment_ids=$(echo "$previous_state" | jq -r '.comment_ids // []')
     
-    # Find new comment IDs (excluding bot comments for notification)
     local new_comment_ids=$(echo "$curr_comment_ids" | jq -r --argjson prev "$prev_comment_ids" '
         map(select(. as $id | $prev | index($id) | not))
     ')
     
-    # Filter out bot comments from new comment IDs
     local all_comments=$(echo "$current_state" | jq -r '.comments')
     local new_non_bot_ids=$(echo "$all_comments" | jq -r --argjson new_ids "$new_comment_ids" '
         (.general + .review) | 
@@ -214,7 +248,6 @@ check_pr() {
         map(.id)
     ')
     
-    # Detect changes
     local changes=()
     local new_comment_threads=""
     if [[ "$prev_pr_state" == "unknown" ]]; then
@@ -224,7 +257,6 @@ check_pr() {
             changes+=("Status changed: $prev_pr_state → $curr_pr_state")
         fi
         
-        # Check for new non-bot comments
         local new_ids_array=($(echo "$new_non_bot_ids" | jq -r '.[]'))
         if [[ ${#new_ids_array[@]} -gt 0 ]]; then
             changes+=("${#new_ids_array[@]} new comment(s)")
@@ -238,27 +270,16 @@ check_pr() {
         fi
     fi
     
-    # Update state file (remove comments field to avoid storing large data)
-    local state_to_store=$(echo "$current_state" | jq 'del(.comments)')
-    local new_state=$(jq \
-        --arg pr "$pr_number" \
-        --argjson state "$state_to_store" \
-        '.[$pr] = $state' \
-        "$STATE_FILE")
-    echo "$new_state" > "$STATE_FILE"
+    save_state_atomic "$pr_number" "$current_state"
     
-    # Notify if changes detected
     if [[ ${#changes[@]} -gt 0 ]]; then
         local title=$(echo "$current_state" | jq -r '.title')
         local change_summary=$(printf '%s\n' "${changes[@]}")
         
-        # Build notification with optional comment threads
         local total_comments=$(echo "$curr_comment_ids" | jq 'length')
         
-        # Check if we're in an spr-managed branch (has spr/ remote branches)
         local spr_stack_status=""
         if git branch -r 2>/dev/null | grep -q "origin/spr/"; then
-            # Get spr status for stack context (spr alias handles token loading)
             local spr_status=$(spr status 2>/dev/null || echo "")
             if [[ -n "$spr_status" ]]; then
                 spr_stack_status="
@@ -282,7 +303,6 @@ Current status: $curr_pr_state
 Comments: $total_comments
 $spr_stack_status"
         
-        # Add new comment threads if any
         if [[ -n "$new_comment_threads" ]]; then
             notification+="
 
@@ -299,26 +319,27 @@ Run \`forge pr view $pr_number\` for full details.
         echo "Changes detected for PR #$pr_number:" >&2
         echo "$change_summary" >&2
         
-        # Send notification via pr-notify
-        echo "DEBUG: Calling pr-notify with PR #$pr_number" >&2
-        echo "DEBUG: OPENCODE_API=${OPENCODE_API:-not set}" >&2
-        bash "${SCRIPT_DIR}/pr-notify" "$pr_number" "$notification"
+        if [[ -n "$explicit_session" ]]; then
+            bash "${SCRIPT_DIR}/pr-notify" "$pr_number" "$notification" "$explicit_session"
+        else
+            bash "${SCRIPT_DIR}/pr-notify" "$pr_number" "$notification"
+        fi
     else
         echo "No changes for PR #$pr_number" >&2
     fi
 }
 
-# Find all PRs being worked on in active sessions
 find_active_prs() {
-    # Use anvil to list sessions in this repo
+    if [[ -n "$WATCH_PRS" ]]; then
+        echo "$WATCH_PRS" | tr ',' '\n'
+        return 0
+    fi
+    
     SESSIONS=$(bash "${SCRIPT_DIR}/anvil" --list --repo "$REPO_DIR" --json 2>/dev/null)
     if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
         return 0
     fi
     
-    # Find all sessions in this repo (sort by last update for multi-session PR work)
-    # Don't filter by time - if a PR gets comments after hours of silence, we still want to notify
-    # Sort by updated time to prioritize most recently active session
     ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r \
         'sort_by(.time.updated) | reverse | .[].id')
     
@@ -326,13 +347,10 @@ find_active_prs() {
         return 0
     fi
     
-    # Extract PR numbers from active sessions, filtering by repo URL
     for SESSION_ID in $ACTIVE_SESSIONS; do
         MESSAGES=$(bash "${SCRIPT_DIR}/anvil" --messages "$SESSION_ID" --limit 100 --json 2>/dev/null)
         
-        # Look for PR references: full URLs with repo path, or "PR #NUMBER" mentions
         if [[ -n "$REPO_PATH" ]]; then
-            # Prefer full PR URLs with repo path, fall back to "PR #NUMBER" pattern
             SESSION_PRS=$(echo "$MESSAGES" | jq -r \
                 --arg repo "$REPO_PATH" \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
@@ -340,7 +358,6 @@ find_active_prs() {
                  (scan("PR #([0-9]+)"; "gi"))] | 
                  flatten | unique | .[]' 2>/dev/null)
         else
-            # Fallback: accept PR URLs or "PR #NUMBER" pattern
             SESSION_PRS=$(echo "$MESSAGES" | jq -r \
                 '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
                  scan("(/pull/|PR #)([0-9]+)"; "gi") | .[1]] | 
@@ -353,32 +370,54 @@ find_active_prs() {
     done | sort -u
 }
 
-# Main polling loop
 poll_once() {
     echo "Checking for PR updates..." >&2
     
-    # Find active PRs
     local prs=$(find_active_prs)
     
     if [[ -z "$prs" ]]; then
-        echo "No active PRs found in sessions" >&2
+        echo "No active PRs found" >&2
         return 0
     fi
     
     echo "Monitoring PRs: $prs" >&2
     
-    # Check each PR (continue on failure to avoid daemon crash)
     for pr in $prs; do
-        check_pr "$pr" || true
+        check_pr "$pr" "$SESSION_ID" || true
     done
 }
 
-# Run daemon or single check
+cleanup_daemon() {
+    if [[ -f "$PID_FILE" ]] && [[ "$(cat "$PID_FILE" 2>/dev/null)" == "$$" ]]; then
+        rm -f "$PID_FILE"
+    fi
+}
+
 if [[ "$DAEMON_MODE" == "true" ]]; then
-    echo "Starting PR poll daemon (interval: ${INTERVAL}s, repo: $REPO_DIR)" >&2
+    if [[ -n "$SESSION_ID" ]]; then
+        if [[ -f "$PID_FILE" ]]; then
+            OLD_PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
+            if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+                echo "Daemon already running (PID $OLD_PID)" >&2
+                exit 0
+            fi
+            rm -f "$PID_FILE"
+        fi
+        
+        echo $$ > "$PID_FILE"
+        trap cleanup_daemon EXIT INT TERM
+        
+        echo "Starting session-scoped daemon (session: $SESSION_ID)" >&2
+        if [[ -n "$WATCH_PRS" ]]; then
+            echo "Watching PRs: $WATCH_PRS" >&2
+        fi
+    else
+        echo "Starting PR poll daemon (interval: ${INTERVAL}s)" >&2
+        echo "WARNING: Global daemon mode deprecated, use --session flag" >&2
+    fi
+    
     echo "State file: $STATE_FILE" >&2
     echo "OPENCODE_API: ${OPENCODE_API:-NOT SET}" >&2
-    echo "Press Ctrl+C to stop" >&2
     
     CYCLE=0
     while true; do
