@@ -72,12 +72,18 @@ format_comment() {
     local comment="$1"
     local is_reply="$2"  # true if this is a reply in a thread
     
-    local id=$(echo "$comment" | jq -r '.id')
-    local author=$(echo "$comment" | jq -r '.user.login')
-    local body=$(echo "$comment" | jq -r '.body')
-    local path=$(echo "$comment" | jq -r '.path // "general"')
-    local position=$(echo "$comment" | jq -r '.position // .original_position // "null"')
-    local diff_hunk=$(echo "$comment" | jq -r '.diff_hunk // ""')
+    local id
+    id=$(echo "$comment" | jq -r '.id')
+    local author
+    author=$(echo "$comment" | jq -r '.user.login')
+    local body
+    body=$(echo "$comment" | jq -r '.body')
+    local path
+    path=$(echo "$comment" | jq -r '.path // "general"')
+    local position
+    position=$(echo "$comment" | jq -r '.position // .original_position // "null"')
+    local diff_hunk
+    diff_hunk=$(echo "$comment" | jq -r '.diff_hunk // ""')
     
     local output=""
     if [[ "$is_reply" == "true" ]]; then
@@ -100,7 +106,8 @@ build_comment_thread() {
     local comment_id="$2"
     
     # Find the comment
-    local comment=$(echo "$all_comments" | jq --argjson id "$comment_id" '
+    local comment
+    comment=$(echo "$all_comments" | jq --argjson id "$comment_id" '
         (.general + .review) | map(select(.id == $id)) | .[0]
     ')
     
@@ -112,7 +119,8 @@ build_comment_thread() {
     local root_id="$comment_id"
     local current_id="$comment_id"
     while true; do
-        local in_reply_to=$(echo "$all_comments" | jq --argjson id "$current_id" '
+        local in_reply_to
+        in_reply_to=$(echo "$all_comments" | jq --argjson id "$current_id" '
             (.general + .review) | map(select(.id == $id)) | .[0].in_reply_to_id // null
         ')
         if [[ "$in_reply_to" == "null" ]]; then
@@ -124,7 +132,8 @@ build_comment_thread() {
     done
     
     # Collect all comments in thread (root + all descendants)
-    local thread_comments=$(echo "$all_comments" | jq --argjson root "$root_id" '
+    local thread_comments
+    thread_comments=$(echo "$all_comments" | jq --argjson root "$root_id" '
         (.general + .review) as $all |
         # Find root and all comments that reply to root (directly or indirectly)
         $all | map(select(
@@ -151,17 +160,20 @@ build_comment_thread() {
 # Get current PR state from forge
 get_pr_state() {
     local pr_number="$1"
-    local state=$(bash "${SCRIPT_DIR}/forge" pr view "$pr_number" --json 2>/dev/null)
+    local state
+    state=$(bash "${SCRIPT_DIR}/forge" pr view "$pr_number" --json 2>/dev/null)
     if [[ -z "$state" ]]; then
         echo "{}"
         return 1
     fi
     
     # Get all comments (including bot comments for state tracking)
-    local comments=$(bash "${SCRIPT_DIR}/forge" pr comments "$pr_number" --json 2>/dev/null || echo '{"general":[],"review":[]}')
+    local comments
+    comments=$(bash "${SCRIPT_DIR}/forge" pr comments "$pr_number" --json 2>/dev/null || echo '{"general":[],"review":[]}')
     
     # Track ALL comment IDs in state (including bot comments)
-    local all_comment_ids=$(echo "$comments" | jq '
+    local all_comment_ids
+    all_comment_ids=$(echo "$comments" | jq '
         (.general + .review) | map(.id)
     ')
     
@@ -176,18 +188,22 @@ check_pr() {
     local pr_number="$1"
     
     # Get current state
-    local current_state=$(get_pr_state "$pr_number")
+    local current_state
+    current_state=$(get_pr_state "$pr_number")
     if [[ "$current_state" == "{}" ]]; then
         echo "Failed to fetch PR #$pr_number state" >&2
         return 1
     fi
     
     # Get previous state from file (keep as JSON, not raw string)
-    local previous_state=$(jq --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
+    local previous_state
+    previous_state=$(jq --arg pr "$pr_number" '.[$pr] // {}' "$STATE_FILE")
     
     # Extract fields for comparison
-    local curr_pr_state=$(echo "$current_state" | jq -r '.state')
-    local prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
+    local curr_pr_state
+    curr_pr_state=$(echo "$current_state" | jq -r '.state')
+    local prev_pr_state
+    prev_pr_state=$(echo "$previous_state" | jq -r '.state // "unknown"')
     
     # Treat null/empty as unknown (happens when state file is empty or PR not yet tracked)
     if [[ "$prev_pr_state" == "null" || -z "$prev_pr_state" ]]; then
@@ -195,17 +211,22 @@ check_pr() {
     fi
     
     # Get comment IDs for comparison
-    local curr_comment_ids=$(echo "$current_state" | jq -r '.comment_ids // []')
-    local prev_comment_ids=$(echo "$previous_state" | jq -r '.comment_ids // []')
+    local curr_comment_ids
+    curr_comment_ids=$(echo "$current_state" | jq -r '.comment_ids // []')
+    local prev_comment_ids
+    prev_comment_ids=$(echo "$previous_state" | jq -r '.comment_ids // []')
     
     # Find new comment IDs (excluding bot comments for notification)
-    local new_comment_ids=$(echo "$curr_comment_ids" | jq -r --argjson prev "$prev_comment_ids" '
+    local new_comment_ids
+    new_comment_ids=$(echo "$curr_comment_ids" | jq -r --argjson prev "$prev_comment_ids" '
         map(select(. as $id | $prev | index($id) | not))
     ')
     
     # Filter out bot comments from new comment IDs
-    local all_comments=$(echo "$current_state" | jq -r '.comments')
-    local new_non_bot_ids=$(echo "$all_comments" | jq -r --argjson new_ids "$new_comment_ids" '
+    local all_comments
+    all_comments=$(echo "$current_state" | jq -r '.comments')
+    local new_non_bot_ids
+    new_non_bot_ids=$(echo "$all_comments" | jq -r --argjson new_ids "$new_comment_ids" '
         (.general + .review) | 
         map(select(
             (.id as $id | $new_ids | index($id) != null) and
@@ -225,13 +246,15 @@ check_pr() {
         fi
         
         # Check for new non-bot comments
-        local new_ids_array=($(echo "$new_non_bot_ids" | jq -r '.[]'))
+        local new_ids_array
+        mapfile -t new_ids_array < <(echo "$new_non_bot_ids" | jq -r '.[]')
         if [[ ${#new_ids_array[@]} -gt 0 ]]; then
             changes+=("${#new_ids_array[@]} new comment(s)")
             
             new_comment_threads+="New comments:\n\n"
             for comment_id in "${new_ids_array[@]}"; do
-                local thread=$(build_comment_thread "$all_comments" "$comment_id")
+                local thread
+                thread=$(build_comment_thread "$all_comments" "$comment_id")
                 new_comment_threads+="$thread"
                 new_comment_threads+="\n---\n\n"
             done
@@ -239,8 +262,10 @@ check_pr() {
     fi
     
     # Update state file (remove comments field to avoid storing large data)
-    local state_to_store=$(echo "$current_state" | jq 'del(.comments)')
-    local new_state=$(jq \
+    local state_to_store
+    state_to_store=$(echo "$current_state" | jq 'del(.comments)')
+    local new_state
+    new_state=$(jq \
         --arg pr "$pr_number" \
         --argjson state "$state_to_store" \
         '.[$pr] = $state' \
@@ -249,17 +274,21 @@ check_pr() {
     
     # Notify if changes detected
     if [[ ${#changes[@]} -gt 0 ]]; then
-        local title=$(echo "$current_state" | jq -r '.title')
-        local change_summary=$(printf '%s\n' "${changes[@]}")
+        local title
+        title=$(echo "$current_state" | jq -r '.title')
+        local change_summary
+        change_summary=$(printf '%s\n' "${changes[@]}")
         
         # Build notification with optional comment threads
-        local total_comments=$(echo "$curr_comment_ids" | jq 'length')
+        local total_comments
+        total_comments=$(echo "$curr_comment_ids" | jq 'length')
         
         # Check if we're in an spr-managed branch (has spr/ remote branches)
         local spr_stack_status=""
         if git branch -r 2>/dev/null | grep -q "origin/spr/"; then
             # Get spr status for stack context (spr alias handles token loading)
-            local spr_status=$(spr status 2>/dev/null || echo "")
+            local spr_status
+            spr_status=$(spr status 2>/dev/null || echo "")
             if [[ -n "$spr_status" ]]; then
                 spr_stack_status="
 
@@ -358,7 +387,8 @@ poll_once() {
     echo "Checking for PR updates..." >&2
     
     # Find active PRs
-    local prs=$(find_active_prs)
+    local prs
+    prs=$(find_active_prs)
     
     if [[ -z "$prs" ]]; then
         echo "No active PRs found in sessions" >&2

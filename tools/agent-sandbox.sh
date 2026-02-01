@@ -459,7 +459,8 @@ build_mounts() {
   local mode=$1
   shift
   local mounts=("$@")
-  local pwd_path="$(pwd)"
+  local pwd_path
+  pwd_path="$(pwd)"
 
   for mount in "${mounts[@]}"; do
     # Skip empty entries
@@ -479,7 +480,8 @@ build_mounts() {
     # Create parent directory if needed for remapped paths
     # Only needed when src != dest (remapped paths like gitconfig)
     if [[ "$src" != "$dest" ]]; then
-      local parent=$(dirname "$dest")
+      local parent
+      parent=$(dirname "$dest")
       BWRAP_ARGS+=(--dir "$parent")
     fi
 
