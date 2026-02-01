@@ -1,61 +1,29 @@
 ---
-title: Guardrails for LLM Agent Workflows
-sub_title: Building Reliability on Unreliable Components
+title: Engineering Rigor for LLM Agent Workflows
+sub_title: From Magic to Methodology
 author: Craig Barber
 ---
 
-Today's Journey
-===
-
-**Part 1: The Problem** (15 min)
-- Horror stories: When agents go wrong
-- The compounding error problem
-- Why confirmation dialogs fail
-
-<!-- pause -->
-
-**Part 2: The Insight** (10 min)
-- Schmitt trigger analogy: Noise tolerance
-- Recency bias in LLM context windows
-
-<!-- pause -->
-
-**Part 3: The Guardrails** (30 min)
-- Sandbox: Preventing catastrophic failures
-- Workflow injection: Fighting attention decay
-- SPR: Enabling atomic workflows
-- PR management: Closing the feedback loop
-- Nix: Turnkey reproducibility
-
-<!-- pause -->
-
-**Part 4: The Path Forward** (5 min)
-- From anecdote to evidence
-- Scientific rigor for AI engineering
+# The Day Everything Almost Disappeared
 
 <!-- end_slide -->
 
-# Part 1: The Problem
-
-<!-- end_slide -->
-
-The Day Everything Almost Disappeared
+Three Incidents, One Day
 ===
 
-**Three incidents. One day.**
+Let me tell you about the day an AI agent tried to delete critical parts of my system.
 
-Let me tell you about the day an AI agent tried to delete critical parts of my system three times.
+**Three times.**
 
 <!-- end_slide -->
 
 Incident #1: The Git Worktree Script
 ===
 
-**Context:** Building a script to manage git worktrees for documentation
+**Context:** Building a script to manage git worktrees
 
 **What happened:**
 ```bash
-# Agent generated this:
 git worktree add .docs docs
 cd .docs
 git rm -rf .  # "Clean up the worktree"
@@ -65,10 +33,7 @@ git rm -rf .  # "Clean up the worktree"
 
 **Result:** Entire local repository deleted
 
-**Why it was bad:**
-- Deletion was buried in script logic (easy to miss)
-- Fortunately: Everything was pushed to remote
-- But: Lost local work-in-progress branches
+Fortunately everything was pushed. But local work-in-progress branches: gone.
 
 <!-- pause -->
 
@@ -76,18 +41,15 @@ git rm -rf .  # "Clean up the worktree"
 
 <!-- end_slide -->
 
-Incident #2: The npm Debugging Attempt
+Incident #2: npm Debugging Gone Wrong
 ===
 
-**Context:** Debugging npm dependency issues
+**Agent's logic chain:**
 
-**Agent's logic:**
-```
-1. npm install fails
-2. "Let me clean the cache to help debug"
-3. npm cache fails  
+1. `npm install` fails
+2. "Let me clean the cache to debug"
+3. Cache cleaning fails
 4. "Let me remove the problematic directory"
-```
 
 <!-- pause -->
 
@@ -98,52 +60,42 @@ rm -rf ~/
 
 <!-- pause -->
 
-**Result:** Caught in confirmation prompt
-
-**Why it was terrifying:**
-- Agent was trying to be helpful
-- Each step seemed reasonable individually
-- Compounding logic errors led to catastrophe
+Caught in confirmation prompt. But one click away from disaster.
 
 <!-- end_slide -->
 
-Incident #3: The Documentation Sync Script
+Incident #3: Documentation Sync Script
 ===
 
-**Context:** Writing a script to sync documentation to orphan branch
+**Agent's suggestion for orphan branch setup:**
 
-**Agent suggested:**
 ```bash
-# Setup for orphan branch
 git checkout --orphan docs
 git reset --hard
-rm -rf * .[^.]*  # Remove all files except .git
+rm -rf * .[^.]*  # "Remove all files except .git"
 ```
 
 <!-- pause -->
 
 **My response:**
-> "That is the opposite of safe. It actively deletes things."
+> "That is the opposite of safe."
 
-**Agent's reply:**
-> "You're absolutely right. I'm an idiot. That rm -rf will delete untracked files."
+**Agent:**
+> "You're absolutely right. I'm an idiot. That will delete untracked files."
 
 <!-- pause -->
 
-**Why this matters:**
-- Agent generated plausible but dangerous code
-- Without understanding consequences
-- In documentation meant to be copied by others
+**The danger:** This was going into documentation for others to copy.
 
 <!-- end_slide -->
 
-The Pattern: Compounding Errors
+The Pattern
 ===
 
 **Each incident followed the same pattern:**
 
-1. Agent has reasonable initial goal
-2. Small misunderstanding of context
+1. Reasonable initial goal
+2. Small misunderstanding
 3. Logical next step (given misunderstanding)
 4. Another small error
 5. **Catastrophe**
@@ -152,44 +104,332 @@ The Pattern: Compounding Errors
 
 **The problem isn't one big error.**
 
-**It's many small errors compounding.**
+**It's small errors compounding.**
 
 <!-- end_slide -->
 
-Why Confirmation Dialogs Fail
+# The Real Problem
+
+<!-- end_slide -->
+
+We're Treating LLMs as Magic
 ===
 
-**After the third attempt, I realized:**
+**Current approach:**
+
+- Write good prompts
+- Hope the agent follows them
+- Confirm every command
+- Fix mistakes manually
+
+<!-- pause -->
+
+**This isn't engineering. This is wishful thinking.**
+
+<!-- pause -->
+
+**Result:**
+- Security exhaustion (clicking "yes" on every command)
+- Can't automate (need human in loop)
+- No measurement (can't improve what you can't measure)
+- Cargo cult practices ("think step by step" because everyone does)
+
+<!-- end_slide -->
+
+Error Accumulation
+===
+
+**Small errors compound:**
+
+- Each agent action: ~5% chance of subtle error
+- Over 20 steps: (0.95)^20 = 36% success rate
+
+<!-- pause -->
+
+```
+Steps    Success Rate
+  1         95%
+  5         77%
+ 10         60%
+ 20         36%
+ 50         8%
+```
+
+<!-- pause -->
+
+**Without structural guardrails, failure is inevitable.**
+
+<!-- end_slide -->
+
+The Vision: Engineering Rigor
+===
+
+**What if we applied the same rigor to LLM workflows as traditional software?**
+
+<!-- pause -->
+
+- **Reproducibility** - Same environment, same results
+- **Safety** - Structural constraints, not hope
+- **Consistency** - Standards applied uniformly
+- **Reviewability** - Human oversight that scales
+- **Measurement** - Test hypotheses, iterate
+
+<!-- pause -->
+
+**This is how we build reliable systems.**
+
+**Let's do it for LLM agents.**
+
+<!-- end_slide -->
+
+# The Framework
+
+<!-- end_slide -->
+
+Four Pillars of Rigor
+===
+
+**1. Reproducibility (Nix)**
+Foundation - enables everything else
+
+**2. Safety (Sandbox)**  
+Structural protection from catastrophic failures
+
+**3. Consistency (Workflow Injection)**
+Standards applied uniformly across sessions
+
+**4. Reviewability (SPR + Tools)**
+Human review that scales
+
+<!-- pause -->
+
+**Together, these enable the scientific method for LLMs.**
+
+<!-- end_slide -->
+
+# Rigor #1: Reproducibility
+
+<!-- end_slide -->
+
+The "Works on My Machine" Problem
+===
+
+**Traditional agent setup:**
+
+1. Install agent X (which version?)
+2. Configure MCP Y (where's the config?)
+3. Set up auth Z (which env var?)
+4. Install tools A, B, C... (dependency hell)
+5. Hope it works
+
+<!-- pause -->
+
+**Result:**
+- 2+ hours onboarding
+- "Works on my machine" syndrome
+- Tool version mismatches
+- Impossible to reproduce experiments
+
+<!-- pause -->
+
+**You can't do science without reproducibility.**
+
+<!-- end_slide -->
+
+Nix: Reproducible Environments
+===
+
+**One command:**
+```bash
+nix develop github:cbarber/llm-tools#opencode
+```
+
+<!-- pause -->
+
+**What you get:**
+- Agent (OpenCode/Claude Code)
+- Sandbox (bubblewrap configured)
+- Tools (spr, git-absorb, forge, beads)
+- MCP servers (cclsp, language servers)
+- Auth (API keys sourced)
+- Workflow injection (hooks configured)
+
+<!-- pause -->
+
+**All:**
+- Version-pinned (flake.lock)
+- Reproducible (same on every machine)
+- Isolated (won't break other projects)
+
+<!-- end_slide -->
+
+Why Nix Matters for Rigor
+===
+
+**Reproducible experiments:**
+- Same tool versions across all tests
+- No confounding variables from environment differences
+- Results are replicable by others
+
+<!-- pause -->
+
+**Team-wide standards:**
+- Everyone uses same configuration
+- Updates propagate centrally
+- Compliance enforced (e.g., OpenCode with sharing disabled)
+
+<!-- pause -->
+
+**Foundation for measurement:**
+- Control the environment
+- Isolate variables
+- Run A/B tests reliably
+
+<!-- pause -->
+
+**Without reproducibility, you're not doing engineering.**
+
+<!-- end_slide -->
+
+Nix: The Learning Curve Question
+===
+
+**"Isn't Nix hard to learn?"**
+
+<!-- pause -->
+
+**Two answers:**
+
+**For users:**
+You don't need to know Nix. Just run the command.
+
+**For distribution:**
+We're a PR and CI away from Docker images that represent these shells.
+No Nix knowledge required.
+
+<!-- pause -->
+
+**Trade-off:**
+Upfront complexity for long-term reproducibility.
+
+Worth it when you're building reliable LLM systems.
+
+<!-- end_slide -->
+
+# Rigor #2: Safety
+
+<!-- end_slide -->
+
+The Confirmation Fatigue Problem
+===
+
+**After the third rm -rf attempt, I realized:**
 
 Confirmation dialogs don't scale.
 
 <!-- pause -->
 
-**Problems with confirmation:**
-
-1. **Security exhaustion** - Fatigue leads to clicking "yes" automatically
-2. **Blocks automation** - Can't run agents overnight/unsupervised
-3. **Trust erosion** - Constant vigilance required
-4. **False sense of security** - One missed click = disaster
+**Problems:**
+- **Security exhaustion** - Eventually click "yes" automatically  
+- **Blocks automation** - Can't run overnight/unsupervised
+- **Trust erosion** - Constant vigilance required
+- **One mistake = disaster** - Human error inevitable
 
 <!-- pause -->
 
-**We need a better solution.**
+**We need structural safety, not human vigilance.**
 
 <!-- end_slide -->
 
-Pain Point #2: Attention Decay
+Sandbox: Structural Safety
 ===
 
-**For months, I carefully wrote guidelines in AGENTS.md:**
+**Bubblewrap isolation (Linux) / sandbox-exec (macOS)**
+
+**Agent can access:**
+- ✅ Current project directory (read/write)
+- ✅ /nix store (read-only)
+- ✅ Temporary workspace (read/write)
+
+**Agent CANNOT access:**
+- 🚫 HOME directory
+- 🚫 /etc
+- 🚫 Other projects
+- 🚫 System directories
+
+<!-- pause -->
+
+**Key insight:** Whitelist (safe by default), not blacklist (try to catch everything).
+
+<!-- end_slide -->
+
+Sandbox: Live Demo
+===
+
+Let's see it in action:
+
+```bash +exec
+# Show we're in the project
+echo "Current directory: $PWD"
+echo "Sandbox status: ${IN_AGENT_SANDBOX:-not sandboxed}"
+```
+
+<!-- pause -->
+
+Try to create file in home:
+
+```bash +exec
+touch ~/test-from-agent.txt 2>&1 || echo "✓ Blocked as expected"
+```
+
+<!-- pause -->
+
+Try the dangerous command from incident #2:
+
+```bash +exec
+rm -rf ~/ 2>&1 || echo "✓ Sandbox protected!"
+```
+
+<!-- end_slide -->
+
+Sandbox: Results
+===
+
+**Since enabling sandbox by default (2 months):**
+
+- ✅ Zero security incidents
+- ✅ Trust agents to run unsupervised
+- ✅ No confirmation fatigue
+- ✅ True automation possible
+
+<!-- pause -->
+
+**Company benefits:**
+- Zero-trust by default
+- Centralized compliance policy
+- Safe experimentation environment
+
+<!-- pause -->
+
+**Safety enables experimentation.**
+
+<!-- end_slide -->
+
+# Rigor #3: Consistency
+
+<!-- end_slide -->
+
+The Guidelines Problem
+===
+
+**For months, I carefully wrote guidelines:**
 
 ```markdown
 ## Development Guidelines
 
-* Be succinct. Only provide examples if necessary
-* Be strategic. Plan first, ask questions, then execute
 * Always make atomic commits
 * Commit after every edit
+* Use conventional commit format
 ```
 
 <!-- pause -->
@@ -198,38 +438,13 @@ Pain Point #2: Attention Decay
 
 <!-- end_slide -->
 
-The Aha Moment
-===
-
-**Then I learned about how LLMs use long contexts.**
-
-The key insight: **Position bias - "Lost in the middle"**
-
-<!-- pause -->
-
-**What research shows:**
-
-- LLMs have 200K+ token context windows
-- But performance degrades based on position
-- Information at start or end is most accessible
-- Information in the middle is often "lost"
-- My guidelines at the start get buried by context
-
-<!-- pause -->
-
-**It's not that the agent is dumb.**
-
-**It's that my guidelines from the start are competing with recency bias and 50K tokens of intervening context.**
-
-<!-- end_slide -->
-
-The Guidelines Problem
+Why Guidelines Get Ignored
 ===
 
 **Example session timeline:**
 
 ```
-Token 0-2K:    AGENTS.md loaded (includes "make atomic commits")
+Token 0-2K:    AGENTS.md loaded (includes guidelines)
 Token 2K-10K:  User conversation, task description
 Token 10K-30K: Code exploration, file reads
 Token 30K-50K: Writing code, making changes
@@ -239,340 +454,49 @@ Token 50K:     Time to commit...
 <!-- pause -->
 
 **By token 50K:**
-- Guideline from token 500 is "lost in the middle"
-- Recent code changes are at the end (high influence)
-- Agent creates "god commit" mixing 3 concerns
-- Despite clear guidelines against it
+- Guidelines from token 500 are "lost in the middle"
+- Recent code changes dominate (recency bias)
+- Agent creates god commit mixing 3 concerns
 
 <!-- pause -->
 
-**Research: "Lost in the Middle" (Liu et al., 2023)**
-- Performance degrades when relevant info is in middle of context
-- Highest performance: beginning or end of context
-- This affects even long-context models
+**Research:** "Lost in the Middle" (Liu et al., 2023)
+- Performance degrades when info is in middle of context
+- Highest performance: beginning or end
+- Affects all LLMs, even long-context models
 
 <!-- end_slide -->
 
-Research: Lost in the Middle
+Workflow Injection: Re-inject for Consistency
 ===
-
-**"Lost in the Middle: How Language Models Use Long Contexts"**
-*Liu et al., 2023 - Transactions of the Association for Computational Linguistics*
-
-<!-- pause -->
-
-**Key findings:**
-
-Performance degrades significantly when relevant information is in the middle of long contexts.
-
-<!-- pause -->
-
-**Position matters:**
-- **Beginning of context**: High performance
-- **Middle of context**: Significant degradation  
-- **End of context**: High performance (recency bias)
-
-<!-- pause -->
-
-**Implication for my AGENTS.md:**
-
-Guidelines at the start get "lost in the middle" as context grows.
-
-By token 50K, they're buried and have minimal influence on decisions.
-
-<!-- end_slide -->
-
-Pain Point #3: Non-Atomic Commits
-===
-
-**Typical agent commit without guardrails:**
-
-```
-commit abc123
-Author: agent
-
-feat: add feature and fix bugs and refactor
-
-- Implement new user authentication
-- Fix typo in error message
-- Refactor database connection logic
-- Update documentation
-- Add tests
-```
-
-<!-- pause -->
-
-**Problems:**
-- Unreviewable (too many concerns)
-- Unbisectable (can't isolate which change caused regression)
-- Unclear history (what was the actual goal?)
-- Manual cleanup required (splitting commits post-hoc)
-
-<!-- end_slide -->
-
-# Part 2: The Core Insight
-
-<!-- end_slide -->
-
-The Schmitt Trigger Analogy
-===
-
-**I started thinking about this as a noise tolerance problem.**
-
-<!-- 
-speaker_note: |
-  Live demo planned - Audio to square wave conversion.
-  Backup - pre-recorded visualization available.
--->
-
-<!-- pause -->
-
-**Concept:**
-- **Clean signal** → Success (agent follows workflow)
-- **Noisy signal** → Small errors at each step
-- **Without hysteresis** → Noise causes immediate failure
-- **With hysteresis (guardrails)** → Noise is absorbed
-
-<!-- end_slide -->
-
-The Model: Square Wave States
-===
-
-```
-Success State (Peak)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    
-                    ↕ Noise (small errors)
-                    
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Failure State (Valley)
-```
-
-<!-- pause -->
-
-**Without guardrails:**
-- Small error → instant state collapse
-- Valley is wide (easy to fall into)
-- Peak is narrow (hard to maintain)
-- No recovery mechanism
-
-<!-- pause -->
-
-**With guardrails (hysteresis):**
-- Must accumulate errors to fail (upper threshold)
-- Must accumulate successes to recover (lower threshold)
-- Peak is wide (stable success state)
-- Valley is narrow (hard to fall into)
-
-<!-- end_slide -->
-
-Why This Model Works
-===
-
-**Each agent action introduces small probability of error:**
-
-- Misunderstanding context (5%)
-- Incorrect assumption (3%)
-- Off-by-one error (2%)
-- Wrong tool selection (4%)
-
-<!-- pause -->
-
-**Over a 20-step workflow:**
-- Without guardrails: Errors compound
-- Each mistake makes next mistake more likely
-- Eventually → catastrophic failure
-
-<!-- pause -->
-
-**With guardrails:**
-- Small errors are caught early
-- Structural constraints prevent compounding
-- System stays in success state despite noise
-
-<!-- end_slide -->
-
-Guardrails Create Hysteresis Bands
-===
-
-**Upper threshold (success → failure):**
-- Agent would need multiple severe errors
-- Sandbox blocks catastrophic commands
-- Workflow injection reminds of standards
-- Hard to leave success state
-
-<!-- pause -->
-
-**Lower threshold (failure → success):**
-- Clear recovery paths
-- Fixup commits for mistakes
-- Git operations are non-interactive
-- Easy to return to success state
-
-<!-- pause -->
-
-**Result: Stable success basin**
-
-<!-- end_slide -->
-
-# Part 3: The Guardrails
-
-<!-- end_slide -->
-
-Guardrail #1: Sandbox Everything
-===
-
-**The solution: Bubblewrap isolation**
-
-**What the agent can access:**
-- ✅ Current project directory (read/write)
-- ✅ /nix store (read-only)
-- ✅ Temporary workspace /tmp/agent-work (read/write)
-
-<!-- pause -->
-
-**What the agent CANNOT access:**
-- 🚫 HOME directory
-- 🚫 /etc
-- 🚫 Other projects
-- 🚫 System directories
-
-<!-- end_slide -->
-
-Sandbox Demo
-===
-
-<!-- 
-speaker_note: |
-  Switch to sandboxed agent shell for live demo.
-  Show PWD, attempt to touch ~/test.txt, attempt rm -rf ~/ 
--->
-
-```bash
-# Inside sandbox - show current location
-echo $PWD
-# /home/user/src/llm-tools (works)
-
-# Try to access home directory
-touch ~/test.txt
-# Permission denied (blocked)
-
-# Try the dangerous command from incident #2
-rm -rf ~/
-# Permission denied (safe!)
-```
-
-<!-- pause -->
-
-**Key point: The agent can't accidentally nuke the system even if it tries.**
-
-<!-- end_slide -->
-
-Sandbox Implementation
-===
-
-**Technology: Bubblewrap (Linux) / sandbox-exec (macOS)**
-
-```bash
-# What happens under the hood
-bwrap \
-  --ro-bind /nix /nix \
-  --bind $PROJECT_DIR $PROJECT_DIR \
-  --tmpfs /tmp \
-  --unshare-all \
-  --share-net \
-  --die-with-parent \
-  -- command args...
-```
-
-<!-- pause -->
-
-**Architecture:**
-- User namespaces (no root required)
-- Selective bind mounts
-- Automatic cleanup on exit
-- Network enabled (for API calls)
-
-<!-- end_slide -->
-
-Sandbox: Dogfooding Results
-===
-
-**Since enabling sandbox by default (2 months ago):**
-
-- ✅ **Zero security incidents**
-- ✅ **Trust agents to run unsupervised**
-- ✅ **No confirmation fatigue**
-- ✅ **Enables true automation**
-
-<!-- pause -->
-
-**Company benefits:**
-- Zero-trust by default
-- No security exhaustion
-- Centralized security policy (via Nix)
-- Audit trail (all filesystem access logged)
-
-<!-- end_slide -->
-
-Guardrail #2: Workflow Boundary Injection
-===
-
-**The problem revisited:**
-
-Guidelines at the start of AGENTS.md get "lost in the middle" by mid-session.
-
-<!-- pause -->
 
 **The solution:**
 
-Re-inject critical context at decision points - at the END of context (high influence position).
+Re-inject critical guidelines at decision points - at the END of context (high influence).
 
 ```
-Agent edits file → file.edited event fired
+Agent edits file → file.edited event
                  ↓
          temper --event file.edited
                  ↓
-    Extract relevant section from AGENTS.md
+    Extract guidelines from AGENTS.md
                  ↓
-         Inject into agent context (fresh)
-```
-
-<!-- end_slide -->
-
-Architecture: Event-Driven Re-Injection
-===
-
-```
-OpenCode Plugin
-    ↓
-  (event fired: file.edited)
-    ↓
-temper --event file.edited
-    ↓
-Extract: ## Workflow / ### file.edited from AGENTS.md
-    ↓
-Show: commit guidelines, git status, fixup candidates
-    ↓
-Agent context (fresh, high attention weight)
+         Inject at end of context (fresh)
 ```
 
 <!-- pause -->
 
-**Key principle:**
-- Don't rely on agent memory
-- Push context when it's needed
-- Fresh context = high attention weight
+**Key insight:** Don't rely on memory. Push context when needed.
 
 <!-- end_slide -->
 
-Workflow Injection Example
+Workflow Injection: Before/After
 ===
 
 **Before injection (agent's view at token 50K):**
 ```
-[... 50,000 tokens of code and conversation ...]
-(Guidelines from token 500 have ~0% influence)
+[... 50,000 tokens of work ...]
+(Guidelines from token 500 have minimal influence)
 ```
 
 <!-- pause -->
@@ -585,126 +509,99 @@ Workflow Injection Example
 
 Uncommitted changes:
   M src/sandbox.rs
-  M tools/agent-sandbox.sh
 
 Recent commits (for fixup context):
-  abc123 feat(sandbox): add bubblewrap support
-  def456 test(sandbox): add test suite
+  abc123 feat(sandbox): add bubblewrap
 
-Commit as: new atomic commit OR fixup to existing commit above
+Commit as: new atomic commit OR fixup to existing
 ```
 
 <!-- pause -->
 
-**Agent now has relevant context with high attention weight.**
+**Guidelines now have high attention weight RIGHT when needed.**
 
 <!-- end_slide -->
 
-Injection vs Skills: Complementary Tools
+Workflow Injection: Results
 ===
 
-**Claude Skills:**
-- Pull-based (agent must request)
-- Deep reference for complex procedures
-- Good for: Rarely-used workflows, detailed howtos
+**Dogfooding over 3 months:**
 
-<!-- pause -->
+**Before:** Regularly found god commits mixing concerns
 
-**Workflow Injection:**
-- Push-based (automatic at decision points)
-- Brief reminders for critical path
-- Good for: Frequent operations, standards enforcement
-
-<!-- pause -->
-
-**Analogy:**
-- **Skills** = Reference manual on the shelf
-- **Injection** = Pop-up reminder when you're about to make a mistake
-
-<!-- pause -->
-
-**They solve different problems and work together.**
-
-<!-- end_slide -->
-
-Workflow Injection: Dogfooding Results
-===
-
-**Subjective observations over 3 months:**
-
-Before injection:
-- Regularly found god commits mixing concerns
-- Manual cleanup required frequently
-- Forgotten workflow standards mid-session
-
-<!-- pause -->
-
-After injection:
-- Rarely see non-atomic commits
-- Workflow standards followed consistently
-- Less manual intervention needed
+**After:** Rarely see non-atomic commits
 
 <!-- pause -->
 
 **Important caveat:**
-- This is anecdotal evidence
-- No rigorous A/B testing yet
+- This is anecdotal (for now)
+- Experiments in progress for rigorous validation
 - But subjective improvement is significant
-- Rigorous measurement is next (see Part 4)
+
+<!-- pause -->
+
+**Consistency enables reliable workflows.**
 
 <!-- end_slide -->
 
-Workflow Injection: Open Question
-===
-
-**Hypothesis to test:**
-
-Skills alone won't provide the same benefit as automatic injection.
-
-<!-- pause -->
-
-**Experiment design:**
-1. Create skill with same content (commit guidelines)
-2. Run 10 sessions with skill available but injection disabled
-3. Measure: Does agent naturally call skill? When? Consistency?
-4. Run 10 sessions with injection enabled (no skill)
-5. Compare: Atomic commit rates, workflow adherence
-
-<!-- pause -->
-
-**Expected result:**
-- Agent won't call skill consistently
-- Injection will have higher adherence
-- Validates push-based approach
-
-<!-- pause -->
-
-**Status: Planned but not yet executed**
+# Rigor #4: Reviewability
 
 <!-- end_slide -->
 
-Guardrail #3: SPR for Atomic Workflows
+The God Commit Problem
 ===
 
-**Even with workflow injection nudging toward atomic commits...**
+**Typical agent commit:**
 
-**We need tooling that makes atomic commits *easy*.**
+```
+commit abc123
+
+feat: add feature and fix bugs and refactor
+
+- Implement new user authentication
+- Fix typo in error message  
+- Refactor database connection logic
+- Update documentation
+- Add tests
+```
 
 <!-- pause -->
 
-**Solution: Stacked PRs with spr**
+**Problems:**
+- Unreviewable (too many concerns)
+- Unbisectable (can't isolate regressions)
+- Unclear history (what was the actual goal?)
 
-- Each commit → one PR
-- PRs stack on each other (dependencies clear)
-- Independent review
-- Independent landing
+<!-- pause -->
+
+**We still want to review agent code. We need reviewability.**
 
 <!-- end_slide -->
 
-SPR Workflow
+Tools for Atomic Commits
 ===
 
-**The workflow:**
+**Atomic commits aren't one tool - they're a collection:**
+
+- **spr** - Stacked PRs (one commit = one PR)
+- **git-absorb** - Automatic fixup commits
+- **forge** - Unified PR management (gh/tea wrapper)
+- **temper** - Workflow injection trigger
+
+<!-- pause -->
+
+**Key insight:** These tools make it EASIER for the agent to follow our engineering standards.
+
+<!-- pause -->
+
+**All delivered via Nix** - reproducible tooling for consistent results.
+
+<!-- end_slide -->
+
+SPR: Stacked PRs
+===
+
+**Each commit becomes one PR:**
 
 ```bash
 # Create atomic commits
@@ -713,55 +610,23 @@ git commit -m "test(sandbox): add test suite"
 git commit -m "docs(sandbox): document usage"
 
 # Create/update all PRs in stack
-export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
 spr update
 
-# View PR status with checks/approvals
+# View status
 spr status
-
-# Merge entire approved stack
-spr merge
-```
-
-<!-- end_slide -->
-
-SPR Example Output
-===
-
-<!-- 
-speaker_note: |
-  Demo spr workflow on real branch.
-  Show spr update, spr status with stacked PRs.
--->
-
-```
-$ spr status
-
-✓ #123 feat(sandbox): add bubblewrap support
-  Checks: ✓ CI passed
-  Reviews: ✓ Approved by alice
-  
-⧗ #124 test(sandbox): add test suite
-  Stacks on: #123
-  Checks: ⧗ CI running
-  Reviews: (awaiting review)
-  
-⧗ #125 docs(sandbox): document usage
-  Stacks on: #124
-  Checks: ⧗ Queued
-  Reviews: (awaiting review)
 ```
 
 <!-- pause -->
 
-**Each PR is:**
-- Small (focused on one change)
-- Reviewable (clear purpose)
-- Independent (can be approved separately)
+**Benefits:**
+- Small, focused PRs (reviewable)
+- Independent review (don't wait for whole feature)
+- Clear dependencies (stacked)
+- Bisectable history
 
 <!-- end_slide -->
 
-SPR: What It Does (and Doesn't Do)
+SPR: What It Does (and Doesn't)
 ===
 
 **Important clarification:**
@@ -770,267 +635,147 @@ SPR does NOT enforce atomic commits.
 
 <!-- pause -->
 
-**Agent can still create:**
-```
-commit abc123
-- Add feature X
-- Fix bug Y
-- Refactor Z
-```
-
-SPR just makes it one PR per god commit.
-
-<!-- pause -->
-
-**What enforces atomicity:**
-- Workflow injection (reminds of standards)
-- Pre-commit hooks (detects multi-concern commits)
+**Enforcement comes from:**
+- Workflow injection (reminders)
 - Code review (human feedback)
+- Tools making it easier (spr, git-absorb)
 
 <!-- pause -->
 
 **SPR's value:**
 - Makes atomic commits *reviewable*
-- Makes atomic commits *bisectable*
+- Makes atomic commits *bisectable*  
 - Makes atomic commits *easy to land*
-
-<!-- end_slide -->
-
-SPR: Dogfooding Results
-===
-
-**Observations:**
-
-- PR review time decreased (smaller, focused PRs)
-- Reviewers can approve incrementally (don't wait for whole feature)
-- Git history is cleaner (each commit is meaningful)
-- Bisect works reliably (each commit is self-contained)
 
 <!-- pause -->
 
-**Company benefits:**
-- Same review standards for agent/human code
-- Reviewers stay sane (no 1000-line PRs)
-- Clear rollback paths (revert single commit)
-- Better collaboration (agents work like team members)
+**Reviewability enables human oversight at scale.**
 
 <!-- end_slide -->
 
-Guardrail #4: PR Management in Session
+PR Management: Closing the Loop
 ===
 
 **Agents can't just throw code over the wall.**
 
-**They need to participate in code review.**
+They need to participate in code review.
 
 <!-- pause -->
 
-**The workflow:**
+**Live demo:**
 
-```bash
-# Agent creates PR
-spr update
+View PR and comments:
 
-# Reviewer (human or agent) leaves comments
-# Agent reads feedback
-bash tools/forge pr comments 123
-
-# Agent responds in-session
-bash tools/forge pr review-reply 123 456 "Fixed in abc123"
-
-# Agent addresses feedback
-git commit --fixup=abc123
-git rebase --autosquash origin/main
-
-# Agent updates PR
-spr update
-```
-
-<!-- end_slide -->
-
-PR Management Demo
-===
-
-<!-- 
-speaker_note: |
-  Demo forge pr view, pr comments, pr review-reply commands.
--->
-
-```bash
-# View PR details
-bash tools/forge pr view 123
-
-# Read review comments
-bash tools/forge pr comments 123
-
-# Reply to specific comment
-bash tools/forge pr review-reply 123 456 \
-  "Fixed the race condition in commit def789"
-
-# Check status
-spr status
+```bash +exec +id:pr_demo
+# Simulating forge commands
+echo "PR #123: Add sandbox support"
+echo "Status: Open, 2 comments"
+echo ""
+echo "Comment from reviewer:"
+echo "  Can you add a test for the HOME directory blocking?"
 ```
 
 <!-- pause -->
 
-**Key insight: The agent is part of the team.**
-
-It responds to feedback just like any engineer.
+Output appears here:
+<!-- snippet_output: pr_demo -->
 
 <!-- end_slide -->
 
-PR Management: Value
+PR Management: The Workflow
 ===
 
-**Benefits:**
+**Full cycle:**
 
-- **Async collaboration** - Agent works while you're in meetings
-- **Feedback loop closed** - Agent can iterate on review comments
-- **No context switching** - Agent maintains session state
-- **Learning opportunity** - Agent sees what reviewers care about
+1. Agent creates PR (`spr update`)
+2. Human reviews, leaves comments
+3. Agent reads: `forge pr comments 123`
+4. Agent responds: `forge pr review-reply 123 456 "Fixed in abc123"`
+5. Agent updates: `git commit --fixup + spr update`
 
 <!-- pause -->
 
-**Company benefits:**
-- Agents improve through review feedback
-- Human reviewers aren't blocked waiting for agent dev
-- Quality standards maintained (same review process)
-- Institutional knowledge propagates to agents
+**Value:**
+- Async collaboration (agent works while you're in meetings)
+- Feedback loop closed (agent iterates on review)
+- Human oversight maintained (we still review!)
+
+<!-- pause -->
+
+**Human review remains critical.**
 
 <!-- end_slide -->
 
-Guardrail #5: Nix for Turnkey Setup
+# The Scientific Method
+
+<!-- end_slide -->
+
+Infrastructure Enables Measurement
 ===
 
-**All this tooling is useless if onboarding takes 2 hours.**
+**What we've built:**
+
+- ✅ Reproducible environments (Nix)
+- ✅ Safe experimentation (Sandbox)
+- ✅ Consistent application (Workflow injection)
+- ✅ Human oversight (Reviewability)
 
 <!-- pause -->
 
-**Traditional setup hell:**
-1. Install agent X (which version?)
-2. Configure MCP Y (where's the docs?)
-3. Set up auth Z (which env var?)
-4. Install tool A, B, C... (dependency hell)
-5. Hope it works (narrator: it doesn't)
+**Now we can actually do science:**
+
+- Control environment (Nix)
+- Run experiments safely (Sandbox)
+- Measure outcomes (git history, metrics)
+- Test hypotheses (A/B testing)
+- Iterate based on evidence
 
 <!-- pause -->
 
-**With Nix:**
-```bash
-nix develop github:cbarber/llm-tools#opencode
-# Everything just works
-```
+**From cargo cult to evidence-based engineering.**
 
 <!-- end_slide -->
 
-Nix: What You Get
+Experiments in Progress
 ===
 
-**One command provisions:**
+**Hypothesis:** Workflow injection improves atomic commit rate
 
-- ✅ Agent (OpenCode/Claude Code)
-- ✅ Sandbox (bubblewrap configured)
-- ✅ Tools (spr, forge, temper, beads)
-- ✅ MCP servers (cclsp, others)
-- ✅ Auth (API keys sourced)
-- ✅ Workflow injection (hooks configured)
+**Method:**
+- Same tasks, with/without injection
+- Measure: % atomic commits, commits per PR
+- Control environment with Nix
 
 <!-- pause -->
 
-**Everything is:**
-- Version-pinned (flake.lock)
-- Reproducible (same on every machine)
-- Isolated (won't break other projects)
-- Centrally managed (update once, everyone gets it)
+**Status:** Data collection underway
+
+**Timeline:** Results before this presentation
+
+<!-- pause -->
+
+**This is what engineering rigor looks like:**
+
+Test. Measure. Iterate.
 
 <!-- end_slide -->
 
-Nix: The Honest Tradeoff
+What We Can Test
 ===
 
-**Nix has a learning curve.**
+**Now that infrastructure exists:**
 
-<!-- pause -->
-
-**Things that are hard:**
-- Understanding flakes
-- Debugging Nix errors (cryptic)
-- Writing custom packages
-- Platform differences (Linux vs macOS)
-
-<!-- pause -->
-
-**But:**
-- One-time cost for long-term reproducibility
-- Team standardizes on same environment
-- Security updates propagate automatically
-- Onboarding time: 2 minutes vs 2 hours
-
-<!-- pause -->
-
-**Company benefits:**
-- Central configuration management
-- Version pinning (prevents "works on my machine")
-- Security updates in one place
-- Audit trail (what changed when)
-
-<!-- end_slide -->
-
-# Part 4: The Path Forward
-
-<!-- end_slide -->
-
-Current State: Anecdotal Evidence
-===
-
-**What I know:**
-
-- Dogfooding for 3 months
-- Subjectively significant improvements
-- Zero security incidents with sandbox
-- Better commit quality with workflow injection
-- Faster reviews with SPR
-
-<!-- pause -->
-
-**What I don't know:**
-
-- How much better? (quantitative)
-- Which guardrail has most impact?
-- Are there interaction effects?
-- What's the statistical significance?
-
-<!-- pause -->
-
-**This is honest engineering:**
-
-"This works for me. Let's validate it properly."
-
-<!-- end_slide -->
-
-The Return to Scientific Rigor
-===
-
-**The opportunity:**
-
-Full agent sessions = controlled experiments
-
-<!-- pause -->
-
-**What we can measure:**
-- Atomic commit rate (before/after each guardrail)
-- Commits per PR (before/after)
-- Time to complete task
-- Security incidents (before/after sandbox)
-- Review cycle time
-
-<!-- pause -->
-
-**What we can test:**
 - Does workflow injection improve adherence?
 - Does guideline ordering matter?
 - Is "think step by step" actually helpful?
 - Which injection timing is optimal?
+- Do the guardrails have interaction effects?
+
+<!-- pause -->
+
+**Before:** Guessing based on vibes
+
+**Now:** Testing with controlled experiments
 
 <!-- pause -->
 
@@ -1038,149 +783,48 @@ Full agent sessions = controlled experiments
 
 <!-- end_slide -->
 
-Experimental Methodology
-===
-
-**Design: A/B testing with controlled tasks**
-
-1. Select representative tasks from beads (N=20)
-2. Run each task twice:
-   - Control: Guardrail disabled
-   - Treatment: Guardrail enabled
-3. Measure outcomes objectively
-4. Calculate effect size and significance
-
-<!-- pause -->
-
-**Example: Testing workflow injection**
-
-- Control (N=10): Same AGENTS.md, injection disabled
-- Treatment (N=10): Same AGENTS.md, injection enabled
-- Measure: % atomic commits, commits per PR
-- Hypothesis: Treatment > Control by ≥50%
-
-<!-- pause -->
-
-**Status: Infrastructure ready, experiments planned**
-
-<!-- end_slide -->
-
-The Infrastructure Is Ready
-===
-
-**What's already built:**
-
-- ✅ Sandbox (can toggle on/off)
-- ✅ Workflow injection (can enable/disable per event)
-- ✅ Beads (task tracking with git backing)
-- ✅ Metrics collection (git log analysis)
-- ✅ Reproducible environment (Nix)
-
-<!-- pause -->
-
-**What's needed:**
-
-- Design experiment protocol
-- Select representative tasks
-- Run controlled sessions
-- Analyze results
-- Iterate based on findings
-
-<!-- pause -->
-
-**Timeline: Experiments in progress**
-
-<!-- end_slide -->
-
-The Vision: Evidence-Based AI Engineering
-===
-
-**Imagine being able to test:**
-
-- "Does adding '## Context' heading improve task completion?"
-- "Does re-injecting guidelines every 10K tokens help?"
-- "Is JSON output format better than markdown for tool calls?"
-- "Does explicitly saying 'be concise' reduce response length?"
-
-<!-- pause -->
-
-**We can answer these questions.**
-
-**With data. With significance tests. With reproducibility.**
-
-<!-- pause -->
-
-**This is what engineering rigor looks like:**
-
-Not cargo culting best practices.
-
-Testing hypotheses. Measuring outcomes. Iterating.
-
-<!-- end_slide -->
-
-Invitation to Collaborate
-===
-
-**This is early days.**
-
-**I'm one data point.**
-
-<!-- pause -->
-
-**I need your help:**
-
-- Design better experiments
-- Challenge my assumptions
-- Point out what I'm missing
-- Help analyze results
-- Contribute your own observations
-
-<!-- pause -->
-
-**Open questions I don't have answers for:**
-
-1. Is workflow injection really better than skills? (Need to test)
-2. What's the optimal injection timing? (Every edit? Every N edits?)
-3. Do the guardrails have interaction effects? (Maybe they amplify each other)
-4. What metrics matter most? (Commit quality? Time to complete? Developer satisfaction?)
-
-<!-- pause -->
-
-**Let's figure this out together.**
-
-<!-- end_slide -->
-
 # Discussion
 
 <!-- end_slide -->
 
-Pressure Test the Architecture
+The Framework
+===
+
+**Four pillars of engineering rigor:**
+
+1. **Reproducibility** - Nix provides foundation
+2. **Safety** - Sandbox enables experimentation
+3. **Consistency** - Injection ensures standards
+4. **Reviewability** - Tools enable human oversight
+
+<!-- pause -->
+
+**Together:** Enable the scientific method for LLM workflows
+
+<!-- pause -->
+
+**Result:** Reliable, measurable, improvable systems
+
+<!-- end_slide -->
+
+Open Questions
 ===
 
 **I want your skepticism.**
 
 <!-- pause -->
 
-**Questions I expect:**
-
-- "How do you know it's not placebo effect?"
-- "Why not just write better prompts?"
-- "Isn't this over-engineered?"
-- "What about Cursor/Copilot?"
-- "Why sandbox instead of better confirmation UX?"
+**Challenge:**
+- Where are the holes?
+- What am I missing?
+- What would change your mind?
+- How should we test this properly?
 
 <!-- pause -->
 
-**Questions I hope you ask:**
+**Invitation to collaborate:**
 
-- "What am I missing?"
-- "What smells wrong?"
-- "What would change your mind?"
-- "How can we test this properly?"
-
-<!-- pause -->
-
-**Open floor for discussion.**
+This is early days. Help me design experiments, analyze results, pressure test assumptions.
 
 <!-- end_slide -->
 
@@ -1192,13 +836,11 @@ Thank You
 <!-- pause -->
 
 **Resources:**
-
 - Repo: `github.com/cbarber/llm-tools`
 - Try it: `nix develop github:cbarber/llm-tools#opencode`
-- Contribute: Issues, PRs, experiments welcome
 
 <!-- pause -->
 
-**Let's build reliable AI workflows together.**
+**Let's build reliable LLM systems together.**
 
 <!-- end_slide -->
