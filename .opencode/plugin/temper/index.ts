@@ -137,6 +137,12 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
   };
 
   return {
+    "shell.env": async (input, output) => {
+      if (input.sessionID) {
+        output.env.OPENCODE_SESSION_ID = input.sessionID;
+      }
+    },
+
     "chat.message": async (_input, output) => {
       const sessionID = output.message.sessionID;
 
