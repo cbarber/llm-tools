@@ -99,7 +99,7 @@ auto_detect_pr() {
         gitea)
             # tea doesn't have --head flag, need to parse list output
             local pr_number
-            pr_number=$(run_tea pr list --output simple | grep -E "^[0-9]+" | while read num title rest; do
+            pr_number=$(run_tea pr list --output simple | grep -E "^[0-9]+" | while read -r num title rest; do
                 local pr_branch
                 pr_branch=$(run_tea pr "$num" --output simple 2>/dev/null | grep -E "^Head Branch:" | cut -d: -f2 | xargs)
                 if [[ "$pr_branch" == "$branch" ]]; then

@@ -19,7 +19,7 @@ if [[ -f "$LAST_NOTIFY_FILE" ]]; then
         exit 0  # Skip if less than 2 seconds since last notification
     fi
 fi
-echo "$(date +%s)" > "$LAST_NOTIFY_FILE"
+date +%s > "$LAST_NOTIFY_FILE"
 
 # Read JSON input from Claude Code (if available)
 if [[ -t 0 ]]; then

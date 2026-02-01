@@ -47,7 +47,7 @@ if [[ -z "$ACTIVE_SESSIONS" ]]; then
 fi
 
 echo "Found sessions in $REPO_DIR:" >&2
-echo "$ACTIVE_SESSIONS" | while read sid; do echo "  - $sid" >&2; done
+echo "$ACTIVE_SESSIONS" | while read -r sid; do echo "  - $sid" >&2; done
 
 # For each active session, check if it's working on a PR
 for SESSION_ID in $ACTIVE_SESSIONS; do

@@ -22,12 +22,18 @@ select_template() {
   fi
 }
 
-export AGENTS_TEMPLATE="$(select_template)"
+AGENTS_TEMPLATE="$(select_template)"
+export AGENTS_TEMPLATE
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 # Source .env files if they exist (for API key auth)
-[ -f .env ] && source .env
-[ -f ~/.config/claude/.env ] && source ~/.config/claude/.env
+if [ -f .env ]; then
+  source .env
+fi
+CLAUDE_ENV="${HOME}/.config/claude/.env"
+if [ -f "$CLAUDE_ENV" ]; then
+  source "$CLAUDE_ENV"
+fi
 
 # Note: Claude Code supports both browser auth and API key
 # If no API key is set, it will attempt browser authentication
