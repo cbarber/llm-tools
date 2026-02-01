@@ -100,7 +100,57 @@ if [[ -d ".beads" && -d ".git/hooks" ]]; then
 fi
 
 # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
-if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+# For bare worktree repos, beads should be shared across all worktrees
+beads_dir="."
+repo_root="$(pwd)"
+
+# Detect bare worktree structure: parent contains .bare/ and .git pointer file
+if [[ -f "../.git" && -d "../.bare" ]]; then
+  # We're in a worktree subdirectory - use .bare/beads for shared storage
+  bare_dir="$(cd ../.bare && pwd)"
+  beads_shared="$bare_dir/beads"
+  
+  # Check if beads exists in .bare/beads/ (sandboxed bare worktree setup)
+  if [[ -d "$beads_shared/.beads" ]]; then
+    # Beads exists in .bare/beads, use it
+    export BEADS_DIR="$beads_shared/.beads"
+    echo "Using shared beads at: $BEADS_DIR"
+  # Check if beads exists at repo root (non-sandboxed bare worktree)
+  elif [[ -d "../.beads" ]]; then
+    export BEADS_DIR="$(cd .. && pwd)/.beads"
+    echo "Using shared beads at: $BEADS_DIR"
+  elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
+    # Initialize beads in .bare/beads/ for all worktrees to share
+    echo "Initializing shared beads for all worktrees..."
+    
+    # Create .bare/beads directory if it doesn't exist
+    mkdir -p "$beads_shared"
+    
+    # Support custom branch via BD_BRANCH (useful for protected branches)
+    branch_arg=""
+    if [[ -n "${BD_BRANCH:-}" ]]; then
+      branch_arg="--branch ${BD_BRANCH}"
+      echo "  Using branch: ${BD_BRANCH}"
+      # Export BD_BRANCH so daemon can see it when started later
+      export BD_BRANCH
+    fi
+    
+    if (cd "$beads_shared" && bd init --quiet $branch_arg 2>/dev/null); then
+      export BEADS_DIR="$beads_shared/.beads"
+      
+      # Start daemon with auto-commit if using a separate branch
+      if [[ -n "${BD_BRANCH:-}" ]]; then
+        (cd "$beads_shared" && bd daemon --start --auto-commit 2>/dev/null) || true
+        echo "Beads initialized at $BEADS_DIR with auto-commit to branch: ${BD_BRANCH}"
+      else
+        echo "Beads initialized at $BEADS_DIR. Use 'bd ready' to see tasks, 'bd create' to add tasks."
+      fi
+      
+      echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+    fi
+  fi
+elif [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+  # Standard git repo (not bare worktree)
   echo "Initializing beads for task tracking..."
   
   branch_arg=""
