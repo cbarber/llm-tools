@@ -47,6 +47,7 @@
                 vtsls
                 bun
                 tools.spr
+                shellcheck
               ];
           };
         };
