@@ -1,0 +1,29 @@
+name: Shellcheck
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.sh'
+      - 'tools/**'
+      - 'agents/**/setup-*.sh'
+      - '.github/workflows/shellcheck.yml'
+  pull_request:
+    paths:
+      - '**.sh'
+      - 'tools/**'
+      - 'agents/**/setup-*.sh'
+      - '.github/workflows/shellcheck.yml'
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: Run shellcheck
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run shellcheck
+        run: bash tools/check-shell-scripts.sh --all
