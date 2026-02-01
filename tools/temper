@@ -79,7 +79,35 @@ execute_bash_block() {
   done <<< "$content"
   
   if [[ -n "$bash_code" ]]; then
-    eval "$bash_code"
+    # Capture both stdout and stderr, plus exit code
+    local temp_stdout=$(mktemp)
+    local temp_stderr=$(mktemp)
+    local exit_code=0
+    
+    eval "$bash_code" >"$temp_stdout" 2>"$temp_stderr" || exit_code=$?
+    
+    # Always show stdout if present
+    if [[ -s "$temp_stdout" ]]; then
+      cat "$temp_stdout"
+    fi
+    
+    # If command failed, show error info
+    if [[ $exit_code -ne 0 ]]; then
+      echo ""
+      echo "⚠️ **Command execution failed (exit code: $exit_code)**"
+      echo ""
+      if [[ -s "$temp_stderr" ]]; then
+        echo "**Error output:**"
+        echo '```'
+        cat "$temp_stderr"
+        echo '```'
+        echo ""
+      fi
+      echo "*Note: Workflow context may be incomplete.*"
+      echo ""
+    fi
+    
+    rm -f "$temp_stdout" "$temp_stderr"
   fi
   
   if [[ -n "$remaining_text" ]]; then
