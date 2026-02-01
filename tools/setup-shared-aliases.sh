@@ -40,9 +40,7 @@ git() {
 
 export -f git
 
-# spr wrapper to auto-load GitHub token
 spr() {
-  # Auto-load GITHUB_TOKEN if available
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     local token_file="${HOME}/.config/nixsmith/github-token"
     if [[ -f "$token_file" ]]; then
@@ -51,7 +49,35 @@ spr() {
     fi
   fi
   
-  command spr "$@"
+  local cmd="${1:-}"
+  local result
+  local exit_code
+  
+  if [[ "$cmd" == "update" ]]; then
+    result=$(command spr "$@" 2>&1)
+    exit_code=$?
+    echo "$result"
+    
+    if [[ $exit_code -eq 0 ]] && [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+      local pr_numbers=$(echo "$result" | grep -oE 'PR #[0-9]+|/pull/[0-9]+' | grep -oE '[0-9]+' | sort -u | tr '\n' ',')
+      
+      if [[ -n "$pr_numbers" ]]; then
+        pr_numbers="${pr_numbers%,}"
+        
+        local repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        local pid_file="${repo_dir}/.pr-poll.pid"
+        
+        if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+          echo "Starting PR polling daemon for PRs: $pr_numbers" >&2
+          nohup bash "${repo_dir}/tools/pr-poll" --daemon --pr "$pr_numbers" >> "${repo_dir}/.pr-poll.log" 2>&1 &
+        fi
+      fi
+    fi
+    
+    return $exit_code
+  else
+    command spr "$@"
+  fi
 }
 export -f spr
 
