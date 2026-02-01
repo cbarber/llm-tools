@@ -143,7 +143,7 @@ git branch --set-upstream-to=origin/main
 **Creating PRs:**
 ```bash
 # After creating commits, create/update all PRs in the stack
-export GITHUB_TOKEN=$(cat ~/.config/nixsmith/github-token)
+# (GITHUB_TOKEN auto-loaded by spr wrapper)
 spr update
 ```
 
@@ -180,6 +180,7 @@ bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc12
 **Landing changes:**
 ```bash
 # Once PRs are approved, merge entire stack
+# (auto-answers prompts via spr wrapper)
 spr merge
 ```
 
