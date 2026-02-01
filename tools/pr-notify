@@ -13,25 +13,29 @@ if [[ "${1:-}" == "--dry-run" ]]; then
     shift
 fi
 
-# Get PR number and custom message (optional)
 PR_NUMBER="${1:-}"
 CUSTOM_MESSAGE="${2:-}"
+EXPLICIT_SESSION="${3:-}"
 
-# Get current repo directory and remote URL
+if [[ -n "$EXPLICIT_SESSION" ]]; then
+    echo "Using explicit session: $EXPLICIT_SESSION" >&2
+    if [[ -z "$CUSTOM_MESSAGE" ]]; then
+        echo "ERROR: Explicit session requires custom message" >&2
+        exit 1
+    fi
+    bash "${SCRIPT_DIR}/anvil" --session "$EXPLICIT_SESSION" "$CUSTOM_MESSAGE"
+    exit 0
+fi
+
 REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 
-# Get git remote URL to filter sessions working on this specific repo
 GIT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
 if [[ -n "$GIT_REMOTE" ]]; then
-    # Extract repo path from URL (works for both SSH and HTTPS)
-    # git@github.com:owner/repo.git -> github.com/owner/repo
-    # https://github.com/owner/repo.git -> github.com/owner/repo
     REPO_PATH=$(echo "$GIT_REMOTE" | sed -E 's#^(https://|git@)##' | sed 's#:#/#' | sed 's#\.git$##')
 else
     REPO_PATH=""
 fi
 
-# Find all sessions in this repo using anvil
 SESSIONS=$(bash "${SCRIPT_DIR}/anvil" --list --repo "$REPO_DIR" --json 2>/dev/null)
 if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
     echo "No sessions found in $REPO_DIR" >&2
