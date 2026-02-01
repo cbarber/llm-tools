@@ -89,42 +89,48 @@ fi
 ${SETUP_MCP_SCRIPT}
 
 # Fix beads git hooks for NixOS if needed (even in existing repos)
-if [[ -d ".beads" && -d ".git/hooks" ]]; then
-  # Check if any beads hook has broken shebang
-  for hook in .git/hooks/pre-commit .git/hooks/post-checkout .git/hooks/post-merge .git/hooks/pre-push; do
-    if [[ -f "$hook" ]] && head -1 "$hook" | grep -q "^#!/bin/sh"; then
-      "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
-      break
-    fi
-  done
+# Use git to find the common directory where hooks are stored
+if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
+  hooks_dir="$git_common_dir/hooks"
+  
+  if [[ -d "$hooks_dir" ]]; then
+    # Check if any beads hook has broken shebang
+    for hook in "$hooks_dir/pre-commit" "$hooks_dir/post-checkout" "$hooks_dir/post-merge" "$hooks_dir/pre-push"; do
+      if [[ -f "$hook" ]] && head -1 "$hook" | grep -q "^#!/bin/sh"; then
+        # Fix shebangs directly since fix-beads-hooks doesn't support bare worktrees
+        for h in "$hooks_dir"/pre-commit "$hooks_dir"/post-checkout "$hooks_dir"/post-merge "$hooks_dir"/pre-push; do
+          [[ -f "$h" ]] && sed -i '1s|^#!/bin/sh|#!/usr/bin/env sh|' "$h" 2>/dev/null || true
+        done
+        break
+      fi
+    done
+  fi
 fi
 
 # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
-# For bare worktree repos, beads should be shared across all worktrees
-beads_dir="."
-repo_root="$(pwd)"
-
-# Detect bare worktree structure: parent contains .bare/ and .git pointer file
-if [[ -f "../.git" && -d "../.bare" ]]; then
-  # We're in a worktree subdirectory - use .bare/beads for shared storage
-  bare_dir="$(cd ../.bare && pwd)"
-  beads_shared="$bare_dir/beads"
+# For worktree repos, beads should be shared in the common git directory
+if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
+  # Determine beads location based on git structure
+  # For bare worktrees: store in <common-dir>/beads/.beads
+  # For standard repos: store in working tree root
   
-  # Check if beads exists in .bare/beads/ (sandboxed bare worktree setup)
-  if [[ -d "$beads_shared/.beads" ]]; then
-    # Beads exists in .bare/beads, use it
-    export BEADS_DIR="$beads_shared/.beads"
-    echo "Using shared beads at: $BEADS_DIR"
-  # Check if beads exists at repo root (non-sandboxed bare worktree)
-  elif [[ -d "../.beads" ]]; then
-    export BEADS_DIR="$(cd .. && pwd)/.beads"
-    echo "Using shared beads at: $BEADS_DIR"
-  elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
-    # Initialize beads in .bare/beads/ for all worktrees to share
-    echo "Initializing shared beads for all worktrees..."
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+  
+  # If git-dir != common-dir, we're in a worktree setup
+  if [[ "$git_dir" != "$git_common_dir" ]]; then
+    # Worktree setup - use common-dir/beads for shared storage
+    beads_shared="$git_common_dir/beads"
     
-    # Create .bare/beads directory if it doesn't exist
-    mkdir -p "$beads_shared"
+    # Check if beads exists in common-dir/beads/
+    if [[ -d "$beads_shared/.beads" ]]; then
+      export BEADS_DIR="$beads_shared/.beads"
+      echo "Using shared beads at: $BEADS_DIR"
+    elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
+      # Initialize beads in common-dir/beads/ for all worktrees to share
+      echo "Initializing shared beads for all worktrees..."
+      
+      # Create beads directory if it doesn't exist
+      mkdir -p "$beads_shared"
     
     # Support custom branch via BD_BRANCH (useful for protected branches)
     branch_arg=""
