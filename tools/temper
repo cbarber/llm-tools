@@ -75,6 +75,8 @@ execute_bash_block() {
       bash_code+="$line"$'\n'
     elif [[ $found_first_block -eq 1 ]]; then
       remaining_text+="$line"$'\n'
+    else
+      remaining_text+="$line"$'\n'
     fi
   done <<< "$content"
   
