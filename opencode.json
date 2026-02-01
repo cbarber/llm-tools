@@ -5,6 +5,9 @@
     "opencode-beads@0.3.0",
     "./.opencode/plugin/temper"
   ],
+  "hooks": {
+    "pre-commit": "bash tools/check-shell-scripts.sh --staged"
+  },
   "mcp": {
     "lsp": {
       "type": "local",
