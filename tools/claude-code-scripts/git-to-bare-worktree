@@ -165,7 +165,7 @@ warn_unpushed_commits() {
     if [ -n "$unpushed" ]; then
         echo "Warning: You have unpushed commits:"
         echo "$unpushed" | head -10
-        [ $(echo "$unpushed" | wc -l) -gt 10 ] && echo "  ... and more"
+        [ "$(echo "$unpushed" | wc -l)" -gt 10 ] && echo "  ... and more"
         echo
         echo "Consider pushing your work before conversion."
         echo
