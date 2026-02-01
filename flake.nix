@@ -50,6 +50,7 @@
                 pre-commit
                 bats
                 opencode
+                presenterm
               ]
               ++ lib.optionals stdenv.isLinux [ bubblewrap ];
           };
