@@ -89,26 +89,69 @@ fi
 ${SETUP_MCP_SCRIPT}
 
 # Fix beads git hooks for NixOS if needed (even in existing repos)
-if [[ -d ".beads" && -d ".git/hooks" ]]; then
-  # Check if any beads hook has broken shebang
-  for hook in .git/hooks/pre-commit .git/hooks/post-checkout .git/hooks/post-merge .git/hooks/pre-push; do
-    if [[ -f "$hook" ]] && head -1 "$hook" | grep -q "^#!/bin/sh"; then
-      "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
-      break
-    fi
-  done
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
 fi
 
 # Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
-if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+# For worktree repos, beads should be shared in the common git directory
+if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
+  # Determine beads location based on git structure
+  # For bare worktrees: store in <common-dir>/beads/.beads
+  # For standard repos: store in working tree root
+
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+
+  # If git-dir != common-dir, we're in a worktree setup
+  if [[ "$git_dir" != "$git_common_dir" ]]; then
+    # Worktree setup - use common-dir/beads for shared storage
+    beads_shared="$git_common_dir/beads"
+
+    # Check if beads exists in common-dir/beads/
+    if [[ -d "$beads_shared/.beads" ]]; then
+      export BEADS_DIR="$beads_shared/.beads"
+      echo "Using shared beads at: $BEADS_DIR"
+    elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
+      # Initialize beads in common-dir/beads/ for all worktrees to share
+      echo "Initializing shared beads for all worktrees..."
+
+      # Create beads directory if it doesn't exist
+      mkdir -p "$beads_shared"
+    fi
+
+    # Support custom branch via BD_BRANCH (useful for protected branches)
+    branch_arg=""
+    if [[ -n "${BD_BRANCH:-}" ]]; then
+      branch_arg="--branch ${BD_BRANCH}"
+      echo "  Using branch: ${BD_BRANCH}"
+      # Export BD_BRANCH so daemon can see it when started later
+      export BD_BRANCH
+    fi
+
+    if (cd "$beads_shared" && bd init --quiet "$branch_arg" 2>/dev/null); then
+      export BEADS_DIR="$beads_shared/.beads"
+
+      # Start daemon with auto-commit if using a separate branch
+      if [[ -n "${BD_BRANCH:-}" ]]; then
+        (cd "$beads_shared" && bd daemon --start --auto-commit 2>/dev/null) || true
+        echo "Beads initialized at $BEADS_DIR with auto-commit to branch: ${BD_BRANCH}"
+      else
+        echo "Beads initialized at $BEADS_DIR. Use 'bd ready' to see tasks, 'bd create' to add tasks."
+      fi
+
+      echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+    fi
+  fi
+elif [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+  # Standard git repo (not bare worktree)
   echo "Initializing beads for task tracking..."
-  
+
   branch_arg=""
   if [[ -n "${BD_BRANCH:-}" ]]; then
     branch_arg="--branch ${BD_BRANCH}"
   fi
-  
-  if bd init --quiet $branch_arg 2>/dev/null; then
+
+  if bd init --quiet "$branch_arg" 2>/dev/null; then
     if [[ -n "${BD_BRANCH:-}" ]]; then
       sed -i "s/^# sync-branch:.*/sync-branch: \"${BD_BRANCH}\"/" .beads/config.yaml
       echo "Beads initialized with auto-commit to branch: ${BD_BRANCH}"
@@ -146,7 +189,7 @@ fi
 # Daemon monitors PR status and notifies on changes
 if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
   PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
-  
+
   # Cleanup function to kill daemon on shell exit
   cleanup_pr_poll() {
     if [[ -f "$PR_POLL_PID_FILE" ]]; then
@@ -159,12 +202,12 @@ if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/nu
     fi
   }
   trap cleanup_pr_poll EXIT
-  
+
   # Start daemon in background with logging
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
-  "$REPO_ROOT/tools/pr-poll" --daemon > "$PR_POLL_LOG" 2>&1 &
-  echo $! > "$PR_POLL_PID_FILE"
+  "$REPO_ROOT/tools/pr-poll" --daemon >"$PR_POLL_LOG" 2>&1 &
+  echo $! >"$PR_POLL_PID_FILE"
   echo "Started PR polling daemon (PID $!, interval: 30s)"
   echo "Logs: $PR_POLL_LOG"
   echo "Disable with: PR_POLL_DAEMON=false"
