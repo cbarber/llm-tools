@@ -73,7 +73,7 @@ execute_bash_block() {
     
     if [[ $in_bash_block -eq 1 ]] && [[ $found_first_block -eq 0 ]]; then
       bash_code+="$line"$'\n'
-    elif [[ $found_first_block -eq 1 ]]; then
+    else
       remaining_text+="$line"$'\n'
     fi
   done <<< "$content"
