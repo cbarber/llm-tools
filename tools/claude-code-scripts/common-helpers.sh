@@ -74,7 +74,7 @@ should_skip_file() {
     # Check .claude-hooks-ignore file if it exists
     if [[ -f ".claude-hooks-ignore" ]]; then
         while IFS= read -r pattern; do
-            [[ -n "$pattern" && "$file_path" == $pattern ]] && return 0
+            [[ -n "$pattern" && "$file_path" == "$pattern" ]] && return 0
         done < .claude-hooks-ignore
     fi
     

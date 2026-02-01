@@ -30,7 +30,8 @@ detect_forge() {
 # Authenticate GitHub
 authenticate_github() {
     if [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
-        export GH_TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
+        GH_TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
+        export GH_TOKEN
     elif gh auth status &>/dev/null 2>&1; then
         echo "⚠️  Warning: Using dev's gh auth. Set up agent tokens: tools/setup-agent-api-tokens.sh" >&2
     else
@@ -99,7 +100,8 @@ auto_detect_pr() {
             # tea doesn't have --head flag, need to parse list output
             local pr_number
             pr_number=$(run_tea pr list --output simple | grep -E "^[0-9]+" | while read num title rest; do
-                local pr_branch=$(run_tea pr "$num" --output simple 2>/dev/null | grep -E "^Head Branch:" | cut -d: -f2 | xargs)
+                local pr_branch
+                pr_branch=$(run_tea pr "$num" --output simple 2>/dev/null | grep -E "^Head Branch:" | cut -d: -f2 | xargs)
                 if [[ "$pr_branch" == "$branch" ]]; then
                     echo "$num"
                     break
@@ -361,7 +363,7 @@ pr_list() {
     case "$FORGE_TYPE" in
         github)
             local args=(--state "$state")
-            [[ "$json_output" == true ]] && args+=(--json number,title,state,headRefName)
+            [[ "$json_output" == true ]] && args+=(--json "number,title,state,headRefName")
             gh pr list "${args[@]}"
             ;;
         gitea)
@@ -570,7 +572,7 @@ issue_list() {
     case "$FORGE_TYPE" in
         github)
             local args=(--state "$state")
-            [[ "$json_output" == true ]] && args+=(--json number,title,state)
+            [[ "$json_output" == true ]] && args+=(--json "number,title,state")
             gh issue list "${args[@]}"
             ;;
         gitea)
@@ -597,7 +599,7 @@ issue_show() {
     case "$FORGE_TYPE" in
         github)
             local args=("$number")
-            [[ "$json_output" == true ]] && args+=(--json number,title,body,state)
+            [[ "$json_output" == true ]] && args+=(--json "number,title,body,state")
             gh issue view "${args[@]}"
             ;;
         gitea)

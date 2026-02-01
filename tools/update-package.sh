@@ -74,7 +74,8 @@ prefetch_github() {
 prefetch_npm() {
   local package="$1" version="$2"
   info "Prefetching $package@$version from npm..."
-  local url="https://registry.npmjs.org/$package/-/$(echo "$package" | sed 's/@.*\///')-$version.tgz"
+  local url
+  url="https://registry.npmjs.org/$package/-/$(echo "$package" | sed 's/@.*\///')-$version.tgz"
   local nix32_hash
   nix32_hash=$(nix-prefetch-url --unpack "$url" 2>/dev/null)
   nix hash convert --hash-algo sha256 --from nix32 "$nix32_hash"

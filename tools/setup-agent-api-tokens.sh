@@ -76,12 +76,8 @@ HOSTNAME=$(hostname -s)
 
 # Detect forge type from git remote
 detect_forge() {
-  if ! git remote -v &>/dev/null 2>&1; then
-    echo "Error: Not in a git repository" >&2
-    return 1
-  fi
-  
-  local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null || echo "")
   
   if [[ "$remote_url" =~ github\.com ]]; then
     echo "github"
@@ -93,14 +89,16 @@ detect_forge() {
 }
 
 extract_github_repo() {
-  local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null || echo "")
   if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/\.]+) ]]; then
     echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
   fi
 }
 
 extract_gitea_url() {
-  local remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null || echo "")
   if [[ "$remote_url" =~ ^git@([^:]+): ]]; then
     echo "https://${BASH_REMATCH[1]}"
   elif [[ "$remote_url" =~ ^https://([^/]+) ]]; then
@@ -110,8 +108,6 @@ extract_gitea_url() {
 
 # Setup GitHub token
 setup_github() {
-  local repo=$(extract_github_repo)
-  
   echo "GitHub API Token Setup"
   echo "======================"
   echo ""
@@ -186,7 +182,8 @@ setup_github() {
 
 # Setup Gitea token
 setup_gitea() {
-  local gitea_url=$(extract_gitea_url)
+  local gitea_url
+  gitea_url=$(extract_gitea_url)
   
   if [[ -z "$gitea_url" ]]; then
     echo "Error: Could not determine Gitea URL" >&2
@@ -258,7 +255,8 @@ setup_gitea() {
 
 # Main flow
 main() {
-  local forge_type=$(detect_forge)
+  local forge_type
+  forge_type=$(detect_forge)
   
   case "$forge_type" in
     github)
@@ -267,18 +265,11 @@ main() {
     gitea)
       setup_gitea || exit 1
       ;;
-    unknown)
-      debug "Unknown forge type - skipping API token setup"
-      echo "⚠️  Unknown forge type (not GitHub or Gitea)" >&2
-      echo "Skipping API token setup - SSH keys are sufficient for git operations" >&2
-      echo "API tokens are only needed for PR/issue operations via gh/tea CLI" >&2
-      exit 0
+    *)
+      echo "Error: Could not detect forge type (GitHub or Gitea)" >&2
+      exit 1
       ;;
   esac
-  
-  echo "✅ API token setup complete!"
-  echo ""
-  echo "Test with: bash tools/forge pr list"
 }
 
 main "$@"

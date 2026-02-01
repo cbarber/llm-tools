@@ -46,7 +46,8 @@ spr() {
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     local token_file="${HOME}/.config/nixsmith/github-token"
     if [[ -f "$token_file" ]]; then
-      export GITHUB_TOKEN=$(cat "$token_file")
+      GITHUB_TOKEN=$(cat "$token_file")
+      export GITHUB_TOKEN
     fi
   fi
   
