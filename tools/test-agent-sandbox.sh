@@ -92,7 +92,11 @@ echo "Debugging: Is /nix mounted in sandbox?"
 "$SANDBOX_SCRIPT" bash -c 'ls -la /nix 2>&1' | head -3
 echo ""
 echo "Debugging: Can we directly execute ls from /nix/store?"
-"$SANDBOX_SCRIPT" bash -c '/nix/store/d75200gb22v7p0703h5jrkgg8bqydk5q-coreutils-9.8/bin/ls --version 2>&1' | head -1
+if ls_path=$("$SANDBOX_SCRIPT" bash -c 'command -v ls' 2>/dev/null); then
+    "$SANDBOX_SCRIPT" bash -c "$ls_path --version 2>&1" | head -1
+else
+    echo "ls command not found in sandbox"
+fi
 echo ""
 echo "=== Running Tests ==="
 echo ""
