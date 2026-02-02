@@ -191,6 +191,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
       
       await logEvent("workflow-event", { event: eventString });
       
+      if (tool === "bash" && output.args?.command) {
+        const originalCommand = output.args.command;
+        output.args.command = `export OPENCODE_SESSION_ID="${sessionID}"; ${originalCommand}`;
+      }
+      
       try {
         const guidance = await $`bash tools/temper --event ${eventString}`.text();
         if (guidance && guidance.trim().length > 0) {
