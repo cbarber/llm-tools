@@ -186,31 +186,13 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
 fi
 
 # Start PR polling daemon if in git repo
-# Daemon monitors PR status and notifies on changes
-if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
-  PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
-
-  # Cleanup function to kill daemon on shell exit
-  cleanup_pr_poll() {
-    if [[ -f "$PR_POLL_PID_FILE" ]]; then
-      local pid=$(cat "$PR_POLL_PID_FILE")
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
-        echo "Stopped PR polling daemon (PID $pid)"
-      fi
-      rm -f "$PR_POLL_PID_FILE"
-    fi
-  }
-  trap cleanup_pr_poll EXIT
-
-  # Start daemon in background with logging
-  REPO_ROOT="$(git rev-parse --show-toplevel)"
-  PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
-  "$REPO_ROOT/tools/pr-poll" --daemon >"$PR_POLL_LOG" 2>&1 &
-  echo $! >"$PR_POLL_PID_FILE"
-  echo "Started PR polling daemon (PID $!, interval: 30s)"
-  echo "Logs: $PR_POLL_LOG"
-  echo "Disable with: PR_POLL_DAEMON=false"
+# Legacy global daemon disabled - now using session-scoped daemons
+# Started automatically by spr/forge on PR creation
+# Set PR_POLL_DAEMON=true to re-enable legacy behavior if needed
+if [[ "${PR_POLL_DAEMON:-false}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "WARNING: Global PR polling daemon is deprecated" >&2
+  echo "Session-scoped daemons started automatically by spr/forge" >&2
+  echo "Set PR_POLL_DAEMON=false to disable this warning" >&2
 fi
 
 # Auto-launch opencode unless disabled
