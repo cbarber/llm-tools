@@ -80,8 +80,10 @@ execute_bash_block() {
   
   if [[ -n "$bash_code" ]]; then
     # Capture both stdout and stderr, plus exit code
-    local temp_stdout=$(mktemp)
-    local temp_stderr=$(mktemp)
+    local temp_stdout
+    local temp_stderr
+    temp_stdout=$(mktemp)
+    temp_stderr=$(mktemp)
     local exit_code=0
     
     eval "$bash_code" >"$temp_stdout" 2>"$temp_stderr" || exit_code=$?
