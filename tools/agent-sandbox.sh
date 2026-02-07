@@ -432,7 +432,26 @@ if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
 fi
 
 # Common language tooling cache directories
-for cache_path in "$HOME/.cache/go-build" "$HOME/.cargo" "$HOME/.cache/pip" "$HOME/.gem" "$HOME/.cache/yarn" "$HOME/.npm" "$HOME/.local/share/pnpm" "$HOME/.bun"; do
+# Only mount if they exist to avoid cluttering logs
+for cache_path in \
+  "$HOME/.cache/go-build" \
+  "$HOME/.cargo" \
+  "$HOME/.cache/pip" \
+  "$HOME/.gem" \
+  "$HOME/.cache/yarn" \
+  "$HOME/.npm" \
+  "$HOME/.local/share/pnpm" \
+  "$HOME/.bun" \
+  "$HOME/.gradle" \
+  "$HOME/.m2" \
+  "$HOME/.composer" \
+  "$HOME/.cache/composer" \
+  "$HOME/.nuget/packages" \
+  "$HOME/.vcpkg" \
+  "$HOME/.pub-cache" \
+  "$HOME/.swiftpm" \
+  "$HOME/.hex" \
+  "$HOME/.mix"; do
   [[ -d "$cache_path" ]] && SANDBOX_MOUNTS_RW+=("$cache_path")
 done
 

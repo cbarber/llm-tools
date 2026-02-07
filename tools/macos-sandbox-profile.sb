@@ -153,6 +153,16 @@
   (subpath (param "HOME_NPM"))
   (subpath (param "HOME_SHARE_PNPM"))
   (subpath (param "HOME_BUN"))
+  (subpath (param "HOME_GRADLE"))
+  (subpath (param "HOME_M2"))
+  (subpath (param "HOME_COMPOSER"))
+  (subpath (param "HOME_CACHE_COMPOSER"))
+  (subpath (param "HOME_NUGET"))
+  (subpath (param "HOME_VCPKG"))
+  (subpath (param "HOME_PUB_CACHE"))
+  (subpath (param "HOME_SWIFTPM"))
+  (subpath (param "HOME_HEX"))
+  (subpath (param "HOME_MIX"))
 )
 
 ;; ==============================================================================
