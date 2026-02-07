@@ -342,6 +342,16 @@ for dir in "${PATH_DIRS[@]}"; do
   fi
 done
 
+# Mount /bin if it exists and wasn't already added via PATH
+# Agent hooks may spawn /bin/sh or /bin/bash
+if [[ -d /bin ]]; then
+  path_has_bin=false
+  for dir in "${PATH_DIRS[@]}"; do
+    [[ "$dir" == "/bin" ]] && path_has_bin=true && break
+  done
+  [[ "$path_has_bin" == "false" ]] && SANDBOX_MOUNTS_RO+=("/bin")
+fi
+
 # System library directories (required for dynamic linking of system binaries)
 for lib_dir in /lib /lib64 /lib32 /usr/lib /usr/lib64 /usr/lib32; do
   [[ -d "$lib_dir" ]] && SANDBOX_MOUNTS_RO+=("$lib_dir")
@@ -443,15 +453,6 @@ fi
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
   SANDBOX_MOUNTS_RW+=("${EXTRA_PATHS[@]}")
-fi
-
-# Workaround: Agent hook systems may spawn /bin/sh which doesn't exist on NixOS
-# Add /bin/sh mount if needed (cross-platform via mount array)
-if [[ "${CLAUDECODE:-}" == "1" ]] || [[ "${OPENCODE:-}" == "1" ]]; then
-  SH_PATH="$(command -v sh)"
-  if [[ -n "$SH_PATH" && -x "$SH_PATH" ]]; then
-    SANDBOX_MOUNTS_RO+=("$SH_PATH:/bin/sh")
-  fi
 fi
 
 # Build mount arguments from arrays (Docker-style source:dest syntax)
