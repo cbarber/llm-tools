@@ -93,11 +93,16 @@ spr() {
         pr_numbers="${pr_numbers%,}"
         
         local repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-        local pid_file="${repo_dir}/.pr-poll.pid"
+        local repo_hash=$(echo "$repo_dir" | sed 's#/#-#g' | sed 's#^-##')
+        local state_dir="${HOME}/.local/share/nixsmith/pr-poll/${repo_hash}"
+        mkdir -p "$state_dir"
+        
+        local pid_file="${state_dir}/daemon.pid"
+        local log_file="${state_dir}/daemon.log"
         
         if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
           echo "Starting PR polling daemon for PRs: $pr_numbers" >&2
-          nohup bash "${repo_dir}/tools/pr-poll" --daemon --pr "$pr_numbers" >> "${repo_dir}/.pr-poll.log" 2>&1 &
+          nohup bash "${repo_dir}/tools/pr-poll" --daemon --pr "$pr_numbers" >> "$log_file" 2>&1 &
         fi
       fi
     fi
