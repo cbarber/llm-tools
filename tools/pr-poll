@@ -346,49 +346,54 @@ Run \`forge pr view $pr_number\` for full details.
     fi
 }
 
-# Find all PRs being worked on in active sessions
+# Discover PRs from repository state (current branch + spr stack if available)
 find_active_prs() {
-    # Use anvil to list sessions in this repo
-    SESSIONS=$(bash "${SCRIPT_DIR}/anvil" --list --repo "$REPO_DIR" --json 2>/dev/null)
-    if [[ -z "$SESSIONS" ]] || [[ "$SESSIONS" == "[]" ]]; then
+    local current_branch
+    current_branch=$(git branch --show-current 2>/dev/null)
+    
+    if [[ -z "$current_branch" ]]; then
         return 0
     fi
     
-    # Find all sessions in this repo (sort by last update for multi-session PR work)
-    # Don't filter by time - if a PR gets comments after hours of silence, we still want to notify
-    # Sort by updated time to prioritize most recently active session
-    ACTIVE_SESSIONS=$(echo "$SESSIONS" | jq -r \
-        'sort_by(.time.updated) | reverse | .[].id')
-    
-    if [[ -z "$ACTIVE_SESSIONS" ]]; then
-        return 0
+    # Check if spr is available and branch has spr stack
+    if command -v spr >/dev/null 2>&1; then
+        local spr_prs
+        spr_prs=$(spr status 2>/dev/null | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+' | sort -u)
+        
+        if [[ -n "$spr_prs" ]]; then
+            echo "$spr_prs"
+            return 0
+        fi
     fi
     
-    # Extract PR numbers from active sessions, filtering by repo URL
-    for SESSION_ID in $ACTIVE_SESSIONS; do
-        MESSAGES=$(bash "${SCRIPT_DIR}/anvil" --messages "$SESSION_ID" --limit 100 --json 2>/dev/null)
+    # Fallback: check if current branch tracks a remote PR
+    local upstream_branch
+    upstream_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+    
+    if [[ -n "$upstream_branch" ]]; then
+        # Try to extract PR number from remote branch name (e.g., spr/main/abc123)
+        local pr_from_branch
+        pr_from_branch=$(echo "$upstream_branch" | grep -oE 'spr/[^/]+/[^/]+$' | cut -d/ -f3)
         
-        # Look for PR references: full URLs with repo path, or "PR #NUMBER" mentions
-        if [[ -n "$REPO_PATH" ]]; then
-            # Prefer full PR URLs with repo path, fall back to "PR #NUMBER" pattern
-            SESSION_PRS=$(echo "$MESSAGES" | jq -r \
-                --arg repo "$REPO_PATH" \
-                '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
-                 (select(contains($repo) and contains("/pull/")) | scan("/pull/([0-9]+)"; "g")), 
-                 (scan("PR #([0-9]+)"; "gi"))] | 
-                 flatten | unique | .[]' 2>/dev/null)
-        else
-            # Fallback: accept PR URLs or "PR #NUMBER" pattern
-            SESSION_PRS=$(echo "$MESSAGES" | jq -r \
-                '[.[] | .parts[]? | select(.type == "text") | .text // "" | 
-                 scan("(/pull/|PR #)([0-9]+)"; "gi") | .[1]] | 
-                 flatten | unique | .[]' 2>/dev/null)
+        if [[ -n "$pr_from_branch" ]]; then
+            # Use forge to find PR for this branch
+            local pr_number
+            pr_number=$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null)
+            
+            if [[ -n "$pr_number" ]]; then
+                echo "$pr_number"
+                return 0
+            fi
         fi
-        
-        if [[ -n "$SESSION_PRS" ]]; then
-            echo "$SESSION_PRS"
-        fi
-    done | sort -u
+    fi
+    
+    # Last resort: search for PR with current branch name
+    local pr_number
+    pr_number=$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null)
+    
+    if [[ -n "$pr_number" ]]; then
+        echo "$pr_number"
+    fi
 }
 
 # Main polling loop
