@@ -18,10 +18,38 @@ git() {
       
       # Execute commit (shift off 'commit' to avoid passing it twice)
       shift
-      command git commit "$@" || {
-        echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
-        return 1
-      }
+      
+      # Inject session ID into commit message if available
+      if [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+        # Check if -m or --message flag is used
+        local has_message=false
+        local args=("$@")
+        for arg in "${args[@]}"; do
+          if [[ "$arg" == "-m" ]] || [[ "$arg" == "--message" ]]; then
+            has_message=true
+            break
+          fi
+        done
+        
+        if [[ "$has_message" == true ]]; then
+          # Add session ID as additional -m argument
+          command git commit "$@" -m "" -m "session(opencode): ${OPENCODE_SESSION_ID}" || {
+            echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+            return 1
+          }
+        else
+          # Let user edit message in editor, will need prepare-commit-msg hook
+          command git commit "$@" || {
+            echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+            return 1
+          }
+        fi
+      else
+        command git commit "$@" || {
+          echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+          return 1
+        }
+      fi
       ;;
     
     *)
