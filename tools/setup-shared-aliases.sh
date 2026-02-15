@@ -18,10 +18,38 @@ git() {
       
       # Execute commit (shift off 'commit' to avoid passing it twice)
       shift
-      command git commit "$@" || {
-        echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
-        return 1
-      }
+      
+      # Inject session ID into commit message if available
+      if [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+        # Check if -m or --message flag is used
+        local has_message=false
+        local args=("$@")
+        for arg in "${args[@]}"; do
+          if [[ "$arg" == "-m" ]] || [[ "$arg" == "--message" ]]; then
+            has_message=true
+            break
+          fi
+        done
+        
+        if [[ "$has_message" == true ]]; then
+          # Add session ID as additional -m argument
+          command git commit "$@" -m "" -m "session(opencode): ${OPENCODE_SESSION_ID}" || {
+            echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+            return 1
+          }
+        else
+          # Let user edit message in editor, will need prepare-commit-msg hook
+          command git commit "$@" || {
+            echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+            return 1
+          }
+        fi
+      else
+        command git commit "$@" || {
+          echo "❌ STOP: Git commit failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+          return 1
+        }
+      fi
       ;;
     
     *)
@@ -40,9 +68,7 @@ git() {
 
 export -f git
 
-# spr wrapper to auto-load GitHub token
 spr() {
-  # Auto-load GITHUB_TOKEN if available
   if [[ -z "${GITHUB_TOKEN:-}" ]]; then
     local token_file="${HOME}/.config/nixsmith/github-token"
     if [[ -f "$token_file" ]]; then
@@ -51,7 +77,34 @@ spr() {
     fi
   fi
   
-  command spr "$@"
+  local cmd="${1:-}"
+  local result
+  local exit_code
+  
+  if [[ "$cmd" == "update" ]]; then
+    result=$(command spr "$@" 2>&1)
+    exit_code=$?
+    echo "$result"
+    
+    if [[ $exit_code -eq 0 ]] && [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+      local repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+      local repo_hash=$(echo "$repo_dir" | sed 's#/#-#g' | sed 's#^-##')
+      local state_dir="${HOME}/.local/share/nixsmith/pr-poll/${repo_hash}"
+      mkdir -p "$state_dir"
+      
+      local pid_file="${state_dir}/daemon.pid"
+      local log_file="${state_dir}/daemon.log"
+      
+      if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+        echo "Starting PR polling daemon" >&2
+        nohup bash "${repo_dir}/tools/pr-poll" --daemon >> "$log_file" 2>&1 &
+      fi
+    fi
+    
+    return $exit_code
+  else
+    command spr "$@"
+  fi
 }
 export -f spr
 
