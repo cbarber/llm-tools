@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.1.43";
-    srcHash = "sha256-+CBqfdK3mw5qnl4sViFEcTSslW0sOE53AtryD2MdhTI=";
-    nodeModulesHash = "sha256-zkinMkPR1hCBbB5BIuqozQZDpjX4eiFXjM6lpwUx1fM=";
+    version = "1.2.4";
+    srcHash = "sha256-FA9RRo4wH+FHXWIm3hm0oPouQ+VKral+Mqbk4g3dPfo=";
+    nodeModulesHash = "sha256-hK7ad7tG60K0VARAlZJsSxKjiHU78XQYl/tbIReBusc=";
   };
 
   # ============================================================================
@@ -38,6 +38,9 @@ in
         tag = "v${version}";
         hash = opencode.srcHash;
       };
+      patches = (old.patches or []) ++ [
+        ./opencode/patches/add-sessionid-to-shell-env.patch
+      ];
       # Override node_modules FOD with new src and hash
       node_modules = old.node_modules.overrideAttrs (oldNm: {
         inherit version src;
