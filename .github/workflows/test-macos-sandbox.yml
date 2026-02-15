@@ -2,7 +2,7 @@ name: Test macOS Sandbox
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/macos-sandbox-security ]
     paths:
       - 'tools/agent-sandbox.sh'
       - 'tools/macos-sandbox.sh'
@@ -35,6 +35,94 @@ jobs:
           ./tools/agent-sandbox.sh echo "test" 2>&1 || true
           echo "=== End Profile ==="
       
+      - name: Experiment 1 - Test subpath on non-existent directory
+        continue-on-error: true
+        run: |
+          echo "=== Testing if (subpath ...) on non-existent dir causes abort ==="
+          cat > /tmp/test-profile-1.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read*
+            (subpath "/nix")
+            (subpath "/Users/runner/.config/does-not-exist"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-1.sb echo "SUCCESS: subpath on non-existent dir works"
+      
+      - name: Experiment 2 - Test with dtruss to see file access
+        continue-on-error: true
+        run: |
+          echo "=== Using dtruss to see what files sandbox-exec tries to access ==="
+          # Create minimal profile
+          cat > /tmp/test-profile-2.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read* (subpath "/nix"))
+          EOF
+          # Run with dtruss (requires sudo but may not work in CI)
+          sudo dtruss -f sandbox-exec -f /tmp/test-profile-2.sb echo "test" 2>&1 | grep -E "(open|stat|access)" | head -50 || echo "dtruss not available or failed"
+      
+      - name: Experiment 3 - Test our actual profile with strace equivalent
+        continue-on-error: true
+        run: |
+          echo "=== Trying to trace our actual sandbox invocation ==="
+          # Use fs_usage if available (logs filesystem activity)
+          sudo fs_usage -w -f filesys ./tools/agent-sandbox.sh echo "test" 2>&1 | head -100 || echo "fs_usage not available"
+      
+      - name: Experiment 4 - Test minimal profile that should work
+        continue-on-error: true
+        run: |
+          echo "=== Testing minimal known-good profile ==="
+          cat > /tmp/test-profile-4.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow process-fork)
+          (allow file-read* file-write* file-ioctl (literal "/dev/null"))
+          (allow file-read*
+            (subpath "/bin")
+            (subpath "/usr/bin")
+            (subpath "/usr/lib"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-4.sb echo "SUCCESS: minimal profile works"
+      
+      - name: Experiment 5 - Test if /nix exists
+        continue-on-error: true
+        run: |
+          echo "=== Checking if /nix directory exists ==="
+          ls -la /nix || echo "/nix does not exist"
+          
+      - name: Experiment 6 - Test profile without /nix
+        continue-on-error: true
+        run: |
+          echo "=== Testing profile without /nix reference ==="
+          cat > /tmp/test-profile-6.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow file-read*
+            (subpath "/bin")
+            (subpath "/usr"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-6.sb echo "SUCCESS: profile without nix works"
+      
+      - name: Experiment 7 - Test with process-fork and more permissions
+        continue-on-error: true
+        run: |
+          echo "=== Testing with process-fork added ==="
+          cat > /tmp/test-profile-7.sb <<'EOF'
+          (version 1)
+          (deny default)
+          (allow process-exec)
+          (allow process-fork)
+          (allow signal)
+          (allow sysctl-read)
+          (allow file-read*
+            (subpath "/"))
+          EOF
+          sandbox-exec -f /tmp/test-profile-7.sb echo "SUCCESS: permissive profile works"
+      
       - name: Test sandbox basic functionality
         run: |
           # Test that sandbox-exec is available
@@ -51,12 +139,32 @@ jobs:
           ./tools/agent-sandbox.sh rm test-file.txt
           
           echo "=== Test 3: Home directory access (should be restricted) ==="
-          # This should fail because Documents is not in the allowed list
+          # Test that personal directories cannot be written to
           if ./tools/agent-sandbox.sh touch ~/Documents/sandbox-test.txt 2>/dev/null; then
             echo "ERROR: Should not be able to write to ~/Documents"
             exit 1
           else
             echo "PASS: Cannot write to ~/Documents (as expected)"
+          fi
+          
+          # Test that sensitive files cannot be read
+          echo "=== Test 3a: Sensitive file read restrictions ==="
+          mkdir -p ~/.ssh ~/.config/gh
+          echo "fake-ssh-key" > ~/.ssh/id_rsa
+          echo "fake-gh-token" > ~/.config/gh/hosts.yml
+          
+          if ./tools/agent-sandbox.sh cat ~/.ssh/id_rsa 2>/dev/null | grep -q "fake-ssh-key"; then
+            echo "ERROR: Should not be able to read ~/.ssh/id_rsa"
+            exit 1
+          else
+            echo "PASS: Cannot read personal SSH keys (as expected)"
+          fi
+          
+          if ./tools/agent-sandbox.sh cat ~/.config/gh/hosts.yml 2>/dev/null | grep -q "fake-gh-token"; then
+            echo "ERROR: Should not be able to read ~/.config/gh/hosts.yml"
+            exit 1
+          else
+            echo "PASS: Cannot read GitHub CLI credentials (as expected)"
           fi
       
       - name: Test agent config directories
