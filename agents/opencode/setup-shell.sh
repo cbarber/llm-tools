@@ -185,32 +185,17 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
   }
 fi
 
-# Start PR polling daemon if in git repo
-# Daemon monitors PR status and notifies on changes
-if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
-  PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
-
-  # Cleanup function to kill daemon on shell exit
-  cleanup_pr_poll() {
-    if [[ -f "$PR_POLL_PID_FILE" ]]; then
-      local pid=$(cat "$PR_POLL_PID_FILE")
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
-        echo "Stopped PR polling daemon (PID $pid)"
-      fi
-      rm -f "$PR_POLL_PID_FILE"
-    fi
-  }
-  trap cleanup_pr_poll EXIT
-
-  # Start daemon in background with logging
-  REPO_ROOT="$(git rev-parse --show-toplevel)"
-  PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
-  "$REPO_ROOT/tools/pr-poll" --daemon >"$PR_POLL_LOG" 2>&1 &
-  echo $! >"$PR_POLL_PID_FILE"
-  echo "Started PR polling daemon (PID $!, interval: 30s)"
-  echo "Logs: $PR_POLL_LOG"
-  echo "Disable with: PR_POLL_DAEMON=false"
+# Session restore after reboot won't trigger spr/forge, so we start here too.
+if [[ -n "${OPENCODE_SESSION_ID:-}" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  repo_hash=$(echo "$repo_dir" | sed 's#/#-#g' | sed 's#^-##')
+  state_dir="${HOME}/.local/share/nixsmith/pr-poll/${repo_hash}"
+  mkdir -p "$state_dir"
+  pid_file="${state_dir}/daemon.pid"
+  log_file="${state_dir}/daemon.log"
+  if [[ ! -f "$pid_file" ]] || ! kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+    nohup bash "${TOOLS_DIR}/pr-poll" --daemon >> "$log_file" 2>&1 &
+  fi
 fi
 
 # Auto-launch opencode unless disabled
