@@ -186,13 +186,13 @@ main() {
       execute_init
       ;;
     commit)
-      extract_subsection "commit"
+      execute_bash_block "$(extract_subsection "commit")"
       ;;
     pr|pull-request)
-      extract_subsection "pull-request"
+      execute_bash_block "$(extract_subsection "pull-request")"
       ;;
     complete)
-      extract_subsection "complete"
+      execute_bash_block "$(extract_subsection "complete")"
       ;;
     help|--help|-h)
       show_help
