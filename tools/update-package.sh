@@ -104,6 +104,8 @@ extract_fod_hash() {
 # Update overlay file with new values
 update_overlay() {
   local package="$1" version="$2" src_hash="$3" fod_hash="$4"
+  local escaped_src_hash="${src_hash//\//\\/}"
+  local escaped_fod_hash="${fod_hash//\//\\/}"
   
   info "Updating $OVERLAY_FILE..."
   
@@ -113,12 +115,12 @@ update_overlay() {
   # Update the overlay using sed
   if [[ "$package" == "opencode" ]]; then
     sed -i "/opencode = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
-    sed -i "/opencode = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$src_hash\";/" "$OVERLAY_FILE"
-    sed -i "/opencode = {/,/};/ s/nodeModulesHash = \"[^\"]*\";/nodeModulesHash = \"$fod_hash\";/" "$OVERLAY_FILE"
+    sed -i "/opencode = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$escaped_src_hash\";/" "$OVERLAY_FILE"
+    sed -i "/opencode = {/,/};/ s/nodeModulesHash = \"[^\"]*\";/nodeModulesHash = \"$escaped_fod_hash\";/" "$OVERLAY_FILE"
   elif [[ "$package" == "claude-code" ]]; then
     sed -i "/claude-code = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
-    sed -i "/claude-code = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$src_hash\";/" "$OVERLAY_FILE"
-    sed -i "/claude-code = {/,/};/ s/npmDepsHash = \"[^\"]*\";/npmDepsHash = \"$fod_hash\";/" "$OVERLAY_FILE"
+    sed -i "/claude-code = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$escaped_src_hash\";/" "$OVERLAY_FILE"
+    sed -i "/claude-code = {/,/};/ s/npmDepsHash = \"[^\"]*\";/npmDepsHash = \"$escaped_fod_hash\";/" "$OVERLAY_FILE"
   fi
   
   success "Updated $OVERLAY_FILE"
