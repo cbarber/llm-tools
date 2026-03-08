@@ -288,6 +288,8 @@ git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev
 
 Commit after edit. An atomic commit is an operation that applies a set of distinct changes as a single operation. Either target an existing unmerged commit with a fixup or create a new commit for this change.
 
+**Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
+
 Format: `<type>(<scope>): <subject>`
 
 **Types:**
