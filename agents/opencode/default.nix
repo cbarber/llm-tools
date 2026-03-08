@@ -15,6 +15,8 @@ pkgs.mkShell {
     ++ tools.all;
 
   shellHook = ''
+    export GIT_SEQUENCE_EDITOR="git-agent-sequence-editor"
+    export GIT_EDITOR="git-agent-editor"
     export AGENTS_TEMPLATES_DIR="${../templates}"
     export AGENTS_TEMPLATE_DEFAULT="${../templates/default.md}"
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
