@@ -68,7 +68,7 @@ fi
 ### commit (tool.execute.after:edit|write)
 
 ```
-git log --oneline origin/main...
+git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"...
 ```
 
 Commit after edit. An atomic commit is an operation that applies a set of distinct changes as a single operation. Either target an existing unmerged commit with a fixup or create a new commit for this change.
