@@ -317,6 +317,16 @@ else
     echo "  Skipped (no ~/.ssh directory)"
 fi
 
+# TEST 15: .git/config is read-only inside sandbox
+log_test ".git/config is read-only inside sandbox"
+
+cd "$PROJECT_DIR"
+if "$SANDBOX_SCRIPT" bash -c 'git config user.name "Sandbox Test"' 2>/dev/null; then
+    log_fail ".git/config is writable (agent can override git identity)"
+else
+    log_pass ".git/config is read-only (agent cannot override git identity)"
+fi
+
 # Summary
 echo ""
 echo "======================================"

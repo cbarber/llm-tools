@@ -518,5 +518,16 @@ build_mounts() {
 build_mounts ro "${SANDBOX_MOUNTS_RO[@]}"
 build_mounts rw "${SANDBOX_MOUNTS_RW[@]}"
 
+# Prevent agents from writing repo-local git config (e.g. user.name/email overrides).
+# Must be added after RW mounts so this RO overlay takes precedence.
+# config lives in the common git dir for both regular repos and worktrees.
+if [[ -n "${common_git_dir_abs:-}" ]] && [[ -f "$common_git_dir_abs/config" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$common_git_dir_abs/config" "$common_git_dir_abs/config")
+  debug_sandbox "Overlaid git config read-only: $common_git_dir_abs/config"
+elif [[ -n "${git_dir_abs:-}" ]] && [[ -f "$git_dir_abs/config" ]]; then
+  BWRAP_ARGS+=(--ro-bind "$git_dir_abs/config" "$git_dir_abs/config")
+  debug_sandbox "Overlaid git config read-only: $git_dir_abs/config"
+fi
+
 # Run command in sandbox
 exec "$BWRAP" "${BWRAP_ARGS[@]}" "$@"
