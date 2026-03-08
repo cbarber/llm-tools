@@ -1,0 +1,13 @@
+#!/bin/sh
+# GIT_SEQUENCE_EDITOR for LLM agents.
+#
+# Injects a `break` at the top of the rebase todo so git halts immediately
+# and returns control to the agent. The agent then edits the todo file
+# directly and runs `git rebase --continue`.
+#
+# Usage: GIT_SEQUENCE_EDITOR=git-agent-sequence-editor git rebase -i <ref>
+
+sed -i '1s/^/break\n/' "$1"
+
+echo "git rebase -i halted. Edit the rebase todo, then run: git rebase --continue"
+echo "Todo file: $1"

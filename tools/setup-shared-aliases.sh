@@ -23,6 +23,21 @@ git() {
         return 1
       }
       ;;
+
+    rebase)
+      # Remind agent of the two-step interactive rebase protocol before -i
+      if [[ " $* " =~ " -i " ]] || [[ " $* " =~ " --interactive " ]]; then
+        echo "📋 Interactive rebase: GIT_SEQUENCE_EDITOR will inject 'break' and print the todo path."
+        echo "   Edit the todo file, then run: git rebase --continue"
+        echo "   If --continue opens an editor (reword/squash): GIT_EDITOR prints the file path and exits."
+        echo "   Write your message with: git commit --amend -m '...' then git rebase --continue"
+        echo ""
+      fi
+      command git "$@" || {
+        echo "❌ STOP: Git write operation failed. You MUST ask user for guidance. DO NOT attempt recovery." >&2
+        return 1
+      }
+      ;;
     
     *)
       # Handle other write operations

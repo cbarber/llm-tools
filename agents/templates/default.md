@@ -161,11 +161,18 @@ bash tools/forge pr comments 123
 # Option 1: Automatic fixup with git-absorb
 git add <changed-files>
 git absorb                            # Automatically creates fixups for staged changes
-git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
+git rebase --autosquash origin/main   # Squash fixups
 
 # Option 2: Manual fixup
 git commit --fixup=<sha>              # Fix specific commit
-git rebase --autosquash origin/main   # Squash fixups (non-interactive, NEVER use -i)
+git rebase --autosquash origin/main   # Squash fixups
+
+# Option 3: Interactive rebase (reorder, drop, reword, squash)
+git rebase -i <ref>
+# GIT_SEQUENCE_EDITOR halts with a break, prints the todo path
+# Edit the todo file, then: git rebase --continue
+# If --continue opens an editor (reword/squash message):
+# GIT_EDITOR prints the file path and exits — write message with -m or --amend -m
 
 # Update PRs after fixing
 spr update
@@ -188,7 +195,6 @@ spr merge
 - `spr merge` lands all approved PRs at once
 - NEVER merge via GitHub UI (breaks the stack)
 - NEVER use `git push` - use `spr update` instead
-- NEVER use `git rebase -i` - use `git rebase --autosquash` (non-interactive)
 - Branch must track `origin/main` (spr compares HEAD to tracking branch)
 
 **git-absorb workflow:**

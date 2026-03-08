@@ -16,6 +16,8 @@ pkgs.mkShell {
 
   shellHook = ''
     export CLAUDECODE=1
+    export GIT_SEQUENCE_EDITOR="git-agent-sequence-editor"
+    export GIT_EDITOR="git-agent-editor"
     export AGENTS_TEMPLATES_DIR="${../templates}"
     export AGENTS_TEMPLATE_DEFAULT="${../templates/default.md}"
     export SETTINGS_TEMPLATE="${./settings.template.json}"
