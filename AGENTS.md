@@ -340,33 +340,20 @@ Authored By: claude-code (claude-3.7-sonnet)"
 git rebase --autosquash origin/main
 ```
 
-### pull-request (tool.execute.after:bash:.*spr update.*)
+### pull-request (tool.execute.after:bash:.*forge pr create.*)
 
-**Default workflow: Stacked PRs with spr**
-
-Each commit becomes its own PR, stacked on previous commits. This enables independent review and landing of logical changes.
-
-**Setup:**
 ```bash
-# Create feature branch (use `-` not `/` - spr fails with slashes)
-git checkout -b feat-description
-
-# Set branch to track origin/main (required for spr)
-git branch --set-upstream-to=origin/main
+bash tools/forge pr status
 ```
 
 **Creating PRs:**
 ```bash
-# After creating commits, create/update all PRs in the stack
-spr update
+git push -u origin <branch>
+bash tools/forge pr create --title "..." --body "..."
 ```
 
 **Viewing PR status:**
 ```bash
-# View all PRs in stack with check/approval status
-spr status
-
-# View specific PR comments (use forge for this)
 bash tools/forge pr view 123
 bash tools/forge pr comments 123
 ```
@@ -389,8 +376,7 @@ git rebase -i <ref>
 # If --continue opens an editor (reword/squash message):
 # GIT_EDITOR prints the file path and exits — write message with -m or --amend -m
 
-# Update PRs after fixing
-spr update
+git push --force-with-lease
 ```
 
 **Replying to review comments:**
@@ -398,32 +384,13 @@ spr update
 bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
 ```
 
-**Landing changes:**
-```bash
-# Once PRs are approved, merge entire stack
-spr merge
-```
-
 **Key points:**
-- Each commit = one PR for independent review
-- `spr update` creates/updates all PRs automatically
-- `spr merge` lands all approved PRs at once
-- NEVER merge via GitHub UI (breaks the stack)
-- NEVER use `git push` - use `spr update` instead
-- Branch must track `origin/main` (spr compares HEAD to tracking branch)
+- NEVER call `gh` or `tea` directly — use `bash tools/forge`
+- PR body must explain WHY the change was made
+- Link to beads issue if applicable
+- Use `--draft` when work is incomplete or tests are failing
 
-**git-absorb workflow:**
-- Stage changes you want to fix: `git add <files>`
-- Run `git absorb` to automatically create fixup commits
-- It matches hunks to the commits that last modified them
-- Then squash with `git rebase --autosquash origin/main`
-- Update PRs with `spr update`
-
-**IMPORTANT:** Use `bash tools/forge` exclusively. Never call `gh` or `tea` directly.
-
-Forge is a unified wrapper for GitHub (gh) and Gitea (tea). Check `bash tools/forge --help` before attempting direct API calls.
-
-See `tools/AGENT_API_AUTH.md` for detailed examples and full forge CLI reference.
+See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 
 ### complete
 
