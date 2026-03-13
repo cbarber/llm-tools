@@ -23,12 +23,13 @@ Both agents include:
 
 ## Sandboxing
 
-Agents run in restricted environments:
-- **Read/write**: Project directory, temp workspace
-- **Read-only**: /nix store
-- **Blocked**: Home directory, other projects
+Agents run in a deny-by-default sandbox (bubblewrap on Linux, sandbox-exec on macOS). Access is explicitly granted per category:
 
-See `tools/SANDBOX.md` for details.
+- **Read-write**: Project directory, temp workspace, agent config/cache dirs
+- **Read-only**: OS directories, `/nix`, git identity files (`~/.gitconfig`, `~/.ssh/known_hosts`)
+- **Denied**: `~/.ssh` keys, `~/.gnupg`, rest of home directory, other projects
+
+See [`tools/SANDBOX.md`](tools/SANDBOX.md) for platform details and environment variables.
 
 ## Task Management
 

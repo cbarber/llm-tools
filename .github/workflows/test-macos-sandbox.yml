@@ -17,102 +17,114 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-macos:
-    name: Test Sandbox on macOS
+  test:
+    name: Test sandbox profile
     runs-on: macos-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v21
-      
-      - name: Debug - Show generated profile
+      - uses: actions/checkout@v4
+
+      - name: Launches successfully
+        run: bash tools/macos-sandbox.sh /bin/echo "sandbox ok"
+
+      - name: Project dir is writable
         run: |
-          echo "=== Generated Sandbox Profile ==="
-          export AGENT_SANDBOX_DEBUG=true
-          ./tools/agent-sandbox.sh echo "test" 2>&1 || true
-          echo "=== End Profile ==="
-      
-      - name: Test sandbox basic functionality
+          bash tools/macos-sandbox.sh /bin/sh -c 'echo ok > "$PWD/sandbox-write-test.txt"'
+          rm -f sandbox-write-test.txt
+
+      - name: Home dir is not writable outside allowed paths
         run: |
-          # Test that sandbox-exec is available
-          which sandbox-exec
-          
-          # Test basic command execution
-          echo "=== Test 1: Basic command execution ==="
-          ./tools/agent-sandbox.sh echo "Hello from sandbox"
-      
-      - name: Test filesystem restrictions
+          set +e
+          bash tools/macos-sandbox.sh /bin/sh -c 'echo fail > "$HOME/sandbox-write-test-$$"' 2>/dev/null
+          rc=$?
+          set -e
+          [[ $rc -ne 0 ]] || { echo "FAIL: home dir write succeeded"; exit 1; }
+          echo "PASS (exit $rc)"
+
+      - name: SSH keys are not readable
         run: |
-          echo "=== Test 2: Project directory access (should work) ==="
-          ./tools/agent-sandbox.sh touch test-file.txt
-          ./tools/agent-sandbox.sh rm test-file.txt
-          
-          echo "=== Test 3: Home directory access (should be restricted) ==="
-          # This should fail because Documents is not in the allowed list
-          if ./tools/agent-sandbox.sh touch ~/Documents/sandbox-test.txt 2>/dev/null; then
-            echo "ERROR: Should not be able to write to ~/Documents"
-            exit 1
-          else
-            echo "PASS: Cannot write to ~/Documents (as expected)"
-          fi
-      
-      - name: Test agent config directories
+          mkdir -p "$HOME/.ssh"
+          echo "fake-key" > "$HOME/.ssh/id_rsa"
+          chmod 600 "$HOME/.ssh/id_rsa"
+          set +e
+          bash tools/macos-sandbox.sh /bin/sh -c 'cat "$HOME/.ssh/id_rsa"' 2>/dev/null
+          rc=$?
+          set -e
+          [[ $rc -ne 0 ]] || { echo "FAIL: SSH key read succeeded"; exit 1; }
+          echo "PASS (exit $rc)"
+
+      - name: GnuPG keys are not readable
         run: |
-          echo "=== Test 4: Agent config directories (should work) ==="
-          
-          # Create config dirs if they don't exist
+          mkdir -p "$HOME/.gnupg"
+          echo "fake-key" > "$HOME/.gnupg/secring.gpg"
+          chmod 600 "$HOME/.gnupg/secring.gpg"
+          set +e
+          bash tools/macos-sandbox.sh /bin/sh -c 'cat "$HOME/.gnupg/secring.gpg"' 2>/dev/null
+          rc=$?
+          set -e
+          [[ $rc -ne 0 ]] || { echo "FAIL: GnuPG key read succeeded"; exit 1; }
+          echo "PASS (exit $rc)"
+
+      - name: Arbitrary home file is not readable
+        run: |
+          echo "secret" > "$HOME/sandbox-secret-$$.txt"
+          secret_file="$HOME/sandbox-secret-$$.txt"
+          set +e
+          out=$(bash tools/macos-sandbox.sh /bin/sh -c "cat '$secret_file'" 2>/dev/null)
+          rc=$?
+          set -e
+          rm -f "$secret_file"
+          [[ $rc -ne 0 ]] || { echo "FAIL: home file was readable (rc=$rc, out=$out)"; exit 1; }
+          echo "PASS (exit $rc)"
+
+  test-nix:
+    name: Test sandbox via agent-sandbox.sh with Nix
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Basic command execution
+        run: bash tools/agent-sandbox.sh echo "Hello from sandbox"
+
+      - name: Project directory is writable
+        run: |
+          bash tools/agent-sandbox.sh touch test-file.txt
+          bash tools/agent-sandbox.sh rm test-file.txt
+
+      - name: Home directory is not writable outside allowed paths
+        run: |
+          set +e
+          bash tools/agent-sandbox.sh touch "$HOME/Documents/sandbox-test.txt" 2>/dev/null
+          rc=$?
+          set -e
+          [[ $rc -ne 0 ]] || { echo "FAIL: should not be able to write to ~/Documents"; exit 1; }
+          echo "PASS (exit $rc)"
+
+      - name: Agent config directories are writable
+        run: |
           mkdir -p ~/.config/opencode ~/.claude
-          
-          # Test write access to opencode config
-          ./tools/agent-sandbox.sh touch ~/.config/opencode/test.txt
-          ./tools/agent-sandbox.sh rm ~/.config/opencode/test.txt
-          
-          # Test write access to claude directory (not ~/.config/claude)
-          ./tools/agent-sandbox.sh touch ~/.claude/test.txt
-          ./tools/agent-sandbox.sh rm ~/.claude/test.txt
-          
-          echo "PASS: Can write to agent config directories"
-      
-      - name: Test network access
+          bash tools/agent-sandbox.sh touch ~/.config/opencode/test.txt
+          bash tools/agent-sandbox.sh rm ~/.config/opencode/test.txt
+          bash tools/agent-sandbox.sh touch ~/.claude/test.txt
+          bash tools/agent-sandbox.sh rm ~/.claude/test.txt
+
+      - name: Workspace directory is accessible
+        run: bash tools/agent-sandbox.sh bash -c 'touch "$AGENT_WORK_DIR/test.txt"'
+
+      - name: Nix store is readable
         run: |
-          echo "=== Test 5: Network access (should work) ==="
-          # Test network with a simple command that's already available
-          # ping is available by default on macOS
-          ./tools/agent-sandbox.sh ping -c 1 google.com && echo "PASS: Network access works"
-      
-      - name: Test workspace directory
-        run: |
-          echo "=== Test 6: Workspace directory access ==="
-          ./tools/agent-sandbox.sh bash -c 'echo "AGENT_WORK_DIR=$AGENT_WORK_DIR"; ls -la $AGENT_WORK_DIR; touch $AGENT_WORK_DIR/test.txt'
-      
-      - name: Test nix operations
-        run: |
-          echo "=== Test 7: Nix operations (should work) ==="
-          # Nix needs ~/.cache/nix to exist (can't create parent dirs in sandbox)
           mkdir -p ~/.cache/nix
-          ./tools/agent-sandbox.sh nix-shell -p hello --run hello
-      
-      - name: Test BWRAP_EXTRA_PATHS
+          bash tools/agent-sandbox.sh nix-shell -p hello --run hello
+
+      - name: SANDBOX_EXTRA_RW grants write access to extra paths
         run: |
-          echo "=== Test 8: Extra paths mounting ==="
           mkdir -p /tmp/extra-test-dir
           echo "test content" > /tmp/extra-test-dir/test.txt
-          
-          export BWRAP_EXTRA_PATHS="/tmp/extra-test-dir"
-          ./tools/agent-sandbox.sh cat /tmp/extra-test-dir/test.txt
-          
+          SANDBOX_EXTRA_RW="/tmp/extra-test-dir" bash tools/agent-sandbox.sh cat /tmp/extra-test-dir/test.txt
           rm -rf /tmp/extra-test-dir
-      
-      - name: Test IN_AGENT_SANDBOX variable
+
+      - name: IN_AGENT_SANDBOX is set inside sandbox
         run: |
-          echo "=== Test 9: IN_AGENT_SANDBOX environment variable ==="
-          ./tools/agent-sandbox.sh bash -c 'if [[ "$IN_AGENT_SANDBOX" == "1" ]]; then echo "PASS: IN_AGENT_SANDBOX is set"; else echo "ERROR: IN_AGENT_SANDBOX not set"; exit 1; fi'
-      
-      - name: Summary
-        run: |
-          echo "=========================================="
-          echo "All macOS sandbox tests passed!"
-          echo "=========================================="
+          bash tools/agent-sandbox.sh bash -c '[[ "$IN_AGENT_SANDBOX" == "1" ]] || { echo "FAIL: IN_AGENT_SANDBOX not set"; exit 1; }'
+

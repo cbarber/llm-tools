@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 # macOS Sandbox Implementation
 #
-# This script implements sandboxing for macOS using sandbox-exec.
-# It should be sourced from agent-sandbox.sh, not executed directly.
-#
-# Environment variables (inherited from agent-sandbox.sh):
-#   AGENT_SANDBOX_BIND_HOME - Set to "true" to allow full home access (breaks isolation)
-#   AGENT_SANDBOX_SSH       - Set to "true" to allow full SSH directory access
-#   BWRAP_EXTRA_PATHS       - Colon-separated agent/project-specific paths
+# Environment variables:
+#   AGENT_SANDBOX_BIND_HOME - "true" to allow writes to entire home dir (breaks isolation)
+#   AGENT_SANDBOX_SSH       - "true" to allow reads+writes to ~/.ssh (for git operations)
+#   BWRAP_EXTRA_PATHS       - colon-separated additional writable paths
 
 set -euo pipefail
 
@@ -17,11 +14,9 @@ if ! command -v sandbox-exec &>/dev/null; then
   exit 1
 fi
 
-# Create temporary workspace
 WORK_DIR=$(mktemp -d -t agent-XXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-# Find the sandbox profile template
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_TEMPLATE="$SCRIPT_DIR/macos-sandbox-profile.sb"
 
@@ -30,101 +25,160 @@ if [[ ! -f "$PROFILE_TEMPLATE" ]]; then
   exit 1
 fi
 
-# Read the profile template (no variable substitution needed - using -D params)
 PROFILE_CONTENT=$(<"$PROFILE_TEMPLATE")
 
-# Collect -D parameters for sandbox-exec (Codex-style parameterized paths)
 SANDBOX_PARAMS=()
 PROJECT_DIR="$(pwd)"
 SANDBOX_PARAMS+=("-DPROJECT_DIR=$PROJECT_DIR")
 
-# Canonicalize WORK_DIR (resolves symlinks like /var -> /private/var)
+# Canonicalize to resolve /var -> /private/var symlink on macOS
 WORK_DIR_CANONICAL="$(cd "$WORK_DIR" && pwd -P)"
 SANDBOX_PARAMS+=("-DWORK_DIR=$WORK_DIR_CANONICAL")
 
-# Add TMPDIR (macOS sets this to /var/folders/.../T/ by default)
-# Following Codex's approach: include TMPDIR as writable (needed for mktemp, nix, etc.)
-# CRITICAL: Canonicalize TMPDIR to handle /var -> /private/var symlink on macOS
+# TMPDIR is /var/folders/.../T/ by default on macOS; canonicalize for same reason
 if [[ -n "${TMPDIR:-}" ]]; then
-  # Use realpath to canonicalize (resolves /var/folders -> /private/var/folders)
   TMPDIR_CANONICAL="$(cd "$TMPDIR" && pwd -P 2>/dev/null || echo "$TMPDIR")"
   SANDBOX_PARAMS+=("-DTMPDIR=$TMPDIR_CANONICAL")
 else
-  # Fallback to /tmp if TMPDIR not set (shouldn't happen on macOS, but be safe)
   SANDBOX_PARAMS+=("-DTMPDIR=/tmp")
 fi
 
-# Add home directory parameters for writable paths
-SANDBOX_PARAMS+=("-DHOME_CONFIG_OPENCODE=$HOME/.config/opencode")
-SANDBOX_PARAMS+=("-DHOME_CONFIG_NIXSMITH=$HOME/.config/nixsmith")
-SANDBOX_PARAMS+=("-DHOME_CLAUDE_JSON=$HOME/.claude.json")
-SANDBOX_PARAMS+=("-DHOME_CLAUDE=$HOME/.claude")
-SANDBOX_PARAMS+=("-DHOME_CACHE_OPENCODE=$HOME/.cache/opencode")
-SANDBOX_PARAMS+=("-DHOME_CACHE_CLAUDE=$HOME/.cache/claude")
-SANDBOX_PARAMS+=("-DHOME_CACHE_NIX=$HOME/.cache/nix")
-SANDBOX_PARAMS+=("-DHOME_SHARE_OPENCODE=$HOME/.local/share/opencode")
-SANDBOX_PARAMS+=("-DHOME_SHARE_CLAUDE=$HOME/.local/share/claude")
-SANDBOX_PARAMS+=("-DHOME_CACHE_GO=$HOME/.cache/go-build")
-SANDBOX_PARAMS+=("-DHOME_CARGO=$HOME/.cargo")
-SANDBOX_PARAMS+=("-DHOME_CACHE_PIP=$HOME/.cache/pip")
-SANDBOX_PARAMS+=("-DHOME_GEM=$HOME/.gem")
-SANDBOX_PARAMS+=("-DHOME_CACHE_YARN=$HOME/.cache/yarn")
-SANDBOX_PARAMS+=("-DHOME_NPM=$HOME/.npm")
-SANDBOX_PARAMS+=("-DHOME_SHARE_PNPM=$HOME/.local/share/pnpm")
-SANDBOX_PARAMS+=("-DHOME_BUN=$HOME/.bun")
-SANDBOX_PARAMS+=("-DHOME_GRADLE=$HOME/.gradle")
-SANDBOX_PARAMS+=("-DHOME_M2=$HOME/.m2")
-SANDBOX_PARAMS+=("-DHOME_COMPOSER=$HOME/.composer")
-SANDBOX_PARAMS+=("-DHOME_CACHE_COMPOSER=$HOME/.cache/composer")
-SANDBOX_PARAMS+=("-DHOME_NUGET=$HOME/.nuget/packages")
-SANDBOX_PARAMS+=("-DHOME_VCPKG=$HOME/.vcpkg")
-SANDBOX_PARAMS+=("-DHOME_PUB_CACHE=$HOME/.pub-cache")
-SANDBOX_PARAMS+=("-DHOME_SWIFTPM=$HOME/.swiftpm")
-SANDBOX_PARAMS+=("-DHOME_HEX=$HOME/.hex")
-SANDBOX_PARAMS+=("-DHOME_MIX=$HOME/.mix")
+SANDBOX_PARAMS+=("-DHOME_DIR=$HOME")
+SANDBOX_PARAMS+=("-DHOME_SSH=$HOME/.ssh")
+SANDBOX_PARAMS+=("-DHOME_GNUPG=$HOME/.gnupg")
 
-# Handle BWRAP_EXTRA_PATHS by adding write permissions
+# Pass the canonical path so the (literal) deny rule matches regardless of
+# whether the caller is inside a symlinked path.
+GIT_CONFIG_PATH="$(git -C "$PROJECT_DIR" rev-parse --git-dir 2>/dev/null)/config" || true
+if [[ -f "$GIT_CONFIG_PATH" ]]; then
+  GIT_CONFIG_CANONICAL="$(cd "$(dirname "$GIT_CONFIG_PATH")" && pwd -P)/config"
+  SANDBOX_PARAMS+=("-DGIT_CONFIG=$GIT_CONFIG_CANONICAL")
+else
+  # No git repo — point at a non-existent path so the param is always defined.
+  SANDBOX_PARAMS+=("-DGIT_CONFIG=$PROJECT_DIR/.git/config")
+fi
+
+# sandbox-exec SIGABRTs when (subpath ...) references a non-existent path,
+# so only emit rules for paths that exist on disk.
+
+# Read access: git identity files and agent-specific keys (mirrors bwrap RO mounts).
+HOME_READ_PATHS=(
+  "$HOME/.gitconfig"
+  "$HOME/.config/git/config"
+  "$HOME/.ssh/known_hosts"
+  "$HOME/.ssh/config.agent"
+  "$HOME/.ssh/agent-github"
+  "$HOME/.ssh/agent-github.pub"
+  "$HOME/.ssh/agent-gitlab"
+  "$HOME/.ssh/agent-gitlab.pub"
+  "$HOME/.ssh/agent-gitea"
+  "$HOME/.ssh/agent-gitea.pub"
+  "$HOME/.config/nix"
+  "$HOME/.local/share/nix"
+)
+HOME_READ_RULES=""
+for i in "${!HOME_READ_PATHS[@]}"; do
+  p="${HOME_READ_PATHS[$i]}"
+  [[ -e "$p" ]] || continue
+  PARAM_NAME="HOME_READ_$i"
+  HOME_READ_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
+  SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
+done
+if [[ -n "$HOME_READ_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_READ_RULES"')'
+fi
+
+# Literal read access for intermediate directories that tools must stat to
+# traverse into allowed subpaths. (subpath) on a leaf grants no access to its
+# parents; without these literals, directory traversal fails with EPERM.
+HOME_TRAVERSE_PATHS=(
+  "$HOME/.cache"
+  "$HOME/.config"
+  "$HOME/.local"
+  "$HOME/.local/share"
+)
+HOME_TRAVERSE_RULES=""
+for i in "${!HOME_TRAVERSE_PATHS[@]}"; do
+  p="${HOME_TRAVERSE_PATHS[$i]}"
+  [[ -e "$p" ]] || continue
+  PARAM_NAME="HOME_TRAVERSE_$i"
+  HOME_TRAVERSE_RULES+="  (literal (param \"$PARAM_NAME\"))"$'\n'
+  SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
+done
+if [[ -n "$HOME_TRAVERSE_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_TRAVERSE_RULES"')'
+fi
+
+# Write access: agent config and cache dirs.
+HOME_WRITE_PATHS=(
+  "$HOME/.config/opencode"
+  "$HOME/.config/nixsmith"
+  "$HOME/.claude.json"
+  "$HOME/.claude"
+  "$HOME/.cache/opencode"
+  "$HOME/.cache/claude"
+  "$HOME/.cache/nix"
+  "$HOME/.local/share/opencode"
+  "$HOME/.local/share/claude"
+  "$HOME/.cache/go-build"
+  "$HOME/.cargo"
+  "$HOME/.cache/pip"
+  "$HOME/.gem"
+  "$HOME/.cache/yarn"
+  "$HOME/.npm"
+  "$HOME/.local/share/pnpm"
+  "$HOME/.bun"
+  "$HOME/.gradle"
+  "$HOME/.m2"
+  "$HOME/.composer"
+  "$HOME/.cache/composer"
+  "$HOME/.nuget/packages"
+  "$HOME/.vcpkg"
+  "$HOME/.pub-cache"
+  "$HOME/.swiftpm"
+  "$HOME/.hex"
+  "$HOME/.mix"
+)
+HOME_WRITE_RULES=""
+for i in "${!HOME_WRITE_PATHS[@]}"; do
+  p="${HOME_WRITE_PATHS[$i]}"
+  [[ -e "$p" ]] || continue
+  PARAM_NAME="HOME_WRITE_$i"
+  HOME_WRITE_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
+  SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
+done
+if [[ -n "$HOME_WRITE_RULES" ]]; then
+  # Agents must be able to read the dirs they write (e.g. load config before updating it).
+  PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$HOME_WRITE_RULES"')'
+fi
+
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   IFS=':' read -ra EXTRA_PATHS <<< "$BWRAP_EXTRA_PATHS"
   EXTRA_WRITE_RULES=""
   for i in "${!EXTRA_PATHS[@]}"; do
-    path="${EXTRA_PATHS[$i]}"
-    # Expand tilde to home directory
-    expanded_path="${path/#\~/$HOME}"
-    
-    # Skip empty paths
+    expanded_path="${EXTRA_PATHS[$i]/#\~/$HOME}"
     [[ -z "$expanded_path" ]] && continue
-    
-    # Add write permission if directory exists
-    if [[ -d "$expanded_path" ]]; then
-      PARAM_NAME="EXTRA_PATH_$i"
-      EXTRA_WRITE_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
-      SANDBOX_PARAMS+=("-D$PARAM_NAME=$expanded_path")
-    fi
+    [[ -d "$expanded_path" ]] || continue
+    PARAM_NAME="EXTRA_PATH_$i"
+    EXTRA_WRITE_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
+    SANDBOX_PARAMS+=("-D$PARAM_NAME=$expanded_path")
   done
-  
-  # Append extra write rules to profile
   if [[ -n "$EXTRA_WRITE_RULES" ]]; then
-    PROFILE_CONTENT+=$'\n;; Extra paths from BWRAP_EXTRA_PATHS\n'
-    PROFILE_CONTENT+="(allow file-write*"$'\n'
-    PROFILE_CONTENT+="$EXTRA_WRITE_RULES"
-    PROFILE_CONTENT+=")"
+    PROFILE_CONTENT+=$'\n(allow file-write*\n'"$EXTRA_WRITE_RULES"')'
   fi
 fi
 
-# Handle AGENT_SANDBOX_BIND_HOME
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
-  echo "Warning: AGENT_SANDBOX_BIND_HOME=true allows full home directory access (breaks isolation)" >&2
-  #Override: allow writes to entire home directory
+  echo "Warning: AGENT_SANDBOX_BIND_HOME=true grants full home directory write access (breaks isolation)" >&2
   SANDBOX_PARAMS+=("-DHOME_FULL=$HOME")
   PROFILE_CONTENT+=$'\n(allow file-write* (subpath (param "HOME_FULL")))'
 fi
 
-# Handle AGENT_SANDBOX_SSH
+# AGENT_SANDBOX_SSH overrides the profile's deny on ~/.ssh, restoring both
+# reads and writes so git operations that require the SSH key can work.
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
-  echo "Warning: AGENT_SANDBOX_SSH=true allows full SSH directory access" >&2
-  SANDBOX_PARAMS+=("-DHOME_SSH=$HOME/.ssh")
-  PROFILE_CONTENT+=$'\n(allow file-write* (subpath (param "HOME_SSH")))'
+  echo "Warning: AGENT_SANDBOX_SSH=true grants full ~/.ssh read+write access" >&2
+  PROFILE_CONTENT+=$'\n(allow file-read* file-write* (subpath (param "HOME_SSH")))'
 fi
 
 # Create agent config directories if they don't exist
@@ -133,21 +187,16 @@ mkdir -p "$HOME/.config/opencode" "$HOME/.config/claude" "$HOME/.claude" \
          "$HOME/.cache/opencode" "$HOME/.cache/claude" \
          "$HOME/.local/share/opencode" "$HOME/.local/share/claude" 2>/dev/null || true
 
-# Set environment variables for the sandboxed process
-export AGENT_WORK_DIR="$WORK_DIR"
+export AGENT_WORK_DIR="$WORK_DIR_CANONICAL"
 export IN_AGENT_SANDBOX="1"
 
-# SSH config handling for git operations
-# On Linux, bubblewrap mounts config.agent AS config (complete remapping)
-# On macOS, sandbox-exec can't do mount remapping, so we:
-# 1. Block access to personal ~/.ssh/config in the sandbox profile
-# 2. Allow access to ~/.ssh/config.agent
-# 3. Set GIT_SSH_COMMAND to use config.agent explicitly
+# sandbox-exec cannot remap mounts, so we cannot replace ~/.ssh/config with
+# config.agent the way bubblewrap does on Linux. Instead, point GIT_SSH_COMMAND
+# at config.agent directly so git uses the agent key without reading ~/.ssh/config.
 if [[ -f "$HOME/.ssh/config.agent" ]] && [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]]; then
   export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
 fi
 
-# Debug: show profile and params if AGENT_SANDBOX_DEBUG is set
 if [[ "${AGENT_SANDBOX_DEBUG:-false}" == "true" ]]; then
   echo "=== Sandbox Profile ===" >&2
   echo "$PROFILE_CONTENT" >&2
@@ -156,7 +205,4 @@ if [[ "${AGENT_SANDBOX_DEBUG:-false}" == "true" ]]; then
   echo "======================" >&2
 fi
 
-# Run command in sandbox using Codex-style invocation:
-# sandbox-exec -p <profile> -DVAR=value ... -- <command> [args...]
-# Note: Using -p with profile string directly (more reliable than -f with temp file)
 exec sandbox-exec -p "$PROFILE_CONTENT" "${SANDBOX_PARAMS[@]}" -- "$@"
