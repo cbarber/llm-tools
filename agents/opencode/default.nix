@@ -18,7 +18,7 @@ pkgs.mkShell {
     export GIT_SEQUENCE_EDITOR="git-agent-sequence-editor"
     export GIT_EDITOR="git-agent-editor"
     export AGENTS_TEMPLATES_DIR="${../templates}"
-    export AGENTS_TEMPLATE_DEFAULT="${../templates/default.md}"
+    export AGENTS_TEMPLATE_DEFAULT="${../templates/workflow.md}"
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
