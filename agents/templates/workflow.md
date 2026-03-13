@@ -71,7 +71,11 @@ fi
 git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"...
 ```
 
-Commit after edit. An atomic commit is an operation that applies a set of distinct changes as a single operation. Either target an existing unmerged commit with a fixup or create a new commit for this change.
+Commit after edit. An atomic commit is self-contained, related, and fully-functional.
+
+**Self-contained and related:** include all changes required for the commit's purpose, and only those changes. Do not mix unrelated concerns. For example, adding a new input field to a form and fixing a cache timeout bug are two commits, not one — even if both touch the same file.
+
+**Fully-functional:** every commit must leave the codebase buildable and working. Any checkout in history must be a valid stopping point.
 
 **Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
 
