@@ -52,29 +52,57 @@ ${SETUP_MCP_SCRIPT}
 # Setup Claude Code hooks configuration
 ${SETUP_SETTINGS_SCRIPT}
 
-# Fix beads git hooks for NixOS if needed (even in existing repos)
-if [[ -d ".beads" && -d ".git/hooks" ]]; then
-  # Check if any beads hook has broken shebang
-  for hook in .git/hooks/pre-commit .git/hooks/post-checkout .git/hooks/post-merge .git/hooks/pre-push; do
-    if [[ -f "$hook" ]] && head -1 "$hook" | grep -q "^#!/bin/sh"; then
-      "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
-      break
-    fi
-  done
+# fix-beads-hooks is idempotent; run unconditionally when in a git repo.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
 fi
 
-# Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
-if [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
+# Worktree repos share beads under the common git dir so all worktrees see the
+# same issue tracker. Standard repos init in the working tree root as usual.
+if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+
+  if [[ "$git_dir" != "$git_common_dir" ]]; then
+    beads_shared="$git_common_dir/beads"
+
+    if [[ -d "$beads_shared/.beads" ]]; then
+      export BEADS_DIR="$beads_shared/.beads"
+      echo "Using shared beads at: $BEADS_DIR"
+    elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
+      echo "Initializing shared beads for all worktrees..."
+      mkdir -p "$beads_shared"
+
+      branch_arg=""
+      if [[ -n "${BD_BRANCH:-}" ]]; then
+        branch_arg="--branch ${BD_BRANCH}"
+        echo "  Using branch: ${BD_BRANCH}"
+        export BD_BRANCH
+      fi
+
+      if (cd "$beads_shared" && bd init --quiet $branch_arg 2>/dev/null); then
+        export BEADS_DIR="$beads_shared/.beads"
+
+        if [[ -n "${BD_BRANCH:-}" ]]; then
+          (cd "$beads_shared" && bd daemon --start --auto-commit 2>/dev/null) || true
+          echo "Beads initialized at $BEADS_DIR with auto-commit to branch: ${BD_BRANCH}"
+        else
+          echo "Beads initialized at $BEADS_DIR. Use 'bd ready' to see tasks, 'bd create' to add tasks."
+        fi
+        echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
+      fi
+    fi
+  fi
+elif [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
   echo "Initializing beads for task tracking..."
-  
+
   branch_arg=""
   if [[ -n "${BD_BRANCH:-}" ]]; then
     branch_arg="--branch ${BD_BRANCH}"
   fi
-  
+
   if bd init --quiet $branch_arg 2>/dev/null; then
     bd setup claude --quiet 2>/dev/null || true
-    
+
     if [[ -n "${BD_BRANCH:-}" ]]; then
       sed -i "s/^# sync-branch:.*/sync-branch: \"${BD_BRANCH}\"/" .beads/config.yaml
       echo "Beads initialized with auto-commit to branch: ${BD_BRANCH}"
