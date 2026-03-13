@@ -129,6 +129,8 @@ Auto-detects forge type from git remote.
 Commands:
   pr create --title TITLE --body BODY [--draft]
   pr view [NUMBER] [--json]
+  pr ci [NUMBER] [--timeout SECONDS]
+  pr logs [NUMBER]
   pr comment [NUMBER] TEXT
   pr comments [NUMBER] [--json]
   pr list [--state STATE]
@@ -443,6 +445,58 @@ pr_reviews() {
     esac
 }
 
+pr_ci() {
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
+
+    local timeout=600
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --timeout) timeout="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    case "$FORGE_TYPE" in
+        github)
+            local branch
+            branch=$(gh pr view "$number" --json headRefName --jq '.headRefName')
+            local run_id
+            run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
+            [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
+            gh run watch "$run_id" --timeout "$timeout"
+            ;;
+        *)
+            echo "Error: pr ci not implemented for $FORGE_TYPE" >&2; exit 1 ;;
+    esac
+}
+
+pr_logs() {
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
+
+    case "$FORGE_TYPE" in
+        github)
+            local branch
+            branch=$(gh pr view "$number" --json headRefName --jq '.headRefName')
+            local run_id
+            run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
+            [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
+            gh run view "$run_id" --log-failed
+            ;;
+        *)
+            echo "Error: pr logs not implemented for $FORGE_TYPE" >&2; exit 1 ;;
+    esac
+}
+
 pr_comments() {
     local number="${1:-}"
     [[ -n "$number" ]] && shift
@@ -620,6 +674,8 @@ case "${1:-}" in
         case "${2:-}" in
             create) shift 2; pr_create "$@" ;;
             view) shift 2; pr_view "$@" ;;
+            ci) shift 2; pr_ci "$@" ;;
+            logs) shift 2; pr_logs "$@" ;;
             status) shift 2; pr_status "$@" ;;
             comment) shift 2; pr_comment "$@" ;;
             comments) shift 2; pr_comments "$@" ;;
