@@ -3,187 +3,47 @@ set -euo pipefail
 
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
-# Alias opencode to run in sandbox when AGENT_SANDBOX is enabled
-# Always pass --port to ensure API is available on known port
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  opencode() {
-    agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"
-  }
-  export -f opencode
+  opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"; }
 else
-  opencode() {
-    command opencode --port "${OPENCODE_PORT}" "$@"
-  }
-  export -f opencode
+  opencode() { command opencode --port "${OPENCODE_PORT}" "$@"; }
+fi
+export -f opencode
+
+export AGENT_ENV_CONFIG_DIR="${HOME}/.config/opencode"
+source "${TOOLS_DIR}/setup-shared-shell.sh"
+
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Note: No ANTHROPIC_API_KEY found. Set it in .env or ${AGENT_ENV_CONFIG_DIR}/.env"
 fi
 
-# Resolve workflow file: explicit env > ~/.config/nixsmith/workflow.md > default
-# Relative AGENTS_TEMPLATE is resolved against AGENTS_TEMPLATES_DIR
-select_workflow() {
-  if [[ -n "${AGENTS_TEMPLATE:-}" ]]; then
-    if [[ "${AGENTS_TEMPLATE}" != /* ]]; then
-      echo "${AGENTS_TEMPLATES_DIR}/${AGENTS_TEMPLATE}"
-    else
-      echo "${AGENTS_TEMPLATE}"
-    fi
-    return
-  fi
-  [[ -f ~/.config/nixsmith/workflow.md ]] && echo ~/.config/nixsmith/workflow.md && return
-  echo "${AGENTS_TEMPLATE_DEFAULT}"
-}
-
-export AGENTS_TEMPLATE="$(select_workflow)"
-export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
-
-# OPENCODE_CONFIG_CONTENT (highest precedence) injects the workflow alongside project AGENTS.md
+# Inject the workflow file alongside project AGENTS.md.
 export OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"${AGENTS_TEMPLATE}\"]}"
 
-# Source .env files if they exist (for API key auth)
-[ -f .env ] && source .env
-[ -f ~/.config/opencode/.env ] && source ~/.config/opencode/.env
-
-# Note: OpenCode supports API key authentication
-# Set ANTHROPIC_API_KEY in .env or ~/.config/opencode/.env
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "Note: No ANTHROPIC_API_KEY found. Set it for API key authentication."
-  echo "Set ANTHROPIC_API_KEY in .env or ~/.config/opencode/.env"
-fi
-
-# Allocate random port for OpenCode API server
-# OpenCode accepts --port flag to specify server port
-if [ -z "${OPENCODE_PORT:-}" ]; then
-  # Find random open port between 40000-50000
+if [[ -z "${OPENCODE_PORT:-}" ]]; then
   while true; do
     OPENCODE_PORT=$(shuf -i 40000-50000 -n 1)
-    if ! ss -tln 2>/dev/null | grep -q ":${OPENCODE_PORT} "; then
-      break
-    fi
+    ss -tln 2>/dev/null | grep -q ":${OPENCODE_PORT} " || break
   done
 fi
-
 export OPENCODE_PORT
 export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
 echo "OpenCode API: $OPENCODE_API"
 
-# Setup MCP configuration for detected languages
 ${SETUP_MCP_SCRIPT}
 
-# Fix beads git hooks for NixOS if needed (even in existing repos)
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  "${TOOLS_DIR}/fix-beads-hooks" . 2>/dev/null || true
-fi
-
-# Setup beads task tracking (optional, skippable with BD_SKIP_SETUP=true)
-# For worktree repos, beads should be shared in the common git directory
-if git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null); then
-  # Determine beads location based on git structure
-  # For bare worktrees: store in <common-dir>/beads/.beads
-  # For standard repos: store in working tree root
-
-  git_dir=$(git rev-parse --git-dir 2>/dev/null)
-
-  # If git-dir != common-dir, we're in a worktree setup
-  if [[ "$git_dir" != "$git_common_dir" ]]; then
-    # Worktree setup - use common-dir/beads for shared storage
-    beads_shared="$git_common_dir/beads"
-
-    # Check if beads exists in common-dir/beads/
-    if [[ -d "$beads_shared/.beads" ]]; then
-      export BEADS_DIR="$beads_shared/.beads"
-      echo "Using shared beads at: $BEADS_DIR"
-    elif [[ "${BD_SKIP_SETUP:-}" != "true" ]]; then
-      # Initialize beads in common-dir/beads/ for all worktrees to share
-      echo "Initializing shared beads for all worktrees..."
-
-      # Create beads directory if it doesn't exist
-      mkdir -p "$beads_shared"
-    fi
-
-    # Support custom branch via BD_BRANCH (useful for protected branches)
-    branch_arg=""
-    if [[ -n "${BD_BRANCH:-}" ]]; then
-      branch_arg="--branch ${BD_BRANCH}"
-      echo "  Using branch: ${BD_BRANCH}"
-      # Export BD_BRANCH so daemon can see it when started later
-      export BD_BRANCH
-    fi
-
-    if (cd "$beads_shared" && bd init --quiet "$branch_arg" 2>/dev/null); then
-      export BEADS_DIR="$beads_shared/.beads"
-
-      # Start daemon with auto-commit if using a separate branch
-      if [[ -n "${BD_BRANCH:-}" ]]; then
-        (cd "$beads_shared" && bd daemon --start --auto-commit 2>/dev/null) || true
-        echo "Beads initialized at $BEADS_DIR with auto-commit to branch: ${BD_BRANCH}"
-      else
-        echo "Beads initialized at $BEADS_DIR. Use 'bd ready' to see tasks, 'bd create' to add tasks."
-      fi
-
-      echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
-    fi
-  fi
-elif [[ ! -d ".beads" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
-  # Standard git repo (not bare worktree)
-  echo "Initializing beads for task tracking..."
-
-  branch_arg=""
-  if [[ -n "${BD_BRANCH:-}" ]]; then
-    branch_arg="--branch ${BD_BRANCH}"
-  fi
-
-  if bd init --quiet "$branch_arg" 2>/dev/null; then
-    if [[ -n "${BD_BRANCH:-}" ]]; then
-      sed -i "s/^# sync-branch:.*/sync-branch: \"${BD_BRANCH}\"/" .beads/config.yaml
-      echo "Beads initialized with auto-commit to branch: ${BD_BRANCH}"
-    else
-      echo "Beads initialized. Use 'bd ready' to see tasks, 'bd create' to add tasks."
-    fi
-    echo "Set BD_SKIP_SETUP=true to disable auto-initialization."
-  fi
-fi
-
-# Start daemon if sync-branch is configured
-if [[ -d ".beads" && -f ".beads/config.yaml" && "${BD_SKIP_SETUP:-}" != "true" ]]; then
-  if grep -q "^sync-branch:" .beads/config.yaml 2>/dev/null; then
-    if ! bd daemon --status --json 2>/dev/null | jq -e '.running' >/dev/null 2>&1; then
-      bd daemon --start --auto-commit 2>/dev/null || true
-      echo "Started beads daemon with auto-commit"
-    fi
-  fi
-fi
-
-# Run agent setup (SSH keys + API tokens)
-# Scripts check if setup is needed and exit early if not
-if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; then
-  "${TOOLS_DIR}/setup-agent-keys.sh" || {
-    echo "Error: SSH key setup failed" >&2
-    exit 1
-  }
-  "${TOOLS_DIR}/setup-agent-api-tokens.sh" || {
-    echo "Error: API token setup failed" >&2
-    exit 1
-  }
-fi
-
-# Start PR polling daemon if in git repo
-# Daemon monitors PR status and notifies on changes
 if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
   PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
 
-  # Cleanup function to kill daemon on shell exit
   cleanup_pr_poll() {
-    if [[ -f "$PR_POLL_PID_FILE" ]]; then
-      local pid=$(cat "$PR_POLL_PID_FILE")
-      if kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null
-        echo "Stopped PR polling daemon (PID $pid)"
-      fi
-      rm -f "$PR_POLL_PID_FILE"
-    fi
+    [[ -f "$PR_POLL_PID_FILE" ]] || return
+    local pid
+    pid=$(cat "$PR_POLL_PID_FILE")
+    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null && echo "Stopped PR polling daemon (PID $pid)"
+    rm -f "$PR_POLL_PID_FILE"
   }
   trap cleanup_pr_poll EXIT
 
-  # Start daemon in background with logging
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
   "$REPO_ROOT/tools/pr-poll" --daemon >"$PR_POLL_LOG" 2>&1 &
@@ -193,9 +53,7 @@ if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/nu
   echo "Disable with: PR_POLL_DAEMON=false"
 fi
 
-# Auto-launch opencode unless disabled
-# Skip if already in sandbox (prevent infinite loop)
-# Note: Don't use exec so background daemon (pr-poll) can survive
+# Don't exec — background pr-poll daemon must survive the launch.
 if [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
   opencode
 else
