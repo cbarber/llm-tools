@@ -449,23 +449,27 @@ pr_ci() {
     local number="${1:-}"
     [[ -n "$number" ]] && shift
 
-    if [[ -z "$number" ]]; then
-        number=$(auto_detect_pr) || exit 1
-    fi
-
+    local workflow=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --timeout) shift 2 ;;  # gh run watch has no --timeout; consumed for compat
+            --timeout) shift 2 ;;
+            --workflow) workflow="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
+
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
 
     case "$FORGE_TYPE" in
         github)
             local branch
             branch=$(gh pr view "$number" --json headRefName --jq '.headRefName')
+            local workflow_flag=()
+            [[ -n "$workflow" ]] && workflow_flag=(--workflow "$workflow")
             local run_id
-            run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
+            run_id=$(gh run list --branch "$branch" "${workflow_flag[@]}" --limit 1 --json databaseId --jq '.[0].databaseId')
             [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
             gh run watch "$run_id" --exit-status
             ;;
@@ -478,6 +482,14 @@ pr_logs() {
     local number="${1:-}"
     [[ -n "$number" ]] && shift
 
+    local workflow=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --workflow) workflow="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
     if [[ -z "$number" ]]; then
         number=$(auto_detect_pr) || exit 1
     fi
@@ -486,8 +498,10 @@ pr_logs() {
         github)
             local branch
             branch=$(gh pr view "$number" --json headRefName --jq '.headRefName')
+            local workflow_flag=()
+            [[ -n "$workflow" ]] && workflow_flag=(--workflow "$workflow")
             local run_id
-            run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
+            run_id=$(gh run list --branch "$branch" "${workflow_flag[@]}" --limit 1 --json databaseId --jq '.[0].databaseId')
             [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
             gh run view "$run_id" --log
             ;;
