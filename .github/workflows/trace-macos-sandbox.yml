@@ -3,6 +3,20 @@ name: Trace macOS Sandbox File Access
 # Run manually to capture a fs_usage trace of the known-good sandbox profile.
 # The artifact feeds tools/macos-sandbox-trace-reduce.sh to build the allowlist.
 on:
+  push:
+    branches:
+      - fix/macos-sandbox-security-v2
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/macos-sandbox.sh'
+      - 'tools/macos-sandbox-profile.sb'
+      - '.github/workflows/trace-macos-sandbox.yml'
+  pull_request:
+    paths:
+      - 'tools/agent-sandbox.sh'
+      - 'tools/macos-sandbox.sh'
+      - 'tools/macos-sandbox-profile.sb'
+      - '.github/workflows/trace-macos-sandbox.yml'
   workflow_dispatch:
 
 jobs:
