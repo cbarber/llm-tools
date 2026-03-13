@@ -453,10 +453,9 @@ pr_ci() {
         number=$(auto_detect_pr) || exit 1
     fi
 
-    local timeout=600
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --timeout) timeout="$2"; shift 2 ;;
+            --timeout) shift 2 ;;  # gh run watch has no --timeout; consumed for compat
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -468,7 +467,7 @@ pr_ci() {
             local run_id
             run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
             [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
-            gh run watch "$run_id" --timeout "$timeout"
+            gh run watch "$run_id" --exit-status
             ;;
         *)
             echo "Error: pr ci not implemented for $FORGE_TYPE" >&2; exit 1 ;;
@@ -490,7 +489,7 @@ pr_logs() {
             local run_id
             run_id=$(gh run list --branch "$branch" --limit 1 --json databaseId --jq '.[0].databaseId')
             [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
-            gh run view "$run_id" --log-failed
+            gh run view "$run_id" --log
             ;;
         *)
             echo "Error: pr logs not implemented for $FORGE_TYPE" >&2; exit 1 ;;
