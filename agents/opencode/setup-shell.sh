@@ -33,6 +33,7 @@ select_workflow() {
 }
 
 export AGENTS_TEMPLATE="$(select_workflow)"
+export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
 
 # OPENCODE_CONFIG_CONTENT (highest precedence) injects the workflow alongside project AGENTS.md
 export OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"${AGENTS_TEMPLATE}\"]}"
