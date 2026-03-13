@@ -1,86 +1,32 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI agents working in this repository.
 
 ## Project Purpose
 
 This repository provides experimental environments for LLM agent tools, MCPs (Model Context Protocols), and supporting tools. Each environment is configured via Nix flakes that construct development shells with pre-loaded configurations and tooling.
 
-## Configuration Templates
-
-Agent shells auto-generate config files on first run via `agents/*/setup-*.sh` scripts. To update default configurations:
-- Edit templates in setup scripts (e.g., `agents/opencode/setup-mcp.sh`)
-- NOT the generated files (opencode.json, .mcp.json, cclsp.json)
-
-### User-Specific AGENTS.md Templates
-
-Create personalized templates in `agents/templates/${USER}.md` to customize agent instructions. The shell automatically selects:
-
-1. `agents/templates/${USER}.md` (if exists)
-2. `agents/templates/default.md` (fallback)
-
-Example:
-```bash
-cp agents/templates/default.md agents/templates/cbarber.md
-# Edit with personal preferences
-```
-
-See `agents/templates/README.md` for details.
-
 ## Agent Environment
 
-You are running in a sandboxed environment by default. The sandbox isolates filesystem access while allowing read-write to the current project directory and necessary git directories. Check `IN_AGENT_SANDBOX` environment variable to confirm sandbox status.
+Running inside `nix develop .#opencode` or `nix develop .#claude-code` provides:
+- Sandboxed filesystem access (`IN_AGENT_SANDBOX` is set)
+- Workflow instructions injected automatically via `$AGENTS_TEMPLATE`
+- Pre-configured MCP, beads, and PR tooling
 
-## Development Guidelines
-
-* Be succinct. Only provide examples if necessary
-* Be strategic. Plan first, ask questions, then execute
-* Challenge assumptions with evidence
-* **When git commands fail, STOP and ask for help**
+Outside the nix shell, only this file is available.
 
 ## Repository Structure
 
 ```
 llm-tools/
-├── flake.nix                 # Root flake exposing all agents
-├── flake.lock               # Version pinning for reproducible builds
+├── flake.nix                    # Root flake exposing all agents
 ├── agents/
-│   └── claude-code/
-│       ├── default.nix      # Claude Code shell environment
-│       └── claude.md.template  # Shared CLAUDE.md template
-├── tools/
-│   └── default.nix         # Framework for shared MCP and agent tools
-└── prompt                   # Original development guidelines
-```
-
-## Usage
-
-### Remote Usage (Recommended)
-
-```bash
-# Enter Claude Code environment from any directory
-nix develop github:cbarber/llm-tools#claude-code
-
-# This will:
-# 1. Check for authentication (API key or browser)
-# 2. Search for existing CLAUDE.md files in precedence order
-# 3. Create CLAUDE.local.md template if no CLAUDE files found
-# 4. Launch Claude Code automatically
-```
-
-### Local Development
-
-```bash
-# Clone and enter development mode
-git clone https://github.com/cbarber/llm-tools
-cd llm-tools
-nix develop .#claude-code
-
-# Validate flake structure
-nix flake check
-
-# Update dependencies
-nix flake update
+│   ├── claude-code/             # Claude Code shell environment
+│   ├── opencode/                # OpenCode shell environment
+│   └── templates/
+│       └── workflow.md          # Default injected workflow
+├── tools/                       # Shared MCP servers and agent tools
+└── .opencode/plugin/temper      # OpenCode temper plugin
 ```
 
 ## Architecture
@@ -92,7 +38,7 @@ Each agent in `agents/` provides an isolated development shell with:
 - Agent-specific tooling and configurations
 - Shared tools from the `tools/` directory
 - Authentication handling (API key + browser auth)
-- Automatic CLAUDE.md template provisioning
+- Workflow injection via `$AGENTS_TEMPLATE`
 - Auto-launch into the agent environment
 
 ### Tool Sharing
@@ -104,345 +50,22 @@ The `tools/default.nix` framework allows:
 - Shared dependency management
 - Reproducible tool versions via flake.lock
 
-### CLAUDE.md Precedence
+## Configuration
 
-The shell checks for CLAUDE files in this order:
+Shell-generated files are created on first entry — edit the templates, not the outputs:
 
-1. Current directory: `CLAUDE.md` or `CLAUDE.local.md`
-2. Parent directories: Walk up tree checking each level
-3. Child directories: Recursive search (on-demand by Claude)
-4. Home directory: `~/.claude/CLAUDE.md`
-
-If none found, creates `CLAUDE.local.md` from template.
+| Generated file | Template source |
+|---|---|
+| `opencode.json` | `agents/opencode/setup-mcp.sh` |
+| `.mcp.json` | `agents/claude-code/setup-mcp.sh` |
+| `cclsp.json` | `agents/claude-code/setup-mcp.sh` |
+| `.claude/settings.local.json` | `agents/claude-code/settings.template.json` |
 
 ## Common Commands
 
 ```bash
-# Test flake validation
-nix flake check
-
-# Build specific agent
-nix build .#claude-code
-
-# Enter specific environment
+nix flake check        # Validate flake structure
+nix flake update       # Update all inputs
+nix develop .#opencode
 nix develop .#claude-code
-
-# Update all inputs
-nix flake update
-
-# Package new tools with nix-init
-nix-shell -p nix-init --run "nix-init"
 ```
-
-## Beads Integration
-
-Beads (bd) provides task tracking and memory management. Auto-initializes on first shell entry (disable with `BD_SKIP_SETUP=true`).
-
-**Agent Integration:**
-- **Claude Code**: Hooks auto-inject `bd prime` context on session start/compaction
-- **OpenCode**: [opencode-beads](https://github.com/joshuadavidthomas/opencode-beads) plugin (v0.3.0) provides context injection and `/bd-*` commands
-  - Pinned version in opencode.json: `"plugin": ["opencode-beads@0.3.0"]`
-  - OpenCode auto-installs to `~/.cache/opencode/node_modules/` on first use
-  - No project pollution - installed globally per-user
-
-**Branch Configuration:**
-
-For protected branches, use a separate sync branch:
-```bash
-export BD_BRANCH=beads-sync  # Commits to beads-sync via git worktrees
-```
-
-Without `BD_BRANCH`, commits go to current branch.
-
-**Essential Commands:**
-
-```bash
-bd ready              # Show available work
-bd create "Task" -p 1 # Create task
-bd show <id>          # View details
-bd sync               # Sync to git
-```
-
-## Authentication
-
-Claude Code supports two authentication methods:
-
-- **Browser authentication** (default for subscription users)
-- **API key authentication** via `ANTHROPIC_API_KEY`
-
-The shell sources API keys from:
-
-1. Current directory `.env` file
-2. `~/.config/claude/.env` file
-3. Environment variables
-
-If no API key found, uses browser authentication automatically.
-
-## Tool Integration
-
-Use `nix-init` to package new tools:
-
-1. Create tool directory in `tools/`
-2. Run `nix-init` to generate package.nix
-3. Import in `tools/default.nix`
-4. Add to agent buildInputs as needed
-
-This allows shared MCP servers and custom tooling across multiple agent environments.
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, complete ALL steps. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push --force-with-lease
-   git status  # MUST show "up to date with origin"
-   ```
-   If `git push --force-with-lease` fails, STOP and request manual intervention.
-
-5. **Clean up** - Remove debug code, temp files
-6. **Verify** - All changes committed AND pushed
-7. **Session complete** - Next session will auto-load current state via temper
-
-**Handoff for context:**
-Provide brief context about what was accomplished for session continuity:
-```
-Recent Work:
-- Completed llm-tools-xxx: Brief summary of what changed and why
-
-PR Status:
-<EXECUTE: bash tools/forge pr status and paste output here>
-
-Context:
-- Any non-obvious decisions or gotchas for next session
-```
-
-Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If force-with-lease fails, abort and request help
-
-## Workflow
-
-### init
-
-**Check repository state and pick work:**
-
-```bash
-# Show agent environment context
-if [[ -n "${OPENCODE:-}" ]]; then
-  echo "Agent: OpenCode"
-elif [[ -n "${CLAUDE_CODE:-}" ]]; then
-  echo "Agent: Claude Code"
-else
-  echo "Agent: Unknown"
-fi
-
-if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
-  echo "Sandbox: enabled"
-else
-  echo "Sandbox: disabled"
-fi
-
-echo ""
-
-git status --short --branch
-
-bash tools/forge pr status
-
-if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
-  echo ""
-  echo "📋 Available work:"
-  bd ready --limit=5
-fi
-```
-
-**Next action based on branch state:**
-- **On main, clean** → Pick issue, create feature branch
-- **On feature branch, PR merged** → Return to main, create new branch
-- **On feature branch, PR open** → Continue work or address review feedback
-- **On feature branch, no PR** → Complete work and create PR
-
-### edit (tool.execute.before:edit|write)
-
-* Code must be self-documenting. Comments explain WHY, not WHAT
-* Avoid function side effects. Clear input → output
-* Avoid deep nesting. Return early
-* Delete code rather than commenting it out
-
-### commit (tool.execute.after:edit|write)
-
-```
-git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"...
-```
-
-Commit after edit. An atomic commit is an operation that applies a set of distinct changes as a single operation. Either target an existing unmerged commit with a fixup or create a new commit for this change.
-
-**Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
-
-Format: `<type>(<scope>): <subject>`
-
-**Types:**
-- `feat` - New feature for the user
-- `fix` - Bug fix for the user
-- `refactor` - Code restructuring without behavior change
-- `test` - Adding or updating tests
-- `docs` - Documentation changes
-- `style` - Formatting, whitespace (no code change)
-- `chore` - Build tasks, dependencies (no production code change)
-
-**Body:** 1-2 sentences on WHY (motivation, rationale). Omit if subject is sufficient. Never itemize implementation.
-
-**Footer:** `Authored By: <agent> (<model>)`
-
-**Example:**
-```
-fix(sandbox): support XDG git config in Linux sandbox
-
-Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
-Linux sandbox only mounted legacy file, breaking XDG-only users.
-
-Authored By: claude-code (claude-3.7-sonnet)
-```
-
-**Rewriting commit messages:**
-
-To change a commit message further back in history, use `amend!` commits:
-
-```bash
-# Get the subject line of the commit to reword
-git log --format="%s" -1 <commit-hash>
-
-# Create amend commit (subject = "amend! <original-subject>", body = new full message)
-git commit --allow-empty -m "amend! <original-subject>" -m "<new-full-message-including-subject>"
-
-# Apply via autosquash
-git rebase --autosquash origin/main
-```
-
-Example:
-```bash
-# Reword commit abc123 "feat(foo): add bar"
-git commit --allow-empty -m "amend! feat(foo): add bar" -m "feat(foo): add bar
-
-New body explaining why without outdated details.
-
-Authored By: claude-code (claude-3.7-sonnet)"
-
-git rebase --autosquash origin/main
-```
-
-### pull-request (tool.execute.after:bash:.*forge pr create.*)
-
-```bash
-bash tools/forge pr status
-```
-
-**Creating PRs:**
-```bash
-git push -u origin <branch>
-bash tools/forge pr create --title "..." --body "..."
-```
-
-**Viewing PR status:**
-```bash
-bash tools/forge pr view 123
-bash tools/forge pr comments 123
-```
-
-**Addressing review feedback:**
-```bash
-# Option 1: Automatic fixup with git-absorb
-git add <changed-files>
-git absorb                            # Automatically creates fixups for staged changes
-git rebase --autosquash origin/main   # Squash fixups
-
-# Option 2: Manual fixup
-git commit --fixup=<sha>              # Fix specific commit
-git rebase --autosquash origin/main   # Squash fixups
-
-# Option 3: Interactive rebase (reorder, drop, reword, squash)
-git rebase -i <ref>
-# GIT_SEQUENCE_EDITOR halts with a break, prints the todo path
-# Edit the todo file, then: git rebase --continue
-# If --continue opens an editor (reword/squash message):
-# GIT_EDITOR prints the file path and exits — write message with -m or --amend -m
-
-git push --force-with-lease
-```
-
-**Replying to review comments:**
-```bash
-bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
-```
-
-**Key points:**
-- NEVER call `gh` or `tea` directly — use `bash tools/forge`
-- PR body must explain WHY the change was made
-- Link to beads issue if applicable
-- Use `--draft` when work is incomplete or tests are failing
-
-See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
-
-### complete
-
-**Work is NOT done until pushed.** Complete ALL steps:
-
-1. File issues for remaining work
-2. Run quality gates (tests, linters, builds)
-3. Update beads (close/update issues)
-4. Push to remote:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push --force-with-lease
-   git status  # MUST show "up to date with origin"
-   ```
-   If `--force-with-lease` fails, STOP and ask for help.
-
-5. Handoff for context:
-   Provide brief context about what was accomplished for session continuity:
-   ```
-   Recent Work:
-   - Completed llm-tools-xxx: Brief summary of what changed and why
-
-   PR Status:
-   <EXECUTE: bash tools/forge pr status and paste output here>
-
-   Context:
-   - Any non-obvious decisions or gotchas for next session
-   ```
-
-   Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
-
-## Quick Reference (by frequency)
-
-**Session start:**
-- Run `temper init` to check state and pick work
-- See [Workflow: init](#init)
-
-**Every commit:**
-- Run `temper commit` to review commit format
-- See [Workflow: commit](#commit)
-
-**Before PR:**
-- Run `temper pr` to review PR workflow
-- See [Workflow: pull-request](#pull-request)
-
-**Every session end:**
-- Run `temper complete` for completion checklist
-- See [Workflow: complete](#complete) and [Landing the Plane](#landing-the-plane)
-
-**As needed:**
-- [Development Guidelines](#development-guidelines) - Code style, terseness
-- [Beads Integration](#beads-integration) - Task tracking workflow
