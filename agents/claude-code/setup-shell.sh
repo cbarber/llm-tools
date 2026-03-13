@@ -11,19 +11,22 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
   export -f claude
 fi
 
-# Select user-specific template with fallback to default
-# Priority: agents/templates/${USER}.md -> agents/templates/default.md
-select_template() {
-  local user_template="${AGENTS_TEMPLATES_DIR}/${USER}.md"
-  if [ -f "$user_template" ]; then
-    echo "$user_template"
-  else
-    echo "$AGENTS_TEMPLATE_DEFAULT"
+# Resolve workflow file: explicit env > ~/.config/nixsmith/workflow.md > default
+# Relative AGENTS_TEMPLATE is resolved against AGENTS_TEMPLATES_DIR
+select_workflow() {
+  if [[ -n "${AGENTS_TEMPLATE:-}" ]]; then
+    if [[ "${AGENTS_TEMPLATE}" != /* ]]; then
+      echo "${AGENTS_TEMPLATES_DIR}/${AGENTS_TEMPLATE}"
+    else
+      echo "${AGENTS_TEMPLATE}"
+    fi
+    return
   fi
+  [[ -f ~/.config/nixsmith/workflow.md ]] && echo ~/.config/nixsmith/workflow.md && return
+  echo "${AGENTS_TEMPLATE_DEFAULT}"
 }
 
-AGENTS_TEMPLATE="$(select_template)"
-export AGENTS_TEMPLATE
+export AGENTS_TEMPLATE="$(select_workflow)"
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 # Source .env files if they exist (for API key auth)
