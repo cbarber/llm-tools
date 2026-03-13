@@ -21,6 +21,7 @@ select_workflow() {
 
 export AGENTS_TEMPLATE="$(select_workflow)"
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
+export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
   claude() { agent-sandbox claude --append-system-prompt-file "${AGENTS_TEMPLATE}" "$@"; }
