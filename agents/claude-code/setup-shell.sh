@@ -3,13 +3,6 @@ set -euo pipefail
 
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
-# Alias claude to run in sandbox when AGENT_SANDBOX is enabled
-if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  claude() {
-    agent-sandbox claude "$@"
-  }
-  export -f claude
-fi
 
 # Resolve workflow file: explicit env > ~/.config/nixsmith/workflow.md > default
 # Relative AGENTS_TEMPLATE is resolved against AGENTS_TEMPLATES_DIR
@@ -29,6 +22,13 @@ select_workflow() {
 export AGENTS_TEMPLATE="$(select_workflow)"
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
+if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
+  claude() { agent-sandbox claude --append-system-prompt-file "${AGENTS_TEMPLATE}" "$@"; }
+else
+  claude() { command claude --append-system-prompt-file "${AGENTS_TEMPLATE}" "$@"; }
+fi
+export -f claude
+
 # Source .env files if they exist (for API key auth)
 if [ -f .env ]; then
   source .env
@@ -43,34 +43,6 @@ fi
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "Note: No ANTHROPIC_API_KEY found. Claude Code will use browser authentication."
   echo "If you prefer API key auth, set ANTHROPIC_API_KEY in .env or ~/.config/claude/.env"
-fi
-
-# Check for agent instruction files in all locations agents search
-agents_found=false
-
-# Check current and parent directories (walk up to root)
-dir="$(pwd)"
-while [ "$dir" != "/" ]; do
-  if [ -f "$dir/AGENTS.md" ] || [ -f "$dir/CLAUDE.md" ] || [ -f "$dir/CLAUDE.local.md" ]; then
-    agents_found=true
-    break
-  fi
-  dir="$(dirname "$dir")"
-done
-
-# Check child directories using find
-if [ "$agents_found" = false ] && find . -name "AGENTS.md" -o -name "CLAUDE.md" -o -name "CLAUDE.local.md" | head -1 | grep -q .; then
-  agents_found=true
-fi
-
-# Check home directory
-[ "$agents_found" = false ] && [ -f ~/.claude/CLAUDE.md ] && agents_found=true
-
-# Create template if no agent instruction file found anywhere
-if [ "$agents_found" = false ]; then
-  cp "$AGENTS_TEMPLATE" ./AGENTS.md
-  ln -s AGENTS.md CLAUDE.md
-  echo "Created AGENTS.md with CLAUDE.md symlink (add AGENTS.md to .gitignore if needed)"
 fi
 
 # Setup MCP configuration for detected languages

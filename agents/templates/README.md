@@ -1,46 +1,41 @@
 # Agent Templates
 
-This directory contains templates for agent instruction files (AGENTS.md/CLAUDE.md).
+This directory contains workflow instruction files injected ephemerally into agent sessions.
 
-## Template Selection
+## How It Works
 
-Templates are selected based on the `$USER` environment variable:
+On shell entry, the resolved workflow file is written to a per-session temp file and
+injected into the agent — never written to the project repo. Project `AGENTS.md` files
+are entirely the project's concern.
 
-1. **User-specific**: `${USER}.md` (e.g., `cbarber.md`)
-2. **Default**: `default.md` (fallback for all users)
+## Workflow File Selection
 
-## Creating a User-Specific Template
+Priority (first match wins):
 
-To create your own personalized template:
+1. `$AGENTS_TEMPLATE` env var — set before shell entry for per-shell override
+   - Relative paths resolve against `$AGENTS_TEMPLATES_DIR` (this directory in the Nix store)
+   - Absolute paths used as-is
+2. `~/.config/nixsmith/workflow.md` — personal workflow, applies to all projects
+3. `agents/templates/workflow.md` — default fallback
 
-```bash
-# Copy the default template as a starting point
-cp agents/templates/default.md agents/templates/${USER}.md
+## Customising Your Workflow
 
-# Edit to add your preferences
-# Example customizations:
-# - Personal coding style preferences
-# - Project-specific guidelines
-# - Team conventions
-# - Frequently used commands
-```
+Drop your workflow file at `~/.config/nixsmith/workflow.md`. It will be picked up
+automatically on every shell entry across all projects, with no repo changes needed.
 
-## Example
-
-If your username is `cbarber`, create `agents/templates/cbarber.md`:
+To diff against the upstream default:
 
 ```bash
-cp agents/templates/default.md agents/templates/cbarber.md
-# Edit agents/templates/cbarber.md with your preferences
+diff ~/.config/nixsmith/workflow.md "$AGENTS_TEMPLATES_DIR/workflow.md"
 ```
 
-Next time you run `nix develop .#claude-code` or `nix develop .#opencode`, your custom template will be used automatically when creating new AGENTS.md files.
+## Parallel Shell Experimentation
 
-## Template Structure
+Override per shell before entering the environment:
 
-Templates should include:
-- **Development Guidelines**: Coding style, naming conventions
-- **Landing the Plane**: Session completion checklist
-- **Project-specific instructions**: Add any project context here
+```bash
+AGENTS_TEMPLATE=my-experiment.md nix develop .#opencode
+```
 
-See `default.md` for the recommended baseline structure.
+Relative names resolve against `$AGENTS_TEMPLATES_DIR`. Each shell gets its own
+temp file so parallel shells in the same worktree don't interfere.

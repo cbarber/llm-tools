@@ -34,6 +34,9 @@ select_workflow() {
 
 export AGENTS_TEMPLATE="$(select_workflow)"
 
+# OPENCODE_CONFIG_CONTENT (highest precedence) injects the workflow alongside project AGENTS.md
+export OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"${AGENTS_TEMPLATE}\"]}"
+
 # Source .env files if they exist (for API key auth)
 [ -f .env ] && source .env
 [ -f ~/.config/opencode/.env ] && source ~/.config/opencode/.env
@@ -60,34 +63,6 @@ fi
 export OPENCODE_PORT
 export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
 echo "OpenCode API: $OPENCODE_API"
-
-# Check for agent instruction files in all locations agents search
-agents_found=false
-
-# Check current and parent directories (walk up to root)
-dir="$(pwd)"
-while [ "$dir" != "/" ]; do
-  if [ -f "$dir/AGENTS.md" ] || [ -f "$dir/CLAUDE.md" ] || [ -f "$dir/CLAUDE.local.md" ]; then
-    agents_found=true
-    break
-  fi
-  dir="$(dirname "$dir")"
-done
-
-# Check child directories using find
-if [ "$agents_found" = false ] && find . -name "AGENTS.md" -o -name "CLAUDE.md" -o -name "CLAUDE.local.md" | head -1 | grep -q .; then
-  agents_found=true
-fi
-
-# Check global config directory
-[ "$agents_found" = false ] && [ -f ~/.config/opencode/AGENTS.md ] && agents_found=true
-
-# Create template if no agent instruction file found anywhere
-if [ "$agents_found" = false ]; then
-  cp "$AGENTS_TEMPLATE" ./AGENTS.md
-  ln -s AGENTS.md CLAUDE.md
-  echo "Created AGENTS.md with CLAUDE.md symlink (add AGENTS.md to .gitignore if needed)"
-fi
 
 # Setup MCP configuration for detected languages
 ${SETUP_MCP_SCRIPT}
