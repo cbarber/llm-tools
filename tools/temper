@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGENTS_MD="${AGENTS_MD:-AGENTS.md}"
+AGENTS_MD="${AGENTS_TEMPLATE:-AGENTS.md}"
 
 show_help() {
   cat <<EOF
