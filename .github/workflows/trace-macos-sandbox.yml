@@ -1,0 +1,61 @@
+name: Trace macOS Sandbox File Access
+
+# Run manually to capture a fs_usage trace of the known-good sandbox profile.
+# The artifact feeds tools/macos-sandbox-trace-reduce.sh to build the allowlist.
+on:
+  workflow_dispatch:
+
+jobs:
+  trace:
+    name: Capture fs_usage trace
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Capture fs_usage trace
+        run: |
+          # fs_usage requires root and must be started before the workload.
+          # Global scope (-f filesys, no -p) captures all child processes without
+          # needing to know PIDs in advance. The CI runner is otherwise idle so
+          # noise is low and we filter to known roots afterward.
+          TRACE_FILE="$(pwd)/fs_usage_trace.txt"
+          sudo fs_usage -w -f filesys > "$TRACE_FILE" &
+          FS_USAGE_PID=$!
+
+          # Give fs_usage a moment to start before the workload begins
+          sleep 2
+
+          # Representative session: shell startup + nix resolution + git read.
+          # This matches what an agent actually does on first launch.
+          ./tools/agent-sandbox.sh bash -c '
+            nix run nixpkgs#hello
+            git log --oneline -1
+            ls ~/.config
+          '
+
+          sleep 2
+          sudo kill "$FS_USAGE_PID" || true
+          wait "$FS_USAGE_PID" 2>/dev/null || true
+
+          # Filter to roots that matter for the allowlist. Excludes CI runner
+          # ephemeral paths that would never appear on a developer machine.
+          grep -E '^[0-9]' "$TRACE_FILE" \
+            | awk '{print $NF}' \
+            | grep -E '^(/nix|/usr|/bin|/sbin|/System|/Library|/private|/etc|'"$HOME"')' \
+            | sort -u \
+            > fs_usage_paths.txt
+
+          echo "Captured $(wc -l < fs_usage_paths.txt) unique paths"
+          head -20 fs_usage_paths.txt
+
+      - name: Upload trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs_usage_paths
+          path: fs_usage_paths.txt
+          retention-days: 30
