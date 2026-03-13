@@ -53,8 +53,8 @@ fi
 ```
 
 **Next action based on branch state:**
-- **On main, clean** → Pick issue, create feature branch
-- **On feature branch, PR merged** → Return to main, create new branch
+- **On $DEFAULT_BRANCH, clean** → Pick issue, create feature branch
+- **On feature branch, PR merged** → Return to $DEFAULT_BRANCH, create new branch
 - **On feature branch, PR open** → Continue work or address review feedback
 - **On feature branch, no PR** → Complete work and create PR
 
@@ -68,7 +68,7 @@ fi
 ### commit (tool.execute.after:edit|write)
 
 ```
-git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"...
+git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/${DEFAULT_BRANCH})"...
 ```
 
 Commit after edit. An atomic commit is self-contained, related, and fully-functional.
@@ -116,7 +116,7 @@ git log --format="%s" -1 <commit-hash>
 git commit --allow-empty -m "amend! <original-subject>" -m "<new-full-message-including-subject>"
 
 # Apply via autosquash
-git rebase --autosquash origin/main
+git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```
 
 Example:
@@ -128,7 +128,7 @@ New body explaining why without outdated details.
 
 Authored By: claude-code (claude-3.7-sonnet)"
 
-git rebase --autosquash origin/main
+git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```
 
 ### pull-request (tool.execute.after:bash:.*forge pr create.*)
@@ -153,12 +153,12 @@ bash tools/forge pr comments 123
 ```bash
 # Option 1: Automatic fixup with git-absorb
 git add <changed-files>
-git absorb                            # Automatically creates fixups for staged changes
-git rebase --autosquash origin/main   # Squash fixups
+git absorb                                        # Automatically creates fixups for staged changes
+git rebase --autosquash origin/${DEFAULT_BRANCH}  # Squash fixups
 
 # Option 2: Manual fixup
-git commit --fixup=<sha>              # Fix specific commit
-git rebase --autosquash origin/main   # Squash fixups
+git commit --fixup=<sha>                          # Fix specific commit
+git rebase --autosquash origin/${DEFAULT_BRANCH}  # Squash fixups
 
 # Option 3: Interactive rebase (reorder, drop, reword, squash)
 git rebase -i <ref>
