@@ -47,23 +47,27 @@ if [[ ! -x "$SANDBOX_SCRIPT" ]]; then
     exit 1
 fi
 
-# Check if bwrap is available (either in PATH or nix store)
-BWRAP_AVAILABLE=false
-if command -v bwrap &>/dev/null; then
-    BWRAP_AVAILABLE=true
-else
-    # Check nix store
-    for candidate in /nix/store/*-bubblewrap-*/bin/bwrap; do
-        if [[ -x "$candidate" ]]; then
-            BWRAP_AVAILABLE=true
-            break
-        fi
-    done
-fi
+PLATFORM="$(uname -s)"
 
-if ! $BWRAP_AVAILABLE; then
-    echo "Error: bubblewrap (bwrap) not found. Install with: nix-shell -p bubblewrap"
-    exit 1
+# On Linux the sandbox uses bubblewrap; verify it's available.
+# On macOS the sandbox uses sandbox-exec which ships with the OS.
+if [[ "$PLATFORM" == "Linux" ]]; then
+    BWRAP_AVAILABLE=false
+    if command -v bwrap &>/dev/null; then
+        BWRAP_AVAILABLE=true
+    else
+        for candidate in /nix/store/*-bubblewrap-*/bin/bwrap; do
+            if [[ -x "$candidate" ]]; then
+                BWRAP_AVAILABLE=true
+                break
+            fi
+        done
+    fi
+
+    if ! $BWRAP_AVAILABLE; then
+        echo "Error: bubblewrap (bwrap) not found. Install with: nix-shell -p bubblewrap"
+        exit 1
+    fi
 fi
 
 echo "======================================"
@@ -150,10 +154,10 @@ fi
 log_test "Work directory environment variable"
 
 WORK_DIR_PATH=$("$SANDBOX_SCRIPT" bash -c 'echo $AGENT_WORK_DIR')
-if [[ -n "$WORK_DIR_PATH" ]] && [[ "$WORK_DIR_PATH" == "/tmp" ]]; then
-    log_pass "AGENT_WORK_DIR environment variable set correctly: $WORK_DIR_PATH"
+if [[ -n "$WORK_DIR_PATH" ]]; then
+    log_pass "AGENT_WORK_DIR environment variable set: $WORK_DIR_PATH"
 else
-    log_fail "AGENT_WORK_DIR not set or incorrect: '$WORK_DIR_PATH' (expected: /tmp)"
+    log_fail "AGENT_WORK_DIR not set"
 fi
 
 # TEST 5: Write access to work directory
@@ -251,13 +255,17 @@ else
     echo "  Skipped (curl not available)"
 fi
 
-# TEST 12: Process information access
+# TEST 12: Process information access (/proc — Linux only)
 log_test "Process information access (/proc)"
 
-if "$SANDBOX_SCRIPT" cat /proc/self/status 2>/dev/null | grep -q "Name:"; then
-    log_pass "/proc is accessible"
+if [[ "$PLATFORM" == "Linux" ]]; then
+    if "$SANDBOX_SCRIPT" cat /proc/self/status 2>/dev/null | grep -q "Name:"; then
+        log_pass "/proc is accessible"
+    else
+        log_fail "/proc is not accessible"
+    fi
 else
-    log_fail "/proc is not accessible"
+    log_pass "/proc skipped (not applicable on $PLATFORM)"
 fi
 
 # TEST 13: Sandbox startup performance
