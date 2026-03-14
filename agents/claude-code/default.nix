@@ -8,10 +8,10 @@ pkgs.mkShell {
     [
       claude-code
       findutils
-      bubblewrap
       gh
       tea
     ]
+    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ bubblewrap ]
     ++ tools.all;
 
   shellHook = ''
@@ -25,7 +25,7 @@ pkgs.mkShell {
     export SETUP_SETTINGS_SCRIPT="${./setup-settings.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
-    export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
+    ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
     export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
 
     source ${./setup-shell.sh}

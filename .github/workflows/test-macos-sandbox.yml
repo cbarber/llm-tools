@@ -7,12 +7,20 @@ on:
       - 'tools/agent-sandbox.sh'
       - 'tools/macos-sandbox.sh'
       - 'tools/macos-sandbox-profile.sb'
+      - 'tools/test-agent-sandbox.sh'
+      - 'agents/**'
+      - 'flake.nix'
+      - 'flake.lock'
       - '.github/workflows/test-macos-sandbox.yml'
   pull_request:
     paths:
       - 'tools/agent-sandbox.sh'
       - 'tools/macos-sandbox.sh'
       - 'tools/macos-sandbox-profile.sb'
+      - 'tools/test-agent-sandbox.sh'
+      - 'agents/**'
+      - 'flake.nix'
+      - 'flake.lock'
       - '.github/workflows/test-macos-sandbox.yml'
   workflow_dispatch:
 
@@ -128,3 +136,20 @@ jobs:
         run: |
           bash tools/agent-sandbox.sh bash -c '[[ "$IN_AGENT_SANDBOX" == "1" ]] || { echo "FAIL: IN_AGENT_SANDBOX not set"; exit 1; }'
 
+
+  test-flake:
+    name: Test nix develop .#opencode on macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Run sandbox tests
+        run: |
+          export AUTO_LAUNCH=false
+          export PR_POLL_DAEMON=false
+          export SKIP_AGENT_SETUP=true
+          export AGENT_SANDBOX_DEBUG=true
+
+          nix develop .#opencode --command bash tools/test-agent-sandbox.sh

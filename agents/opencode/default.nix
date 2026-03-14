@@ -8,10 +8,10 @@ pkgs.mkShell {
     [
       opencode
       findutils
-      bubblewrap
       gh
       tea
     ]
+    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ bubblewrap ]
     ++ tools.all;
 
   shellHook = ''
@@ -22,7 +22,7 @@ pkgs.mkShell {
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
-    export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"
+    ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
     export OPENCODE_PLUGIN_TEMPER_DIR="${../../.opencode/plugin/temper}"
     export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
 
