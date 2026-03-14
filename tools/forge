@@ -464,14 +464,27 @@ pr_ci() {
 
     case "$FORGE_TYPE" in
         github)
-            local branch
-            branch=$(gh pr view "$number" --json headRefName --jq '.headRefName')
+            local sha
+            sha=$(git rev-parse HEAD)
             local workflow_flag=()
             [[ -n "$workflow" ]] && workflow_flag=(--workflow "$workflow")
-            local run_id
-            run_id=$(gh run list --branch "$branch" "${workflow_flag[@]}" --limit 1 --json databaseId --jq '.[0].databaseId')
-            [[ -z "$run_id" ]] && { echo "No CI run found for PR #${number}" >&2; exit 1; }
-            gh run watch "$run_id" --exit-status
+            local run_id run_url
+            run_id=$(gh run list --commit "$sha" "${workflow_flag[@]}" --limit 1 --json databaseId --jq '.[0].databaseId')
+            [[ -z "$run_id" ]] && { echo "No CI run found for sha ${sha} on PR #${number}" >&2; exit 1; }
+            run_url=$(gh run view "$run_id" --json url --jq '.url')
+
+            echo "Waiting for run ${run_id} on sha ${sha:0:7} (${run_url})"
+
+            # gh run watch ignores SIGPIPE, making it unsafe to pipe. Redirect its
+            # polling stream to a temp file so the caller can pipe pr_ci safely.
+            # The polling stream itself is discarded; gh run view prints the final state.
+            local tmp
+            tmp=$(mktemp)
+            gh run watch "$run_id" --exit-status --compact >"$tmp" 2>&1
+            local rc=$?
+            rm -f "$tmp"
+            gh run view "$run_id"
+            return $rc
             ;;
         *)
             echo "Error: pr ci not implemented for $FORGE_TYPE" >&2; exit 1 ;;
