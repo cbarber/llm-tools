@@ -120,6 +120,7 @@ HOME_WRITE_PATHS=(
   "$HOME/.cache/nix"
   "$HOME/.local/share/opencode"
   "$HOME/.local/share/claude"
+  "$HOME/go"
   "$HOME/.cache/go-build"
   "$HOME/.cargo"
   "$HOME/.cache/pip"

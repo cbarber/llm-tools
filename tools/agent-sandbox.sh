@@ -434,6 +434,7 @@ fi
 # Common language tooling cache directories
 # Only mount if they exist to avoid cluttering logs
 for cache_path in \
+  "$HOME/go" \
   "$HOME/.cache/go-build" \
   "$HOME/.cargo" \
   "$HOME/.cache/pip" \
