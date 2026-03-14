@@ -115,7 +115,7 @@ jobs:
       - name: Nix store is readable
         run: |
           mkdir -p ~/.cache/nix
-          bash tools/agent-sandbox.sh nix-shell -p hello --run hello
+          bash tools/agent-sandbox.sh nix run nixpkgs#hello
 
       - name: SANDBOX_EXTRA_RW grants write access to extra paths
         run: |
