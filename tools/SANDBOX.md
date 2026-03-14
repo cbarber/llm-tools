@@ -22,7 +22,9 @@ Uses bind mounts in a user namespace. Selected paths are mounted explicitly; eve
 Key environment variables:
 - `AGENT_SANDBOX_SSH=true` — bind-mount `~/.ssh` read-write (for git push over SSH)
 - `AGENT_SANDBOX_BIND_HOME=true` — bind-mount entire `$HOME` read-write (breaks isolation)
-- `BWRAP_EXTRA_PATHS=path1:path2` — additional read-write paths
+- `SANDBOX_EXTRA_RO=path1:path2` — additional read-only paths
+- `SANDBOX_EXTRA_RW=path1:path2` — additional read-write paths
+- `BWRAP_EXTRA_PATHS=...` — deprecated alias for `SANDBOX_EXTRA_RW`
 
 ## macOS (sandbox-exec)
 
