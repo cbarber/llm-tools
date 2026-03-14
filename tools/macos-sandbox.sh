@@ -4,7 +4,9 @@
 # Environment variables:
 #   AGENT_SANDBOX_BIND_HOME - "true" to allow writes to entire home dir (breaks isolation)
 #   AGENT_SANDBOX_SSH       - "true" to allow reads+writes to ~/.ssh (for git operations)
-#   BWRAP_EXTRA_PATHS       - colon-separated additional writable paths
+#   SANDBOX_EXTRA_RO        - colon-separated additional read-only paths
+#   SANDBOX_EXTRA_RW        - colon-separated additional read-write paths
+#   BWRAP_EXTRA_PATHS       - deprecated alias for SANDBOX_EXTRA_RW
 
 set -euo pipefail
 
@@ -153,21 +155,27 @@ if [[ -n "$HOME_WRITE_RULES" ]]; then
   PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$HOME_WRITE_RULES"')'
 fi
 
-if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
-  IFS=':' read -ra EXTRA_PATHS <<< "$BWRAP_EXTRA_PATHS"
-  EXTRA_WRITE_RULES=""
-  for i in "${!EXTRA_PATHS[@]}"; do
-    expanded_path="${EXTRA_PATHS[$i]/#\~/$HOME}"
-    [[ -z "$expanded_path" ]] && continue
-    [[ -d "$expanded_path" ]] || continue
-    PARAM_NAME="EXTRA_PATH_$i"
-    EXTRA_WRITE_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
-    SANDBOX_PARAMS+=("-D$PARAM_NAME=$expanded_path")
+_append_path_rules() {
+  local permission="$1" var="$2"
+  [[ -z "${!var:-}" ]] && return
+  local rules="" i=0 path expanded
+  IFS=':' read -ra paths <<< "${!var}"
+  for path in "${paths[@]}"; do
+    expanded="${path/#\~/$HOME}"
+    [[ -z "$expanded" ]] && continue
+    [[ -e "$expanded" ]] || continue
+    local pname="${var}_$i"
+    rules+="  (subpath (param \"$pname\"))"$'\n'
+    SANDBOX_PARAMS+=("-D$pname=$expanded")
+    (( i++ )) || true
   done
-  if [[ -n "$EXTRA_WRITE_RULES" ]]; then
-    PROFILE_CONTENT+=$'\n(allow file-write*\n'"$EXTRA_WRITE_RULES"')'
-  fi
-fi
+  [[ -n "$rules" ]] && PROFILE_CONTENT+=$'\n('"$permission"$'\n'"$rules"')'
+}
+
+_append_path_rules "allow file-read*" SANDBOX_EXTRA_RO
+_append_path_rules "allow file-read* file-write*" SANDBOX_EXTRA_RW
+# Backward compatibility
+_append_path_rules "allow file-read* file-write*" BWRAP_EXTRA_PATHS
 
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   echo "Warning: AGENT_SANDBOX_BIND_HOME=true grants full home directory write access (breaks isolation)" >&2
