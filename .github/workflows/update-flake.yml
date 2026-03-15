@@ -74,6 +74,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: update flake.lock dependencies"
           branch: automated/flake-update
+          branch-suffix: timestamp
           delete-branch: true
           title: "chore: update flake.lock dependencies"
           body-path: update-summary.md
