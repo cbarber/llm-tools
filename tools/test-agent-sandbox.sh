@@ -290,8 +290,12 @@ echo "  With sandbox:    ${TIME_WITH}ns ($(($TIME_WITH / 10000000))ms per iterat
 echo "  Startup overhead: ${OVERHEAD_PER_START}ms per sandbox start"
 echo "  Total overhead:   ${OVERHEAD_MS}ms (${PERCENT}% slower for 10 starts)"
 
-if [[ $OVERHEAD_MS -lt 1000 ]]; then
-    log_pass "Sandbox startup overhead acceptable (<1s for 10 iterations, ~${OVERHEAD_PER_START}ms per start)"
+# sandbox-exec profile compilation adds ~100ms per invocation on macOS CI;
+# bwrap on Linux has negligible startup cost so a tighter threshold applies.
+THRESHOLD_MS=1000
+[[ "$PLATFORM" == "Darwin" ]] && THRESHOLD_MS=2000
+if [[ $OVERHEAD_MS -lt $THRESHOLD_MS ]]; then
+    log_pass "Sandbox startup overhead acceptable (<${THRESHOLD_MS}ms for 10 iterations, ~${OVERHEAD_PER_START}ms per start)"
 else
     log_fail "Sandbox startup overhead high (${OVERHEAD_MS}ms for 10 iterations, ~${OVERHEAD_PER_START}ms per start)"
 fi
