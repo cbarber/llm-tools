@@ -21,8 +21,8 @@ let
   # CLAUDE-CODE
   # ============================================================================
   claude-code = {
-    version = "2.1.12";
-    srcHash = "sha256-JX72YEM2fXY7qKVkuk+UFeef0OhBffljpFBjIECHMXw=";
+    version = "2.1.76";
+    srcHash = "sha256-kjzPTG32f35eN6S85gGLUCmsNwH70Sq5rruEs/0hioM=";
     npmDepsHash = "";
   };
 
