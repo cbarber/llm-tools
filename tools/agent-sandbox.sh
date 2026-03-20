@@ -360,6 +360,13 @@ done
 # Create nixsmith config directory (always needed for agent auth)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
+# Export token eagerly so all git operations can use it, not just spr
+GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
+if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
+  GITHUB_TOKEN=$(<"$GITHUB_TOKEN_FILE")
+  export GITHUB_TOKEN
+fi
+
 # Git config (resolve symlinks to actual target)
 # Git reads both XDG and legacy configs if both exist, in that order
 if [[ -e "$HOME/.config/git/config" ]]; then
