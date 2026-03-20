@@ -5,6 +5,15 @@ git() {
   local first_arg="${1:-}"
 
   if [[ "$first_arg" == "commit" ]]; then
+    local default_branch current_branch
+    default_branch=$(command git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+    current_branch=$(command git symbolic-ref --short HEAD 2>/dev/null || echo "")
+
+    if [[ -n "$default_branch" && "$current_branch" == "$default_branch" ]]; then
+      echo "⛔ Refusing to commit on the default branch ($default_branch). Create a feature branch first." >&2
+      return 1
+    fi
+
     if command -v temper >/dev/null 2>&1 && [[ -f AGENTS.md ]]; then
       echo "📋 Commit Format:"
       echo ""
