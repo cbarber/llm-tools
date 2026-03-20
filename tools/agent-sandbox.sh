@@ -371,7 +371,7 @@ if [[ -e "$HOME/.gitconfig" ]]; then
   gitconfig_dir=$(dirname "$gitconfig_target")
   SANDBOX_MOUNTS_RO+=("$gitconfig_target:$HOME/.gitconfig")
 
-  # Mount files referenced by includeIf directives
+  # Mount files referenced by include and includeIf directives
   while IFS= read -r include_path; do
     # Expand tilde to $HOME
     expanded_path="${include_path/#\~/$HOME}"
@@ -384,7 +384,7 @@ if [[ -e "$HOME/.gitconfig" ]]; then
     resolved_path=$(readlink -f "$expanded_path" 2>/dev/null || echo "$expanded_path")
 
     [[ -f "$resolved_path" ]] && SANDBOX_MOUNTS_RO+=("$resolved_path")
-  done < <(grep -A1 '^\[includeIf' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
+  done < <(grep -A1 '^\[include' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 fi
 
 # Config directories
