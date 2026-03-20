@@ -5,11 +5,13 @@ Supplements `setup-agent-api-tokens.sh` script.
 ## Architecture
 
 Agents use two separate authentication mechanisms:
-- **Deploy keys (SSH)**: Git operations (push/pull)
-- **API tokens**: PR/issue operations (create, comment, view)
+- **Fine-grained PAT**: Git operations (push/pull/fetch) for GitHub, and PR/issue operations
+- **Deploy keys (SSH)**: Git operations for non-GitHub hosts (GitLab, Gitea)
 - **Namespace**: `~/.config/nixsmith/`
 
-Both are configured automatically on first shell entry.
+Both are configured automatically on first shell entry. Inside the sandbox, the PAT is
+injected as a git credential helper so all GitHub remotes use HTTPS regardless of how
+the repo was cloned or what URL rewrites exist in the host gitconfig.
 
 ## GitHub Token
 
@@ -18,7 +20,7 @@ Both are configured automatically on first shell entry.
 - Expiration: No expiration
 - Repository access: All repositories (or select specific repos)
 - Permissions:
-  - Contents: Read
+  - Contents: Read and write
   - Pull requests: Read and write
   - Metadata: Read (auto-included)
 

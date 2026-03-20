@@ -206,6 +206,32 @@ if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
   export GITHUB_TOKEN
 fi
 
+# Generate a session gitconfig that routes GitHub traffic through the PAT credential
+# helper instead of SSH. Our url rules are defined before the includes so they win
+# the insteadOf tiebreak when the user's config defines a competing SSH rewrite.
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  xdg_gitconfig_target=""
+  gitconfig_target=""
+  [[ -f "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
+  [[ -f "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
+
+  AGENT_GITCONFIG="$WORK_DIR/agent-gitconfig"
+  {
+    cat <<EOF
+[url "https://github.com/"]
+	insteadOf = https://github.com/
+	insteadOf = git@github.com:
+
+[credential "https://github.com"]
+	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
+
+EOF
+    [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
+    [[ -n "$gitconfig_target" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
+  } > "$AGENT_GITCONFIG"
+  export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
+fi
+
 # sandbox-exec cannot remap mounts, so we cannot replace ~/.ssh/config with
 # config.agent the way bubblewrap does on Linux. Instead, point GIT_SSH_COMMAND
 # at config.agent directly so git uses the agent key without reading ~/.ssh/config.

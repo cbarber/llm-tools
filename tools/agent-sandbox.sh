@@ -394,6 +394,27 @@ if [[ -e "$HOME/.gitconfig" ]]; then
   done < <(grep -A1 '^\[include' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 fi
 
+# Generate a session gitconfig that routes GitHub traffic through the PAT credential
+# helper instead of SSH. Our url rules are defined before the includes so they win
+# the insteadOf tiebreak when the user's config defines a competing SSH rewrite.
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  AGENT_GITCONFIG=$(mktemp /tmp/agent-gitconfig-XXXXXX)
+  {
+    cat <<EOF
+[url "https://github.com/"]
+	insteadOf = https://github.com/
+	insteadOf = git@github.com:
+
+[credential "https://github.com"]
+	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
+
+EOF
+    [[ -n "${xdg_gitconfig_target:-}" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
+    [[ -n "${gitconfig_target:-}" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
+  } > "$AGENT_GITCONFIG"
+  export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
+fi
+
 # Config directories
 debug_sandbox "Checking config directories..."
 for config_dir in "$HOME/.config/opencode" "$HOME/.config/nixsmith"; do
