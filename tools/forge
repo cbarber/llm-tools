@@ -138,6 +138,7 @@ Commands:
   pr approve [NUMBER]
   pr reviews [NUMBER] [--json]
   pr review-reply [NUMBER] COMMENT_ID TEXT
+  pr next-action
 
   issue list [--state STATE]
   issue show NUMBER
@@ -314,6 +315,33 @@ pr_status() {
                 ;;
         esac
     fi
+}
+
+pr_next_action() {
+    local branch default_branch pr_state
+    branch=$(git branch --show-current 2>/dev/null || echo "")
+    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/origin/@@')
+
+    if [[ -z "$branch" ]] || [[ "$branch" == "$default_branch" ]]; then
+        echo "→ Next: Pick an issue and create a feature branch"
+        return 0
+    fi
+
+    case "$FORGE_TYPE" in
+        github)
+            pr_state=$(gh pr view --json state --jq '.state' 2>/dev/null || echo "NONE")
+            ;;
+        gitea)
+            pr_state=$(run_tea pr list --output json 2>/dev/null \
+                | jq -r ".[] | select(.head.ref==\"$branch\") | .state" 2>/dev/null || echo "NONE")
+            ;;
+    esac
+
+    case "${pr_state:-NONE}" in
+        OPEN)   echo "→ Next: Continue work or address review feedback" ;;
+        MERGED) echo "→ Next: PR merged — return to $default_branch and start a new branch" ;;
+        *)      echo "→ Next: Complete work and create a PR" ;;
+    esac
 }
 
 pr_comment() {
@@ -710,6 +738,7 @@ case "${1:-}" in
             approve) shift 2; pr_approve "$@" ;;
             reviews) shift 2; pr_reviews "$@" ;;
             review-reply) shift 2; pr_review_reply "$@" ;;
+            next-action) shift 2; pr_next_action "$@" ;;
             *) usage; exit 1 ;;
         esac
         ;;
