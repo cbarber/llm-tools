@@ -99,6 +99,10 @@ Linux sandbox only mounted legacy file, breaking XDG-only users.
 Authored By: claude-code (claude-3.7-sonnet)
 ```
 
+**Rewriting commits:**
+
+`git rebase -i <ref>` is safe to use. GIT_SEQUENCE_EDITOR halts with a break, prints the todo path
+
 **Rewriting commit messages:**
 
 To change a commit message further back in history, use `amend!` commits:
