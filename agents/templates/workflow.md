@@ -58,7 +58,14 @@ bash tools/forge pr next-action
 
 ### commit (tool.execute.after:edit|write)
 
-```
+```bash
+default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+
+if [[ -n "$default_branch" && "$current_branch" == "$default_branch" ]]; then
+  echo "⚠ You are on the default branch ($default_branch). Create a feature branch before committing."
+fi
+
 git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/${DEFAULT_BRANCH})"...
 ```
 
