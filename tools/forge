@@ -204,7 +204,7 @@ pr_create() {
     
     case "$FORGE_TYPE" in
         github)
-            local args=(--title "$title")
+            local args=(--title "$title" --head "$(git branch --show-current)")
             [[ -n "$body" ]] && args+=(--body "$body")
             [[ "$draft" == true ]] && args+=(--draft)
             gh pr create "${args[@]}"
