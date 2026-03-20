@@ -45,13 +45,9 @@ if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
   echo "📋 Available work:"
   bd ready --limit=5
 fi
-```
 
-**Next action based on branch state:**
-- **On $DEFAULT_BRANCH, clean** → Pick issue, create feature branch
-- **On feature branch, PR merged** → Return to $DEFAULT_BRANCH, create new branch
-- **On feature branch, PR open** → Continue work or address review feedback
-- **On feature branch, no PR** → Complete work and create PR
+bash tools/forge pr next-action
+```
 
 ### dev-guidelines (tool.execute.before:edit|write)
 
