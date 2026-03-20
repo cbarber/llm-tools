@@ -11,7 +11,6 @@ You are running in a sandboxed environment by default. The sandbox isolates file
 * Be succinct. Only provide examples if necessary
 * Be strategic. Plan first, ask questions, then execute
 * Challenge assumptions with evidence
-* **When git commands fail, STOP and ask for help**
 
 ## Workflow
 
@@ -193,7 +192,6 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
    git push --force-with-lease
    git status  # MUST show "up to date with origin"
    ```
-   If `--force-with-lease` fails, STOP and ask for help.
 
 5. Handoff for context:
    Provide brief context about what was accomplished for session continuity:
