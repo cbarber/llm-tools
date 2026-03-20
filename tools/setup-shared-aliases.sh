@@ -55,17 +55,7 @@ git() {
 
 export -f git
 
-# spr wrapper to auto-load GitHub token
 spr() {
-  # Auto-load GITHUB_TOKEN if available
-  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-    local token_file="${HOME}/.config/nixsmith/github-token"
-    if [[ -f "$token_file" ]]; then
-      GITHUB_TOKEN=$(cat "$token_file")
-      export GITHUB_TOKEN
-    fi
-  fi
-  
   command spr "$@"
 }
 export -f spr

@@ -199,6 +199,13 @@ mkdir -p "$HOME/.config/opencode" "$HOME/.config/claude" "$HOME/.claude" \
 export AGENT_WORK_DIR="$WORK_DIR_CANONICAL"
 export IN_AGENT_SANDBOX="1"
 
+# Export token eagerly so all git operations can use it, not just spr
+GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
+if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
+  GITHUB_TOKEN=$(<"$GITHUB_TOKEN_FILE")
+  export GITHUB_TOKEN
+fi
+
 # sandbox-exec cannot remap mounts, so we cannot replace ~/.ssh/config with
 # config.agent the way bubblewrap does on Linux. Instead, point GIT_SSH_COMMAND
 # at config.agent directly so git uses the agent key without reading ~/.ssh/config.
