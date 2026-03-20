@@ -1,15 +1,27 @@
 #!/bin/sh
 # GIT_EDITOR for LLM agents.
 #
-# Surfaces the file git wants edited and exits nonzero so git aborts without
-# blocking. The agent reads the file, then re-runs the git command using
-# -m/-F or with this script replaced by one that writes the desired content.
-#
-# Usage: GIT_EDITOR=git-agent-editor git commit
-#        GIT_EDITOR=git-agent-editor git rebase --continue
+# Git cannot block waiting for interactive input from an agent. This exits
+# nonzero to abort the operation, then prints actionable guidance so the
+# agent can supply the content via -m or --amend -m instead.
 
 file="$1"
 
-echo "GIT_EDITOR invoked. File to edit: $file"
-echo "Write your content to $file then re-run the git command (use -m or --amend -m to skip editor)"
+case "$file" in
+  */COMMIT_EDITMSG)
+    echo "Git wants a commit message. Supply it with: git commit --amend -m '...'"
+    ;;
+  */rebase-merge/git-rebase-todo)
+    echo "Git wants you to edit the rebase todo: $file"
+    echo "Edit the file, then run: git rebase --continue"
+    ;;
+  */MERGE_MSG)
+    echo "Git wants a merge message. Supply it with: git commit --amend -m '...'"
+    ;;
+  *)
+    echo "Git wants to edit: $file"
+    echo "Write your content to the file, then re-run the git command using -m or -F to skip the editor."
+    ;;
+esac
+
 exit 1
