@@ -1,20 +1,16 @@
 # AGENTS.md
 
-This file provides guidance to LLM agents (Claude Code, OpenCode, etc.) when working with code in this repository.
+This file provides guidance to LLM agents when working with code in this repository.
 
 ## Agent Environment
 
 You are running in a sandboxed environment by default. The sandbox isolates filesystem access while allowing read-write to the current project directory and necessary git directories. Check `IN_AGENT_SANDBOX` environment variable to confirm sandbox status.
 
-## Development Guidelines
+## Guidelines
 
 * Be succinct. Only provide examples if necessary
-* Code must be self-documenting. Comments explain WHY, not WHAT
-* Avoid function side effects. Clear input → output
-* Avoid deep nesting. Return early
 * Be strategic. Plan first, ask questions, then execute
 * Challenge assumptions with evidence
-* Delete code rather than commenting it out
 * **When git commands fail, STOP and ask for help**
 
 ## Workflow
@@ -218,10 +214,3 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 - NEVER say "ready to push when you are" - YOU push
 - NEVER stop before pushing
 - Next session will auto-load state via temper
-
-## Quick Reference
-
-**Session start:** Run `temper init` - check state and pick work
-**Every commit:** Run `temper commit` - review commit format
-**Before PR:** Run `temper pr` - review PR workflow
-**Session end:** Run `temper complete` - completion checklist
