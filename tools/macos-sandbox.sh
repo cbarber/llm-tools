@@ -63,6 +63,23 @@ fi
 # sandbox-exec SIGABRTs when (subpath ...) references a non-existent path,
 # so only emit rules for paths that exist on disk.
 
+append_gitconfig_read_paths() {
+  local canonical="$1"
+  local real dir
+  real=$(readlink -f "$canonical")
+  dir=$(dirname "$real")
+
+  HOME_READ_PATHS+=("$real")
+
+  while IFS= read -r include_path; do
+    local expanded="${include_path/#\~/$HOME}"
+    [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
+    local resolved
+    resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
+    [[ -f "$resolved" ]] && HOME_READ_PATHS+=("$resolved")
+  done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
+}
+
 # Read access: git identity files and agent-specific keys (mirrors bwrap RO mounts).
 HOME_READ_PATHS=(
   "$HOME/.gitconfig"
@@ -78,6 +95,9 @@ HOME_READ_PATHS=(
   "$HOME/.config/nix"
   "$HOME/.local/share/nix"
 )
+
+[[ -e "$HOME/.config/git/config" ]] && append_gitconfig_read_paths "$HOME/.config/git/config"
+[[ -e "$HOME/.gitconfig" ]]         && append_gitconfig_read_paths "$HOME/.gitconfig"
 HOME_READ_RULES=""
 for i in "${!HOME_READ_PATHS[@]}"; do
   p="${HOME_READ_PATHS[$i]}"
