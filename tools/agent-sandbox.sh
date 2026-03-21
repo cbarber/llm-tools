@@ -369,26 +369,30 @@ fi
 
 # Git config (resolve symlinks to actual target)
 # Git reads both XDG and legacy configs if both exist, in that order
+append_gitconfig_mounts() {
+  local canonical="$1"
+  local real dir
+  real=$(readlink -f "$canonical")
+  dir=$(dirname "$real")
+
+  SANDBOX_MOUNTS_RO+=("$real:$canonical")
+
+  while IFS= read -r include_path; do
+    local expanded="${include_path/#\~/$HOME}"
+    [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
+    local resolved
+    resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
+    [[ -f "$resolved" ]] && SANDBOX_MOUNTS_RO+=("$resolved")
+  done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
+}
+
 xdg_gitconfig_target=""
 gitconfig_target=""
 [[ -e "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
 [[ -e "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
 
-if [[ -n "$xdg_gitconfig_target" ]]; then
-  SANDBOX_MOUNTS_RO+=("$(readlink -f "$xdg_gitconfig_target"):$xdg_gitconfig_target")
-fi
-if [[ -n "$gitconfig_target" ]]; then
-  gitconfig_real=$(readlink -f "$gitconfig_target")
-  gitconfig_dir=$(dirname "$gitconfig_real")
-  SANDBOX_MOUNTS_RO+=("$gitconfig_real:$gitconfig_target")
-
-  while IFS= read -r include_path; do
-    expanded_path="${include_path/#\~/$HOME}"
-    [[ "$expanded_path" != /* ]] && expanded_path="$gitconfig_dir/$expanded_path"
-    resolved_path=$(readlink -f "$expanded_path" 2>/dev/null || echo "$expanded_path")
-    [[ -f "$resolved_path" ]] && SANDBOX_MOUNTS_RO+=("$resolved_path")
-  done < <(grep -A1 '^\[include' "$gitconfig_real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
-fi
+[[ -n "$xdg_gitconfig_target" ]] && append_gitconfig_mounts "$xdg_gitconfig_target"
+[[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
 
 # Generate a session gitconfig that routes GitHub traffic through the PAT credential
 # helper instead of SSH. Our url rules are defined before the includes so they win
