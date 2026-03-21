@@ -369,29 +369,25 @@ fi
 
 # Git config (resolve symlinks to actual target)
 # Git reads both XDG and legacy configs if both exist, in that order
-if [[ -e "$HOME/.config/git/config" ]]; then
-  xdg_gitconfig_target=$(readlink -f "$HOME/.config/git/config")
-  SANDBOX_MOUNTS_RO+=("$xdg_gitconfig_target:$HOME/.config/git/config")
+xdg_gitconfig_target=""
+gitconfig_target=""
+[[ -e "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
+[[ -e "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
+
+if [[ -n "$xdg_gitconfig_target" ]]; then
+  SANDBOX_MOUNTS_RO+=("$(readlink -f "$xdg_gitconfig_target"):$xdg_gitconfig_target")
 fi
-if [[ -e "$HOME/.gitconfig" ]]; then
-  gitconfig_target=$(readlink -f "$HOME/.gitconfig")
-  gitconfig_dir=$(dirname "$gitconfig_target")
-  SANDBOX_MOUNTS_RO+=("$gitconfig_target:$HOME/.gitconfig")
+if [[ -n "$gitconfig_target" ]]; then
+  gitconfig_real=$(readlink -f "$gitconfig_target")
+  gitconfig_dir=$(dirname "$gitconfig_real")
+  SANDBOX_MOUNTS_RO+=("$gitconfig_real:$gitconfig_target")
 
-  # Mount files referenced by include and includeIf directives
   while IFS= read -r include_path; do
-    # Expand tilde to $HOME
     expanded_path="${include_path/#\~/$HOME}"
-
-    # If path is relative, resolve it relative to gitconfig's directory
-    if [[ "$expanded_path" != /* ]]; then
-      expanded_path="$gitconfig_dir/$expanded_path"
-    fi
-
+    [[ "$expanded_path" != /* ]] && expanded_path="$gitconfig_dir/$expanded_path"
     resolved_path=$(readlink -f "$expanded_path" 2>/dev/null || echo "$expanded_path")
-
     [[ -f "$resolved_path" ]] && SANDBOX_MOUNTS_RO+=("$resolved_path")
-  done < <(grep -A1 '^\[include' "$gitconfig_target" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
+  done < <(grep -A1 '^\[include' "$gitconfig_real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 fi
 
 # Generate a session gitconfig that routes GitHub traffic through the PAT credential
@@ -409,8 +405,8 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
 	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
 
 EOF
-    [[ -n "${xdg_gitconfig_target:-}" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
-    [[ -n "${gitconfig_target:-}" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
+    [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
+    [[ -n "$gitconfig_target" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
   } > "$AGENT_GITCONFIG"
   export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
 fi
