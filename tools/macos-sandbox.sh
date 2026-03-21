@@ -49,54 +49,24 @@ SANDBOX_PARAMS+=("-DHOME_DIR=$HOME")
 SANDBOX_PARAMS+=("-DHOME_SSH=$HOME/.ssh")
 SANDBOX_PARAMS+=("-DHOME_GNUPG=$HOME/.gnupg")
 
-# Pass the canonical path so the (literal) deny rule matches regardless of
-# whether the caller is inside a symlinked path.
 GIT_CONFIG_PATH="$(git -C "$PROJECT_DIR" rev-parse --git-dir 2>/dev/null)/config" || true
 if [[ -f "$GIT_CONFIG_PATH" ]]; then
   GIT_CONFIG_CANONICAL="$(cd "$(dirname "$GIT_CONFIG_PATH")" && pwd -P)/config"
   SANDBOX_PARAMS+=("-DGIT_CONFIG=$GIT_CONFIG_CANONICAL")
 else
-  # No git repo — point at a non-existent path so the param is always defined.
   SANDBOX_PARAMS+=("-DGIT_CONFIG=$PROJECT_DIR/.git/config")
 fi
 
-# sandbox-exec SIGABRTs when (subpath ...) references a non-existent path,
-# so only emit rules for paths that exist on disk.
+SANDBOX_MOUNTS_RO=()
+SANDBOX_MOUNTS_RW=()
 
-append_gitconfig_mounts() {
-  local canonical="$1"
-  local real dir
-  real=$(readlink -f "$canonical")
-  dir=$(dirname "$real")
+SANDBOX_MOUNTS_RO+=("$HOME/.config/nix" "$HOME/.local/share/nix")
+SANDBOX_MOUNTS_RW+=("$HOME/.cache/nix")
 
-  SANDBOX_MOUNTS_RO+=("$real")
+AGENT_GITCONFIG_PATH="$WORK_DIR/agent-gitconfig"
+# shellcheck source=setup-sandbox-paths.sh
+source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 
-  while IFS= read -r include_path; do
-    local expanded="${include_path/#\~/$HOME}"
-    [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
-    local resolved
-    resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
-    [[ -f "$resolved" ]] && SANDBOX_MOUNTS_RO+=("$resolved")
-  done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
-}
-
-SANDBOX_MOUNTS_RO=(
-  "$HOME/.gitconfig"
-  "$HOME/.config/git/config"
-  "$HOME/.ssh/known_hosts"
-  "$HOME/.ssh/config.agent"
-  "$HOME/.ssh/agent-github"
-  "$HOME/.ssh/agent-github.pub"
-  "$HOME/.ssh/agent-gitlab"
-  "$HOME/.ssh/agent-gitlab.pub"
-  "$HOME/.ssh/agent-gitea"
-  "$HOME/.ssh/agent-gitea.pub"
-  "$HOME/.config/nix"
-  "$HOME/.local/share/nix"
-)
-
-[[ -e "$HOME/.config/git/config" ]] && append_gitconfig_mounts "$HOME/.config/git/config"
-[[ -e "$HOME/.gitconfig" ]]         && append_gitconfig_mounts "$HOME/.gitconfig"
 SANDBOX_RO_RULES=""
 for i in "${!SANDBOX_MOUNTS_RO[@]}"; do
   p="${SANDBOX_MOUNTS_RO[$i]}"
@@ -105,9 +75,7 @@ for i in "${!SANDBOX_MOUNTS_RO[@]}"; do
   SANDBOX_RO_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
   SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
 done
-if [[ -n "$SANDBOX_RO_RULES" ]]; then
-  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$SANDBOX_RO_RULES"')'
-fi
+[[ -n "$SANDBOX_RO_RULES" ]] && PROFILE_CONTENT+=$'\n(allow file-read*\n'"$SANDBOX_RO_RULES"')'
 
 # Literal read access for intermediate directories that tools must stat to
 # traverse into allowed subpaths. (subpath) on a leaf grants no access to its
@@ -126,40 +94,8 @@ for i in "${!HOME_TRAVERSE_PATHS[@]}"; do
   HOME_TRAVERSE_RULES+="  (literal (param \"$PARAM_NAME\"))"$'\n'
   SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
 done
-if [[ -n "$HOME_TRAVERSE_RULES" ]]; then
-  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_TRAVERSE_RULES"')'
-fi
+[[ -n "$HOME_TRAVERSE_RULES" ]] && PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_TRAVERSE_RULES"')'
 
-SANDBOX_MOUNTS_RW=(
-  "$HOME/.config/opencode"
-  "$HOME/.config/nixsmith"
-  "$HOME/.claude.json"
-  "$HOME/.claude"
-  "$HOME/.cache/opencode"
-  "$HOME/.cache/claude"
-  "$HOME/.cache/nix"
-  "$HOME/.local/share/opencode"
-  "$HOME/.local/share/claude"
-  "$HOME/go"
-  "$HOME/.cache/go-build"
-  "$HOME/.cargo"
-  "$HOME/.cache/pip"
-  "$HOME/.gem"
-  "$HOME/.cache/yarn"
-  "$HOME/.npm"
-  "$HOME/.local/share/pnpm"
-  "$HOME/.bun"
-  "$HOME/.gradle"
-  "$HOME/.m2"
-  "$HOME/.composer"
-  "$HOME/.cache/composer"
-  "$HOME/.nuget/packages"
-  "$HOME/.vcpkg"
-  "$HOME/.pub-cache"
-  "$HOME/.swiftpm"
-  "$HOME/.hex"
-  "$HOME/.mix"
-)
 SANDBOX_RW_RULES=""
 for i in "${!SANDBOX_MOUNTS_RW[@]}"; do
   p="${SANDBOX_MOUNTS_RW[$i]}"
@@ -168,81 +104,19 @@ for i in "${!SANDBOX_MOUNTS_RW[@]}"; do
   SANDBOX_RW_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
   SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
 done
-if [[ -n "$SANDBOX_RW_RULES" ]]; then
-  PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$SANDBOX_RW_RULES"')'
-fi
-
-_append_path_rules() {
-  local permission="$1" var="$2"
-  [[ -z "${!var:-}" ]] && return
-  local rules="" i=0 path expanded
-  IFS=':' read -ra paths <<< "${!var}"
-  for path in "${paths[@]}"; do
-    expanded="${path/#\~/$HOME}"
-    [[ -z "$expanded" ]] && continue
-    [[ -e "$expanded" ]] || continue
-    local pname="${var}_$i"
-    rules+="  (subpath (param \"$pname\"))"$'\n'
-    SANDBOX_PARAMS+=("-D$pname=$expanded")
-    (( i++ )) || true
-  done
-  [[ -n "$rules" ]] && PROFILE_CONTENT+=$'\n('"$permission"$'\n'"$rules"')'
-}
-
-_append_path_rules "allow file-read*" SANDBOX_EXTRA_RO
-_append_path_rules "allow file-read* file-write*" SANDBOX_EXTRA_RW
-# Backward compatibility
-_append_path_rules "allow file-read* file-write*" BWRAP_EXTRA_PATHS
+[[ -n "$SANDBOX_RW_RULES" ]] && PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$SANDBOX_RW_RULES"')'
 
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
-  echo "Warning: AGENT_SANDBOX_BIND_HOME=true grants full home directory write access (breaks isolation)" >&2
   SANDBOX_PARAMS+=("-DHOME_FULL=$HOME")
   PROFILE_CONTENT+=$'\n(allow file-write* (subpath (param "HOME_FULL")))'
 fi
 
-# AGENT_SANDBOX_SSH overrides the profile's deny on ~/.ssh, restoring both
-# reads and writes so git operations that require the SSH key can work.
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
-  echo "Warning: AGENT_SANDBOX_SSH=true grants full ~/.ssh read+write access" >&2
   PROFILE_CONTENT+=$'\n(allow file-read* file-write* (subpath (param "HOME_SSH")))'
 fi
 
-# Create agent config directories if they don't exist
-mkdir -p "$HOME/.config/opencode" "$HOME/.config/claude" "$HOME/.claude" \
-         "$HOME/.config/nixsmith" \
-         "$HOME/.cache/opencode" "$HOME/.cache/claude" \
-         "$HOME/.local/share/opencode" "$HOME/.local/share/claude" 2>/dev/null || true
-
 export AGENT_WORK_DIR="$WORK_DIR_CANONICAL"
 export IN_AGENT_SANDBOX="1"
-
-# Export token eagerly so all git operations can use it, not just spr
-GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
-if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
-  GITHUB_TOKEN=$(<"$GITHUB_TOKEN_FILE")
-  export GITHUB_TOKEN
-fi
-
-# Generate a session gitconfig that routes GitHub traffic through the PAT credential
-# helper instead of SSH. Our url rules are defined before the includes so they win
-# the insteadOf tiebreak when the user's config defines a competing SSH rewrite.
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  AGENT_GITCONFIG="$WORK_DIR/agent-gitconfig"
-  {
-    cat <<EOF
-[url "https://github.com/"]
-	insteadOf = https://github.com/
-	insteadOf = git@github.com:
-
-[credential "https://github.com"]
-	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
-
-EOF
-    [[ -f "$HOME/.config/git/config" ]] && printf '[include]\n\tpath = %s\n' "$HOME/.config/git/config"
-    [[ -f "$HOME/.gitconfig" ]]         && printf '[include]\n\tpath = %s\n' "$HOME/.gitconfig"
-  } > "$AGENT_GITCONFIG"
-  export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
-fi
 
 if [[ "${AGENT_SANDBOX_DEBUG:-false}" == "true" ]]; then
   echo "=== Sandbox Profile ===" >&2

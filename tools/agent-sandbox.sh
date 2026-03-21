@@ -10,9 +10,11 @@
 # - Temporary workspace (read-write, auto-cleaned)
 #
 # Environment variables:
-#   AGENT_SANDBOX_BIND_HOME - Set to "true" to bind mount $HOME (breaks isolation)
-#   AGENT_SANDBOX_SSH       - Set to "true" to bind mount ~/.ssh (for git auth)
-#   BWRAP_EXTRA_PATHS       - Colon-separated agent/project-specific paths (e.g., ~/.config/myagent)
+#   AGENT_SANDBOX_BIND_HOME - "true" to allow writes to entire home dir (breaks isolation)
+#   AGENT_SANDBOX_SSH       - "true" to allow reads+writes to ~/.ssh (for git operations)
+#   SANDBOX_EXTRA_RO        - colon-separated additional read-only paths
+#   SANDBOX_EXTRA_RW        - colon-separated additional read-write paths
+#   BWRAP_EXTRA_PATHS       - deprecated alias for SANDBOX_EXTRA_RW
 
 set -euo pipefail
 
@@ -234,69 +236,45 @@ if ! blocker=$(detect_sandbox_blocker); then
   exit 1
 fi
 
-# Initialize mount arrays (Docker-style source:dest syntax)
-# Format: "source" or "source:dest" (if dest is omitted, uses source as dest)
 SANDBOX_MOUNTS_RO=()
 SANDBOX_MOUNTS_RW=()
 
-# Build bwrap command
 BWRAP_ARGS=(
-  # Essential system directories
   --dev-bind /dev /dev
   --proc /proc
-
-  # Namespace isolation
   --unshare-all
-  --share-net # Allow network access
-
-  # Die with parent (cleanup if parent dies)
+  --share-net
   --die-with-parent
-
-  # Preserve PATH and mark that we're in sandbox
   --setenv PATH "$PATH"
   --setenv IN_AGENT_SANDBOX "1"
   --setenv AGENT_WORK_DIR /tmp
 )
 
-# Core read-only system mounts
 SANDBOX_MOUNTS_RO+=("/nix")
-
-# Core read-write mounts
 SANDBOX_MOUNTS_RW+=("$(pwd)")
 SANDBOX_MOUNTS_RW+=("/tmp")
 
-# Git directory discovery and mounting
-# Use git commands to discover git directories, then mount repo root + git directories
-# This allows git to traverse from CWD up to the repository without hitting filesystem boundaries
 if git rev-parse --git-dir >/dev/null 2>&1; then
   debug_sandbox "Git repository detected"
 
-  # Get the git directory for this worktree/repo
   git_dir=$(git rev-parse --git-dir 2>/dev/null)
   if [[ -n "$git_dir" ]]; then
-    # Resolve to absolute path (may be relative like ".git")
     git_dir_abs=$(cd "$(pwd)" && cd "$git_dir" && pwd)
     debug_sandbox "Git dir: $git_dir_abs"
 
-    # Mount the git directory (read-write for commit/push/pull)
     if [[ -d "$git_dir_abs" ]]; then
       SANDBOX_MOUNTS_RW+=("$git_dir_abs")
       debug_sandbox "Mounted git dir (RW): $git_dir_abs"
 
-      # Get the common git dir (shared objects, refs, config for worktrees)
-      # For regular repos, this equals git_dir. For worktrees, points to main repo's .git/
       common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
       if [[ -n "$common_git_dir" ]]; then
         common_git_dir_abs=$(cd "$(pwd)" && cd "$common_git_dir" && pwd)
         debug_sandbox "Common git dir: $common_git_dir_abs"
 
-        # Only mount if different from worktree's git dir
         if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
           SANDBOX_MOUNTS_RW+=("$common_git_dir_abs")
           debug_sandbox "Mounted common git dir (RW): $common_git_dir_abs"
 
-          # Mount the repo root (parent of the bare/common repo)
-          # This allows git to traverse from worktree to bare repo
           repo_root=$(dirname "$common_git_dir_abs")
           pwd_path="$(pwd)"
           if [[ "$repo_root" != "$pwd_path" ]]; then
@@ -309,41 +287,26 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
-# Nix configuration (required for nix-shell, flakes, etc.)
-# NixOS uses /etc/static/nix with symlinks from /etc/nix
 [[ -d /etc/static/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/static/nix")
 [[ -d /etc/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/nix")
-
-# SSL/TLS certificates (required for HTTPS and nix operations)
 [[ -d /etc/ssl ]] && SANDBOX_MOUNTS_RO+=("/etc/ssl")
 [[ -d /etc/pki ]] && SANDBOX_MOUNTS_RO+=("/etc/pki")
 [[ -d /etc/static/ssl ]] && SANDBOX_MOUNTS_RO+=("/etc/static/ssl")
-
-# DNS resolution (required for network operations)
 [[ -f /etc/resolv.conf ]] && SANDBOX_MOUNTS_RO+=("/etc/resolv.conf")
 [[ -f /etc/hosts ]] && SANDBOX_MOUNTS_RO+=("/etc/hosts")
-
-# Mount /usr/bin if it exists (required for shebangs like #!/usr/bin/env)
 [[ -d /usr/bin ]] && SANDBOX_MOUNTS_RO+=("/usr/bin")
-
-# User/group information (needed for SSH username lookup)
 [[ -f /etc/passwd ]] && SANDBOX_MOUNTS_RO+=("/etc/passwd")
 [[ -f /etc/group ]] && SANDBOX_MOUNTS_RO+=("/etc/group")
 
-# Bind mount all directories in PATH (read-only)
-# This ensures all commands available to the parent are available in the sandbox
 IFS=':' read -ra PATH_DIRS <<<"$PATH"
 for dir in "${PATH_DIRS[@]}"; do
   if [[ -d "$dir" ]]; then
-    # Skip if already covered by /nix bind or if in HOME directory
     if [[ ! "$dir" =~ ^/nix/ ]] && [[ ! "$dir" =~ ^$HOME ]]; then
       SANDBOX_MOUNTS_RO+=("$dir")
     fi
   fi
 done
 
-# Mount /bin if it exists and wasn't already added via PATH
-# Agent hooks may spawn /bin/sh or /bin/bash
 if [[ -d /bin ]]; then
   path_has_bin=false
   for dir in "${PATH_DIRS[@]}"; do
@@ -352,188 +315,38 @@ if [[ -d /bin ]]; then
   [[ "$path_has_bin" == "false" ]] && SANDBOX_MOUNTS_RO+=("/bin")
 fi
 
-# System library directories (required for dynamic linking of system binaries)
 for lib_dir in /lib /lib64 /lib32 /usr/lib /usr/lib64 /usr/lib32; do
   [[ -d "$lib_dir" ]] && SANDBOX_MOUNTS_RO+=("$lib_dir")
 done
 
-# Create nixsmith config directory (always needed for agent auth)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
-# Export token eagerly so all git operations can use it, not just spr
-GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
-if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
-  GITHUB_TOKEN=$(<"$GITHUB_TOKEN_FILE")
-  export GITHUB_TOKEN
-fi
+AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
+# shellcheck source=setup-sandbox-paths.sh
+source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 
-# Git config (resolve symlinks to actual target)
-# Git reads both XDG and legacy configs if both exist, in that order
-append_gitconfig_mounts() {
-  local canonical="$1"
-  local real dir
-  real=$(readlink -f "$canonical")
-  dir=$(dirname "$real")
-
-  SANDBOX_MOUNTS_RO+=("$real")
-
-  while IFS= read -r include_path; do
-    local expanded="${include_path/#\~/$HOME}"
-    [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
-    local resolved
-    resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
-    [[ -f "$resolved" ]] && SANDBOX_MOUNTS_RO+=("$resolved")
-  done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
-}
-
-xdg_gitconfig_target=""
-gitconfig_target=""
-[[ -e "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
-[[ -e "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
-
-[[ -n "$xdg_gitconfig_target" ]] && append_gitconfig_mounts "$xdg_gitconfig_target"
-[[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
-
-# Generate a session gitconfig that routes GitHub traffic through the PAT credential
-# helper instead of SSH. Our url rules are defined before the includes so they win
-# the insteadOf tiebreak when the user's config defines a competing SSH rewrite.
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  AGENT_GITCONFIG=$(mktemp /tmp/agent-gitconfig-XXXXXX)
-  {
-    cat <<EOF
-[url "https://github.com/"]
-	insteadOf = https://github.com/
-	insteadOf = git@github.com:
-
-[credential "https://github.com"]
-	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
-
-EOF
-    [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
-    [[ -n "$gitconfig_target" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
-  } > "$AGENT_GITCONFIG"
-  export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
-fi
-
-# Config directories
-debug_sandbox "Checking config directories..."
-for config_dir in "$HOME/.config/opencode" "$HOME/.config/nixsmith"; do
-  if [[ -d "$config_dir" ]]; then
-    debug_sandbox "  Mounting $config_dir"
-    SANDBOX_MOUNTS_RW+=("$config_dir")
-  else
-    debug_sandbox "  SKIP: $config_dir does not exist"
-  fi
-done
-
-[[ -f "$HOME/.claude.json" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.claude.json")
-[[ -d "$HOME/.claude" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.claude")
-
-# Cache directories
-[[ -d "$HOME/.cache/opencode" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.cache/opencode")
-[[ -d "$HOME/.cache/claude" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.cache/claude")
-
-# Data/state directories (sessions stored here)
-[[ -d "$HOME/.local/share/opencode" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.local/share/opencode")
-[[ -d "$HOME/.local/share/claude" ]] && SANDBOX_MOUNTS_RW+=("$HOME/.local/share/claude")
-
-# Agent SSH keys for git operations
-[[ -f "$HOME/.ssh/agent-github" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-github" "$HOME/.ssh/agent-github.pub")
-[[ -f "$HOME/.ssh/agent-gitlab" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitlab" "$HOME/.ssh/agent-gitlab.pub")
-[[ -f "$HOME/.ssh/agent-gitea" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea.pub")
-
-[[ -f "$HOME/.ssh/known_hosts" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/known_hosts")
-
-[[ -f "$HOME/.ssh/config.agent" ]] && [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]] && \
-  export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
-
-# Optional: bind mount SSH keys for git authentication
-if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]] && [[ -d "$HOME/.ssh" ]]; then
-  SANDBOX_MOUNTS_RO+=("$HOME/.ssh")
-fi
-
-# Optional: bind mount entire home (breaks isolation, use with caution)
-if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
-  echo "Warning: Binding \$HOME breaks sandbox isolation" >&2
-  SANDBOX_MOUNTS_RW+=("$HOME")
-fi
-
-# Common language tooling cache directories
-# Only mount if they exist to avoid cluttering logs
-for cache_path in \
-  "$HOME/go" \
-  "$HOME/.cache/go-build" \
-  "$HOME/.cargo" \
-  "$HOME/.cache/pip" \
-  "$HOME/.gem" \
-  "$HOME/.cache/yarn" \
-  "$HOME/.npm" \
-  "$HOME/.local/share/pnpm" \
-  "$HOME/.bun" \
-  "$HOME/.gradle" \
-  "$HOME/.m2" \
-  "$HOME/.composer" \
-  "$HOME/.cache/composer" \
-  "$HOME/.nuget/packages" \
-  "$HOME/.vcpkg" \
-  "$HOME/.pub-cache" \
-  "$HOME/.swiftpm" \
-  "$HOME/.hex" \
-  "$HOME/.mix"; do
-  [[ -d "$cache_path" ]] && SANDBOX_MOUNTS_RW+=("$cache_path")
-done
-
-# User customization via env vars (Docker-style syntax)
-# SANDBOX_EXTRA_RO="/path/one:/path/two:~/path/three"
-# SANDBOX_EXTRA_RW="/workspace:/data"
-if [[ -n "${SANDBOX_EXTRA_RO:-}" ]]; then
-  IFS=':' read -ra EXTRA_RO <<<"$SANDBOX_EXTRA_RO"
-  SANDBOX_MOUNTS_RO+=("${EXTRA_RO[@]}")
-fi
-
-if [[ -n "${SANDBOX_EXTRA_RW:-}" ]]; then
-  IFS=':' read -ra EXTRA_RW <<<"$SANDBOX_EXTRA_RW"
-  SANDBOX_MOUNTS_RW+=("${EXTRA_RW[@]}")
-fi
-
-# Backward compatibility: BWRAP_EXTRA_PATHS (deprecated, use SANDBOX_EXTRA_RW)
-if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
-  IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
-  SANDBOX_MOUNTS_RW+=("${EXTRA_PATHS[@]}")
-fi
-
-# Build mount arguments from arrays (Docker-style source:dest syntax)
 build_mounts() {
   local mode=$1
   shift
   local mounts=("$@")
-  local pwd_path
-  pwd_path="$(pwd)"
 
   for mount in "${mounts[@]}"; do
-    # Skip empty entries
     [[ -z "$mount" ]] && continue
 
-    # Parse source:dest (if no colon, dest = source)
     IFS=':' read -r src dest <<<"$mount"
     [[ -z "$dest" ]] && dest="$src"
 
-    # Expand tilde in paths
     src="${src/#\~/$HOME}"
     dest="${dest/#\~/$HOME}"
 
-    # Skip if source doesn't exist
     [[ ! -e "$src" ]] && continue
 
-    # Create parent directory if needed for remapped paths
-    # Only needed when src != dest (remapped paths like gitconfig)
     if [[ "$src" != "$dest" ]]; then
       local parent
       parent=$(dirname "$dest")
       BWRAP_ARGS+=(--dir "$parent")
     fi
 
-    # Add the mount
     if [[ "$mode" == "rw" ]]; then
       BWRAP_ARGS+=(--bind "$src" "$dest")
     else
@@ -542,13 +355,10 @@ build_mounts() {
   done
 }
 
-# Build all mounts
 build_mounts ro "${SANDBOX_MOUNTS_RO[@]}"
 build_mounts rw "${SANDBOX_MOUNTS_RW[@]}"
 
-# Prevent agents from writing repo-local git config (e.g. user.name/email overrides).
-# Must be added after RW mounts so this RO overlay takes precedence.
-# config lives in the common git dir for both regular repos and worktrees.
+# RO overlay after RW mounts so it takes precedence — agents must not override identity
 if [[ -n "${common_git_dir_abs:-}" ]] && [[ -f "$common_git_dir_abs/config" ]]; then
   BWRAP_ARGS+=(--ro-bind "$common_git_dir_abs/config" "$common_git_dir_abs/config")
   debug_sandbox "Overlaid git config read-only: $common_git_dir_abs/config"
@@ -557,5 +367,4 @@ elif [[ -n "${git_dir_abs:-}" ]] && [[ -f "$git_dir_abs/config" ]]; then
   debug_sandbox "Overlaid git config read-only: $git_dir_abs/config"
 fi
 
-# Run command in sandbox
 exec "$BWRAP" "${BWRAP_ARGS[@]}" "$@"
