@@ -375,7 +375,7 @@ append_gitconfig_mounts() {
   real=$(readlink -f "$canonical")
   dir=$(dirname "$real")
 
-  SANDBOX_MOUNTS_RO+=("$real:$canonical")
+  SANDBOX_MOUNTS_RO+=("$real")
 
   while IFS= read -r include_path; do
     local expanded="${include_path/#\~/$HOME}"
