@@ -63,25 +63,24 @@ fi
 # sandbox-exec SIGABRTs when (subpath ...) references a non-existent path,
 # so only emit rules for paths that exist on disk.
 
-append_gitconfig_read_paths() {
+append_gitconfig_mounts() {
   local canonical="$1"
   local real dir
   real=$(readlink -f "$canonical")
   dir=$(dirname "$real")
 
-  HOME_READ_PATHS+=("$real")
+  SANDBOX_MOUNTS_RO+=("$real")
 
   while IFS= read -r include_path; do
     local expanded="${include_path/#\~/$HOME}"
     [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
     local resolved
     resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
-    [[ -f "$resolved" ]] && HOME_READ_PATHS+=("$resolved")
+    [[ -f "$resolved" ]] && SANDBOX_MOUNTS_RO+=("$resolved")
   done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
 }
 
-# Read access: git identity files and agent-specific keys (mirrors bwrap RO mounts).
-HOME_READ_PATHS=(
+SANDBOX_MOUNTS_RO=(
   "$HOME/.gitconfig"
   "$HOME/.config/git/config"
   "$HOME/.ssh/known_hosts"
@@ -96,18 +95,18 @@ HOME_READ_PATHS=(
   "$HOME/.local/share/nix"
 )
 
-[[ -e "$HOME/.config/git/config" ]] && append_gitconfig_read_paths "$HOME/.config/git/config"
-[[ -e "$HOME/.gitconfig" ]]         && append_gitconfig_read_paths "$HOME/.gitconfig"
-HOME_READ_RULES=""
-for i in "${!HOME_READ_PATHS[@]}"; do
-  p="${HOME_READ_PATHS[$i]}"
+[[ -e "$HOME/.config/git/config" ]] && append_gitconfig_mounts "$HOME/.config/git/config"
+[[ -e "$HOME/.gitconfig" ]]         && append_gitconfig_mounts "$HOME/.gitconfig"
+SANDBOX_RO_RULES=""
+for i in "${!SANDBOX_MOUNTS_RO[@]}"; do
+  p="${SANDBOX_MOUNTS_RO[$i]}"
   [[ -e "$p" ]] || continue
-  PARAM_NAME="HOME_READ_$i"
-  HOME_READ_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
+  PARAM_NAME="SANDBOX_RO_$i"
+  SANDBOX_RO_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
   SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
 done
-if [[ -n "$HOME_READ_RULES" ]]; then
-  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_READ_RULES"')'
+if [[ -n "$SANDBOX_RO_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n(allow file-read*\n'"$SANDBOX_RO_RULES"')'
 fi
 
 # Literal read access for intermediate directories that tools must stat to
@@ -131,8 +130,7 @@ if [[ -n "$HOME_TRAVERSE_RULES" ]]; then
   PROFILE_CONTENT+=$'\n(allow file-read*\n'"$HOME_TRAVERSE_RULES"')'
 fi
 
-# Write access: agent config and cache dirs.
-HOME_WRITE_PATHS=(
+SANDBOX_MOUNTS_RW=(
   "$HOME/.config/opencode"
   "$HOME/.config/nixsmith"
   "$HOME/.claude.json"
@@ -162,17 +160,16 @@ HOME_WRITE_PATHS=(
   "$HOME/.hex"
   "$HOME/.mix"
 )
-HOME_WRITE_RULES=""
-for i in "${!HOME_WRITE_PATHS[@]}"; do
-  p="${HOME_WRITE_PATHS[$i]}"
+SANDBOX_RW_RULES=""
+for i in "${!SANDBOX_MOUNTS_RW[@]}"; do
+  p="${SANDBOX_MOUNTS_RW[$i]}"
   [[ -e "$p" ]] || continue
-  PARAM_NAME="HOME_WRITE_$i"
-  HOME_WRITE_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
+  PARAM_NAME="SANDBOX_RW_$i"
+  SANDBOX_RW_RULES+="  (subpath (param \"$PARAM_NAME\"))"$'\n'
   SANDBOX_PARAMS+=("-D$PARAM_NAME=$p")
 done
-if [[ -n "$HOME_WRITE_RULES" ]]; then
-  # Agents must be able to read the dirs they write (e.g. load config before updating it).
-  PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$HOME_WRITE_RULES"')'
+if [[ -n "$SANDBOX_RW_RULES" ]]; then
+  PROFILE_CONTENT+=$'\n(allow file-read* file-write*\n'"$SANDBOX_RW_RULES"')'
 fi
 
 _append_path_rules() {
