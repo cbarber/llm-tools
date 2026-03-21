@@ -442,11 +442,10 @@ done
 [[ -f "$HOME/.ssh/agent-gitlab" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitlab" "$HOME/.ssh/agent-gitlab.pub")
 [[ -f "$HOME/.ssh/agent-gitea" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea.pub")
 
-# SSH config for agent keys (mount agent config AS the SSH config)
-[[ -f "$HOME/.ssh/config.agent" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/config.agent:$HOME/.ssh/config")
-
-# SSH known_hosts for host key verification
 [[ -f "$HOME/.ssh/known_hosts" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/known_hosts")
+
+[[ -f "$HOME/.ssh/config.agent" ]] && [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]] && \
+  export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
 
 # Optional: bind mount SSH keys for git authentication
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]] && [[ -d "$HOME/.ssh" ]]; then

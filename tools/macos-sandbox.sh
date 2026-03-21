@@ -244,13 +244,6 @@ EOF
   export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
 fi
 
-# sandbox-exec cannot remap mounts, so we cannot replace ~/.ssh/config with
-# config.agent the way bubblewrap does on Linux. Instead, point GIT_SSH_COMMAND
-# at config.agent directly so git uses the agent key without reading ~/.ssh/config.
-if [[ -f "$HOME/.ssh/config.agent" ]] && [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]]; then
-  export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
-fi
-
 if [[ "${AGENT_SANDBOX_DEBUG:-false}" == "true" ]]; then
   echo "=== Sandbox Profile ===" >&2
   echo "$PROFILE_CONTENT" >&2
