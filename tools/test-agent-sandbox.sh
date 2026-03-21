@@ -339,6 +339,28 @@ else
     log_pass ".git/config is read-only (agent cannot override git identity)"
 fi
 
+# TEST 16: Agent gitconfig uses canonical ~/.gitconfig path even when it is a symlink
+log_test "Agent gitconfig includes canonical gitconfig path when gitconfig is a symlink"
+
+TEST_HOME=$(mktemp -d)
+DOTFILES_DIR=$(mktemp -d)
+
+NESTED_CONFIG="$DOTFILES_DIR/.gitconfig-identity"
+REAL_GITCONFIG="$DOTFILES_DIR/.gitconfig"
+printf '[user]\n  email = test@example.com\n' > "$NESTED_CONFIG"
+printf '[include]\n  path = %s\n' "$NESTED_CONFIG" > "$REAL_GITCONFIG"
+ln -s "$REAL_GITCONFIG" "$TEST_HOME/.gitconfig"
+
+git_email=$(HOME="$TEST_HOME" "$SANDBOX_SCRIPT" bash -c 'git config user.email' 2>/dev/null || echo "")
+
+rm -rf "$TEST_HOME" "$DOTFILES_DIR"
+
+if [[ "$git_email" == "test@example.com" ]]; then
+    log_pass "Git identity resolves through symlinked gitconfig include chain"
+else
+    log_fail "Git identity not resolvable — include chain broken for symlinked ~/.gitconfig (got: '$git_email')"
+fi
+
 # Summary
 echo ""
 echo "======================================"

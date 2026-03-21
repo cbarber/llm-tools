@@ -210,11 +210,6 @@ fi
 # helper instead of SSH. Our url rules are defined before the includes so they win
 # the insteadOf tiebreak when the user's config defines a competing SSH rewrite.
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  xdg_gitconfig_target=""
-  gitconfig_target=""
-  [[ -f "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
-  [[ -f "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
-
   AGENT_GITCONFIG="$WORK_DIR/agent-gitconfig"
   {
     cat <<EOF
@@ -226,8 +221,8 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
 	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
 
 EOF
-    [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
-    [[ -n "$gitconfig_target" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
+    [[ -f "$HOME/.config/git/config" ]] && printf '[include]\n\tpath = %s\n' "$HOME/.config/git/config"
+    [[ -f "$HOME/.gitconfig" ]]         && printf '[include]\n\tpath = %s\n' "$HOME/.gitconfig"
   } > "$AGENT_GITCONFIG"
   export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG"
 fi
