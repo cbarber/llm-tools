@@ -162,10 +162,30 @@ Current forge: $FORGE_TYPE
 EOF
 }
 
+# Returns 0 if the branch has any LLM-authored commits without a Reviewed-By trailer.
+# Handles both "Authored-By:" (current standard) and "Authored By:" (legacy prose format).
+has_unreviewed_llm_commits() {
+    local default_branch
+    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/origin/@@')
+    local range="origin/${default_branch}..HEAD"
+
+    while IFS= read -r sha; do
+        local body
+        body=$(git log -1 --format="%B" "$sha")
+        if echo "$body" | grep -qiE "^Authored-By:|^Authored By:"; then
+            if ! echo "$body" | grep -qiE "^Reviewed-By:"; then
+                return 0
+            fi
+        fi
+    done < <(git log --format="%H" "$range" 2>/dev/null)
+
+    return 1
+}
+
 # PR commands
 pr_create() {
     local title="" body="" draft=false
-    
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
@@ -178,12 +198,17 @@ pr_create() {
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
-    
+
     if [[ -z "$title" ]]; then
         echo "Error: --title required" >&2
         exit 1
     fi
-    
+
+    # PRs with unreviewed LLM commits need human review before teammates see them.
+    if has_unreviewed_llm_commits; then
+        draft=true
+    fi
+
     # Add agent signature if in agent environment
     if [[ -n "${IN_AGENT_SANDBOX:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
         body="${body}
@@ -191,7 +216,7 @@ pr_create() {
 ---
 *🤖 Created by agent*"
     fi
-    
+
     # Show PR workflow guidelines
     if command -v temper >/dev/null 2>&1 && [[ -f AGENTS.md ]]; then
         echo "📋 PR Creation Guidelines:"
@@ -201,21 +226,30 @@ pr_create() {
         echo "Creating PR..."
         echo ""
     fi
-    
+
+    local pr_url=""
     case "$FORGE_TYPE" in
         github)
             local args=(--title "$title" --head "$(git branch --show-current)")
             [[ -n "$body" ]] && args+=(--body "$body")
             [[ "$draft" == true ]] && args+=(--draft)
-            gh pr create "${args[@]}"
+            pr_url=$(gh pr create "${args[@]}")
+            echo "$pr_url"
             ;;
         gitea)
             local args=(--title "$title")
             [[ -n "$body" ]] && args+=(--description "$body")
             [[ "$draft" == true ]] && args+=(--draft)
             run_tea pr create "${args[@]}"
+            return
             ;;
     esac
+
+    # Apply needs-human-review label when unreviewed LLM commits are present.
+    # Label signals to teammates that this PR requires the author's review first.
+    if [[ "$FORGE_TYPE" == "github" ]] && has_unreviewed_llm_commits; then
+        gh pr edit --add-label "needs-human-review" 2>/dev/null || true
+    fi
 }
 
 pr_view() {
@@ -338,7 +372,13 @@ pr_next_action() {
     esac
 
     case "${pr_state:-NONE}" in
-        OPEN)   echo "→ Next: Continue work or address review feedback" ;;
+        OPEN)
+            if has_unreviewed_llm_commits; then
+                echo "→ Next: LLM-authored commits pending your review — stamp Reviewed-By: trailers then push"
+            else
+                echo "→ Next: Continue work or address review feedback"
+            fi
+            ;;
         MERGED) echo "→ Next: PR merged — return to $default_branch and start a new branch" ;;
         *)      echo "→ Next: Complete work and create a PR" ;;
     esac
