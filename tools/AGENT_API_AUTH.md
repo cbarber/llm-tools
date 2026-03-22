@@ -134,3 +134,22 @@ bash tools/forge issue show <number> [--json]
 **Permission errors:**
 - Check file modes: `chmod 600 ~/.config/nixsmith/github-token`
 - Check directory mode: `chmod 700 ~/.config/nixsmith`
+
+## Reviewing LLM Commits
+
+During `git rebase -i`, stamp each reviewed commit with a `Reviewed-By` trailer
+to mark it as human-verified. `pr-poll` removes the draft state and
+`needs-human-review` label automatically once all `Authored-By` commits are stamped.
+
+Add this to your Neovim config to insert the trailer from the current git identity:
+
+```lua
+vim.keymap.set('n', '<leader>rv', function()
+  local name = vim.fn.system('git config user.name'):gsub('\n', '')
+  local email = vim.fn.system('git config user.email'):gsub('\n', '')
+  local trailer = 'Reviewed-By: ' .. name .. ' <' .. email .. '>'
+  vim.api.nvim_put({ trailer }, 'l', true, true)
+end, { desc = 'Insert Reviewed-By trailer' })
+```
+
+Use it while editing a commit message buffer during `git rebase -i --edit`.
