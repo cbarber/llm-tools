@@ -80,26 +80,34 @@ Commit after edit. An atomic commit is self-contained, related, and fully-functi
 Format: `<type>(<scope>): <subject>`
 
 **Types:**
-- `feat` - New feature for the user
-- `fix` - Bug fix for the user
-- `refactor` - Code restructuring without behavior change
-- `test` - Adding or updating tests
-- `docs` - Documentation changes
-- `style` - Formatting, whitespace (no code change)
-- `chore` - Build tasks, dependencies (no production code change)
+* `feat` - New feature for the user
+* `fix` - Bug fix for the user
+* `refactor` - Code restructuring without behavior change
+* `test` - Adding or updating tests
+* `docs` - Documentation changes
+* `style` - Formatting, whitespace (no code change)
+* `chore` - Build tasks, dependencies (no production code change)
 
 **Body:** 1-2 sentences on WHY (motivation, rationale). Omit if subject is sufficient. Never itemize implementation.
 
-**Footer:** `Authored By: <agent> (<model>)`
+**Footer:** `Authored-By: <agent> (<model>)`
 
 **Example:**
+
 ```
 fix(sandbox): support XDG git config in Linux sandbox
 
 Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
 Linux sandbox only mounted legacy file, breaking XDG-only users.
 
-Authored By: claude-code (claude-3.7-sonnet)
+Authored-By: claude-code (claude-3.7-sonnet)
+```
+
+When all commits are clean and work is complete: push and create a PR — do not ask for confirmation.
+
+```bash
+git push -u origin <branch>
+bash tools/forge pr create --title "..." --body "..."
 ```
 
 **Rewriting commits:**
@@ -122,13 +130,14 @@ git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```
 
 Example:
+
 ```bash
 # Reword commit abc123 "feat(foo): add bar"
 git commit --allow-empty -m "amend! feat(foo): add bar" -m "feat(foo): add bar
 
 New body explaining why without outdated details.
 
-Authored By: claude-code (claude-3.7-sonnet)"
+Authored-By: claude-code (claude-3.7-sonnet)"
 
 git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```
@@ -140,18 +149,21 @@ bash tools/forge pr status
 ```
 
 **Creating PRs:**
+
 ```bash
 git push -u origin <branch>
 bash tools/forge pr create --title "..." --body "..."
 ```
 
 **Viewing PR status:**
+
 ```bash
 bash tools/forge pr view 123
 bash tools/forge pr comments 123
 ```
 
 **Addressing review feedback:**
+
 ```bash
 # Option 1: Automatic fixup with git-absorb
 git add <changed-files>
@@ -173,15 +185,16 @@ git push --force-with-lease
 ```
 
 **Replying to review comments:**
+
 ```bash
 bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
 ```
 
 **Key points:**
-- NEVER call `gh` or `tea` directly — use `bash tools/forge`
-- PR body must explain WHY the change was made
-- Link to beads issue if applicable
-- Use `--draft` when work is incomplete or tests are failing
+* NEVER call `gh` or `tea` directly — use `bash tools/forge`
+* PR body must explain WHY the change was made
+* Link to beads issue if applicable
+* Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
 
 See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 
@@ -193,6 +206,7 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 2. Run quality gates (tests, linters, builds)
 3. Update beads (close/update issues)
 4. Push to remote:
+
    ```bash
    git pull --rebase
    bd sync
@@ -202,6 +216,7 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 
 5. Handoff for context:
    Provide brief context about what was accomplished for session continuity:
+
    ```
    Recent Work:
    - Completed llm-tools-xxx: Brief summary of what changed and why
@@ -216,6 +231,6 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
 **Rules:**
-- NEVER say "ready to push when you are" - YOU push
-- NEVER stop before pushing
-- Next session will auto-load state via temper
+* NEVER say "ready to push when you are" - YOU push
+* NEVER stop before pushing
+* Next session will auto-load state via temper
