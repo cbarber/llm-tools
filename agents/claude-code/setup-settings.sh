@@ -13,4 +13,4 @@ fi
 mkdir -p .claude
 cp "${SETTINGS_TEMPLATE}" .claude/settings.local.json
 
-echo "Created settings.json with Claude Code hooks (smart-lint, smart-test, notify)"
+echo "Created settings.json with Claude Code hooks (notify)"

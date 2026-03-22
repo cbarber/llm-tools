@@ -5,21 +5,24 @@ Experimental LLM agent environments configured via Nix flakes.
 ## Agents
 
 ### Claude Code
+
 ```bash
 nix develop github:cbarber/llm-tools#claude-code
 ```
 
 ### OpenCode
+
 ```bash
 nix develop github:cbarber/llm-tools#opencode
 ```
 
 Both agents include:
+
 - Sandboxed execution (bubblewrap on Linux, sandbox-exec on macOS)
 - cclsp MCP server for LSP integration
 - Auto-detected language servers (Nix via nil)
 - Beads task management with git integration
-- Shared tooling (smart-lint, smart-test, notify)
+- Shared tooling (notify)
 
 ## Sandboxing
 
@@ -47,6 +50,7 @@ Auto-initializes in agent shells.
 ## Configuration
 
 Auto-generates on first run if missing:
+
 - `.mcp.json` / `opencode.json` - MCP server configuration
 - `cclsp.json` - Language server mappings for detected project languages
 

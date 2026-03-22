@@ -61,5 +61,5 @@ else
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Sandbox enabled: use 'agent-sandbox opencode' or just 'opencode' will be sandboxed"
   fi
-  echo "Available commands: cclsp, smart-lint, smart-test, notify, bd, anvil, pr-poll"
+  echo "Available commands: cclsp, notify, bd, anvil, pr-poll"
 fi
