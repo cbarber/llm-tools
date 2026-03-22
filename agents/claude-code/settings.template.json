@@ -4,21 +4,6 @@
     "BASH_MAX_TIMEOUT_MS": "600000"
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "smart-lint"
-          },
-          {
-            "type": "command", 
-            "command": "smart-test"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",

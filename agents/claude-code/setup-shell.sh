@@ -41,5 +41,5 @@ else
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Sandbox enabled: use 'agent-sandbox claude' or just 'claude' will be sandboxed"
   fi
-  echo "Available commands: smart-lint, smart-test, notify, cclsp, bd"
+  echo "Available commands: notify, cclsp, bd"
 fi
