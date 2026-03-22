@@ -37,9 +37,10 @@ let
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   git-agent-sequence-editor = pkgs.writeShellScriptBin "git-agent-sequence-editor" (builtins.readFile ./git-agent-sequence-editor);
   git-agent-editor = pkgs.writeShellScriptBin "git-agent-editor" (builtins.readFile ./git-agent-editor);
+  pre-commit = pkgs.pre-commit;
 in
 {
-  inherit cclsp claude-code-scripts beads tea spr git-absorb temper git-agent-sequence-editor git-agent-editor;
+  inherit cclsp claude-code-scripts beads tea spr git-absorb temper git-agent-sequence-editor git-agent-editor pre-commit;
 
   all = [
     cclsp
@@ -51,5 +52,6 @@ in
     temper
     git-agent-sequence-editor
     git-agent-editor
+    pre-commit
   ];
 }
