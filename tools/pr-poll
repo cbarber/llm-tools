@@ -157,11 +157,33 @@ build_comment_thread() {
     echo -e "$output"
 }
 
+# Returns 0 if all LLM-authored commits on the current branch have been reviewed.
+# Reads local git log — review state is stamped locally via Reviewed-By trailers.
+all_llm_commits_reviewed() {
+    local default_branch
+    default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/origin/@@')
+    local range="origin/${default_branch}..HEAD"
+    local found_any=false
+
+    while IFS= read -r sha; do
+        local body
+        body=$(git log -1 --format="%B" "$sha")
+        if echo "$body" | grep -qiE "^Authored-By:|^Authored By:"; then
+            found_any=true
+            if ! echo "$body" | grep -qiE "^Reviewed-By:"; then
+                return 1
+            fi
+        fi
+    done < <(git log --format="%H" "$range" 2>/dev/null)
+
+    [[ "$found_any" == "true" ]]
+}
+
 # Get current PR state from forge
 get_pr_state() {
     local pr_number="$1"
     local state
-    state=$(bash "${SCRIPT_DIR}/forge" pr view "$pr_number" --json 2>/dev/null)
+    state=$(bash "${SCRIPT_DIR}/forge" pr view "$pr_number" --json "body,title,state,number,isDraft,labels" 2>/dev/null)
     if [[ -z "$state" ]]; then
         echo "{}"
         return 1
@@ -180,7 +202,7 @@ get_pr_state() {
     echo "$state" | jq \
         --argjson ids "$all_comment_ids" \
         --argjson comments "$comments" \
-        '. + {comment_ids: $ids, comments: $comments, last_check: now}'
+        '. + {comment_ids: $ids, comments: $comments, last_check: now, isDraft: .isDraft, labels: .labels}'
 }
 
 # Check for changes and notify if needed
@@ -272,6 +294,25 @@ check_pr() {
         "$STATE_FILE")
     echo "$new_state" > "$STATE_FILE"
     
+    # Promote PR when all LLM commits have been reviewed locally.
+    # The author stamps Reviewed-By trailers during rebase; once all are present
+    # the PR is ready for teammates — remove draft state and the holding label.
+    if [[ "$curr_pr_state" == "OPEN" ]] && all_llm_commits_reviewed; then
+        local is_draft
+        is_draft=$(echo "$current_state" | jq -r '.isDraft // false')
+        local has_label
+        has_label=$(echo "$current_state" | jq -r '.labels // [] | map(.name) | index("needs-human-review") != null')
+
+        if [[ "$is_draft" == "true" ]]; then
+            gh pr ready 2>/dev/null || true
+            changes+=("PR marked ready — all LLM commits reviewed")
+        fi
+        if [[ "$has_label" == "true" ]]; then
+            gh pr edit --remove-label "needs-human-review" 2>/dev/null || true
+            changes+=("Removed needs-human-review label")
+        fi
+    fi
+
     # Notify if changes detected
     if [[ ${#changes[@]} -gt 0 ]]; then
         local title
