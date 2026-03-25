@@ -5,11 +5,13 @@ This guide explains how to set up SSH keys for agents to push/pull from git repo
 ## Why Deploy Keys?
 
 **Problem with SSH Agent Confirmation:**
+
 - Confirmation prompts lead to fatigue ("yes" becomes automatic)
 - Agent could push malicious changes while you're on autopilot
 - Similar to `sudo` fatigue - security theater
 
 **Deploy Keys Solve This:**
+
 - ✅ Agent can ONLY push to repos you explicitly grant access
 - ✅ Can't accidentally push to your personal repositories
 - ✅ Separate from your personal SSH keys
@@ -27,6 +29,7 @@ This guide explains how to set up SSH keys for agents to push/pull from git repo
 ```
 
 This script will:
+
 1. Generate three SSH keys (if they don't exist):
    - `~/.ssh/agent-github` (for GitHub repositories)
    - `~/.ssh/agent-gitlab` (for GitLab repositories)
@@ -45,6 +48,7 @@ This script will:
 The script will show you the public key and provide platform-specific instructions.
 
 **GitHub:**
+
 ```bash
 # Manual
 1. Go to: https://github.com/owner/repo/settings/keys
@@ -59,6 +63,7 @@ gh repo deploy-key add ~/.ssh/agent-github.pub --title "LLM Agent" --allow-write
 ```
 
 **GitLab:**
+
 ```bash
 1. Go to: https://gitlab.com/owner/repo/-/settings/repository
 2. Expand "Deploy Keys"
@@ -71,6 +76,7 @@ gh repo deploy-key add ~/.ssh/agent-github.pub --title "LLM Agent" --allow-write
 ```
 
 **Gitea:**
+
 ```bash
 1. Go to repository settings → Deploy Keys
 2. Title: LLM Agent
@@ -107,12 +113,14 @@ Host github.com
 ### In the Sandbox
 
 The `agent-sandbox.sh` script bind mounts:
+
 - `~/.ssh/agent-github` (read-only)
 - `~/.ssh/agent-gitlab` (read-only)
 - `~/.ssh/agent-gitea` (read-only)
 - `~/.ssh/config.agent` → mounted AS `~/.ssh/config` (replaces your personal config)
 
 **Important:** Inside the sandbox, `~/.ssh/config` IS the agent config. Your personal SSH config is NOT visible to the agent. This prevents:
+
 - Exposure of personal SSH settings
 - Conflicts with your host aliases
 - Access to personal SSH keys
@@ -132,6 +140,7 @@ When you start working on a new repository:
 
 1. **Enter the repository directory**
 2. **Run setup script** (it auto-detects the current repo):
+
    ```bash
    cd ~/src/my-new-project
    ./path/to/tools/setup-agent-keys.sh
@@ -146,6 +155,7 @@ Takes about 30 seconds per repository.
 ### Key Permissions
 
 Deploy keys are repository-specific:
+
 - ✅ Can read/write to that specific repository
 - ❌ Cannot access other repositories
 - ❌ Cannot access repository settings
@@ -154,6 +164,7 @@ Deploy keys are repository-specific:
 ### Revocation
 
 If a key is compromised:
+
 1. Go to repository settings → Deploy Keys
 2. Delete "LLM Agent" key
 3. Generate new key: `rm ~/.ssh/agent-* && ./tools/setup-agent-keys.sh`
@@ -162,6 +173,7 @@ If a key is compromised:
 ### Audit Trail
 
 Deploy key usage appears in repository logs:
+
 - Shows "pushed via deploy key: LLM Agent"
 - Timestamp and commit details
 - Different from your personal commits
@@ -173,6 +185,7 @@ Deploy key usage appears in repository logs:
 **Cause**: Deploy key not added to repository
 
 **Fix**:
+
 ```bash
 ./tools/setup-agent-keys.sh
 # Follow instructions to add deploy key
@@ -183,6 +196,7 @@ Deploy key usage appears in repository logs:
 **Cause**: Deploy key might not have write access enabled
 
 **Fix**:
+
 1. Go to repository settings → Deploy Keys
 2. Find "LLM Agent"
 3. Ensure "Allow write access" is checked
@@ -193,6 +207,7 @@ Deploy key usage appears in repository logs:
 
 **Fix**:
 Ensure agent config is included FIRST in `~/.ssh/config`:
+
 ```ssh
 Include config.agent  # This line should be at the top
 
@@ -202,6 +217,7 @@ Include config.agent  # This line should be at the top
 ### SSH Config Not Included
 
 If setup script says config not included, manually add to top of `~/.ssh/config`:
+
 ```bash
 echo "Include config.agent" | cat - ~/.ssh/config > /tmp/config && mv /tmp/config ~/.ssh/config
 ```
@@ -227,6 +243,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/agent-gitea-personal -C "agent@personal-gitea"
 ```
 
 Update `~/.ssh/config.agent`:
+
 ```ssh
 Host company.gitea.io
   IdentityFile ~/.ssh/agent-gitea-company

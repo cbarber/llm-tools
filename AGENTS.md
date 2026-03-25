@@ -9,6 +9,7 @@ This repository provides experimental environments for LLM agent tools, MCPs (Mo
 ## Agent Environment
 
 Running inside `nix develop .#opencode` or `nix develop .#claude-code` provides:
+
 - Sandboxed filesystem access (`IN_AGENT_SANDBOX` is set)
 - Workflow instructions injected automatically via `$AGENTS_TEMPLATE`
 - Pre-configured MCP, beads, and PR tooling
@@ -17,7 +18,7 @@ Outside the nix shell, only this file is available.
 
 ## Repository Structure
 
-```
+```text
 llm-tools/
 ├── flake.nix                    # Root flake exposing all agents
 ├── agents/
@@ -55,7 +56,7 @@ The `tools/default.nix` framework allows:
 Shell-generated files are created on first entry — edit the templates, not the outputs:
 
 | Generated file | Template source |
-|---|---|
+| --- | --- |
 | `opencode.json` | `agents/opencode/setup-mcp.sh` |
 | `.mcp.json` | `agents/claude-code/setup-mcp.sh` |
 | `cclsp.json` | `agents/claude-code/setup-mcp.sh` |

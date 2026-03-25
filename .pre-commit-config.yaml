@@ -14,3 +14,9 @@ repos:
         entry: bash tools/test-agent-sandbox.sh
         pass_filenames: false
         always_run: true
+
+      - id: markdownlint
+        name: markdownlint
+        language: system
+        entry: markdownlint-cli2
+        types: [markdown]

@@ -15,6 +15,7 @@ Findings from iterative CI probing on macOS 15 ARM64 (macos-15-arm64, Feb 2026 i
 Any profile that omits a read rule covering `/` will SIGABRT at launch (exit 134), even if every visible directory under `/` is listed explicitly. The kernel reads the root inode as part of process setup before the process gets to run.
 
 Two forms satisfy this:
+
 - `(literal "/")` — allows exactly the root inode, nothing else
 - `(subpath "/")` — allows all paths (too broad)
 - `(regex #"^/")` — also works; equivalent coverage to `(subpath "/")` without the special-casing
@@ -28,6 +29,7 @@ Listing every visible root directory (`/System`, `/usr`, `/bin`, ...) still SIGA
 ## `file-read*` operation breakdown
 
 `file-read*` expands to exactly three operations — no hidden ones:
+
 - `file-read-data`
 - `file-read-metadata`
 - `file-map-executable`

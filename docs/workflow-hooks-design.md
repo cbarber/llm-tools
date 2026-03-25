@@ -9,6 +9,7 @@ Agents make non-atomic commits because there's no enforcement/guidance at critic
 3. **Post-Push/PR**: No explicit subscription message for PR notifications
 
 Current bash tooling (`temper`, `forge`, `anvil`) is reactive - agents must remember to call them. This leads to:
+
 - Non-atomic commits (mixing features/fixes/refactors)
 - Unclear PR subscription state (notification routing issues)
 - Manual recovery from broken git states
@@ -16,21 +17,25 @@ Current bash tooling (`temper`, `forge`, `anvil`) is reactive - agents must reme
 ## Design Goals
 
 ### Workflow State Visibility
+
 - Make workflow states explicit in session context
 - Auto-inject relevant context at decision points
 - Enable proactive guidance instead of reactive cleanup
 
 ### Atomic Commit Enforcement
+
 - Detect multi-concern changes before commit
 - Guide agents to split changes or use fixup commits
 - Prevent mixed commits through workflow hooks
 
 ### PR Subscription Clarity
+
 - Explicit "📡 Subscribed to PR #N" messages
 - Visible in session context for routing decisions
 - Auto-injected when pushing to PR branches
 
 ### Non-Interactive Operations
+
 - No `-i` flags (agents can't handle interactive prompts)
 - Structured output (JSON) for programmatic parsing
 - Recoverable operations (clear rollback paths)
@@ -42,17 +47,20 @@ Current bash tooling (`temper`, `forge`, `anvil`) is reactive - agents must reme
 **Approach:** Extend current bash scripts with hook system
 
 **Pros:**
+
 - Minimal rewrite of existing tools
 - Quick to prototype
 - Familiar to contributors
 
 **Cons:**
+
 - String manipulation complexity
 - No structured state management
 - Hard to test hooks in isolation
 - Limited type safety
 
 **Implementation:**
+
 ```bash
 # Pre-edit hook
 pre_edit() {
@@ -85,6 +93,7 @@ post_edit() {
 **Why not recommended:** MCP servers don't receive events proactively - agents must call them explicitly. Go engine adds complexity without solving the core problem of getting agents to invoke hooks at the right time.
 
 **Pros:**
+
 - Event-driven hook system
 - Structured state (JSON/SQLite)
 - Rich git operations (go-git library)
@@ -93,11 +102,13 @@ post_edit() {
 - MCP server for session integration
 
 **Cons:**
+
 - Higher upfront development cost
 - New language in tooling stack
 - Requires Nix packaging for Go
 
 **Implementation:**
+
 ```go
 // Hook interface
 type Hook interface {
@@ -141,18 +152,20 @@ func (h *PreEditHook) Execute(ctx WorkflowContext) error {
 **Approach:** Lightweight MCP server wrapping current bash tools
 
 **Pros:**
+
 - Minimal code changes
 - Leverages existing bash logic
 - Easy MCP integration
 
 **Cons:**
+
 - Doesn't solve bash complexity issues
 - Limited state management
 - Still hard to test
 
 ## Recommended Approach
 
-**Enhanced Temper: Extend bash tooling with new workflow sections**
+### Enhanced Temper: Extend bash tooling with new workflow sections
 
 Based on PR feedback, the simpler approach is extending `temper` with new workflow sections rather than building a Go engine. MCP servers don't receive events proactively, so hooks must be invoked explicitly by agents.
 
@@ -166,6 +179,7 @@ Using `--event` flag avoids conflating with existing section-based invocation.
 Backwards compatible with `temper init`, `temper commit`, etc.
 
 **Event-based invocation:**
+
 - **`temper --event session.created`** - Session start (existing behavior via `temper init`)
 - **`temper --event file.edited`** - After file modifications
 - **`temper --event tool.execute.before`** - Before tool execution
@@ -205,6 +219,7 @@ export const TemperPlugin: Plugin = async ({ client, $ }) => {
 ### Phase 3: Simple PR Subscription Tracking
 
 Post-push hook stores minimal state:
+
 ```bash
 # After git push
 PR_NUM=$(forge pr view --json | jq -r '.number // empty')
@@ -222,7 +237,7 @@ Investigate git-absorb for auto-fixup after core hooks proven valuable.
 ## Temper Events
 
 | Invocation | OpenCode Event | Purpose |
-|------------|----------------|---------|
+| --- | --- | --- |
 | `temper init` or `temper --event session.created` | `session.created` (future) | Show workflow state |
 | `temper --event file.edited` | `file.edited` | Show commit guidance after modifications |
 | `temper --event tool.execute.before` | `tool.execute.before` | Show guidelines before edits |
@@ -246,17 +261,20 @@ Minimal state = minimal complexity. No SQLite, no JSON parsing.
 ## Integration with Existing Tools
 
 ### Temper
+
 - Add new sections: `pre-edit`, `post-edit`, `post-push`
 - Each section extracts from `## Workflow` in AGENTS.md
 - `post-push` writes `.git/pr-subscription` file
 - No Go engine needed
 
 ### Forge
+
 - `forge pr view` already shows PR number
 - `temper post-push` uses this to detect subscription
 - No new forge commands needed
 
 ### Anvil
+
 - Read `.git/pr-subscription` for routing decisions
 - Simple file read, no API calls
 - Explicit subscription from temper post-push
