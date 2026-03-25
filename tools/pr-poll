@@ -423,8 +423,21 @@ find_active_prs() {
     done | sort -u
 }
 
+# Rebase state dirs live under --git-common-dir, which differs from --git-dir
+# in worktrees. Checking the common dir handles both cases.
+rebase_in_progress() {
+    local git_common_dir
+    git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    [[ -d "${git_common_dir}/rebase-merge" ]] || [[ -d "${git_common_dir}/rebase-apply" ]]
+}
+
 # Main polling loop
 poll_once() {
+    if rebase_in_progress; then
+        echo "Rebase in progress — skipping poll cycle" >&2
+        return 0
+    fi
+
     echo "Checking for PR updates..." >&2
     
     # Find active PRs
