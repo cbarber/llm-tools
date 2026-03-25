@@ -26,22 +26,38 @@ let
       maintainers = [ ];
     };
   };
-  
+
   cclsp = pkgs.callPackage ./cclsp.nix { inherit bun2nix; };
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
   tea = pkgs.tea;
-  
+
   spr = pkgs.callPackage ./spr { };
   git-absorb = pkgs.git-absorb;
-  
+
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.writeShellScriptBin "forge" (builtins.readFile ./forge);
-  git-agent-sequence-editor = pkgs.writeShellScriptBin "git-agent-sequence-editor" (builtins.readFile ./git-agent-sequence-editor);
-  git-agent-editor = pkgs.writeShellScriptBin "git-agent-editor" (builtins.readFile ./git-agent-editor);
+  git-agent-sequence-editor = pkgs.writeShellScriptBin "git-agent-sequence-editor" (
+    builtins.readFile ./git-agent-sequence-editor
+  );
+  git-agent-editor = pkgs.writeShellScriptBin "git-agent-editor" (
+    builtins.readFile ./git-agent-editor
+  );
   pre-commit = pkgs.pre-commit;
 in
 {
-  inherit cclsp claude-code-scripts beads tea spr git-absorb temper forge git-agent-sequence-editor git-agent-editor pre-commit;
+  inherit
+    cclsp
+    claude-code-scripts
+    beads
+    tea
+    spr
+    git-absorb
+    temper
+    forge
+    git-agent-sequence-editor
+    git-agent-editor
+    pre-commit
+    ;
 
   all = [
     cclsp
