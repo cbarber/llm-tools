@@ -42,6 +42,9 @@ let
   git-agent-editor = pkgs.writeShellScriptBin "git-agent-editor" (
     builtins.readFile ./git-agent-editor
   );
+  git-credential-nixsmith = pkgs.writeShellScriptBin "git-credential-nixsmith" (
+    builtins.readFile ./git-credential-nixsmith
+  );
   pre-commit = pkgs.pre-commit;
 in
 {
@@ -56,6 +59,7 @@ in
     forge
     git-agent-sequence-editor
     git-agent-editor
+    git-credential-nixsmith
     pre-commit
     ;
 
@@ -70,6 +74,7 @@ in
     forge
     git-agent-sequence-editor
     git-agent-editor
+    git-credential-nixsmith
     pre-commit
   ];
 }

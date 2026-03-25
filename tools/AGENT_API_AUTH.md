@@ -26,6 +26,15 @@ the repo was cloned or what URL rewrites exist in the host gitconfig.
   - Pull requests: Read and write
   - Metadata: Read (auto-included)
 
+**Caveat:** Pushing changes to `.github/workflows/` requires the `Workflows`
+permission. Add it only if the agent needs to modify CI configuration.
+
+**Security note:** The token is read from disk at each git operation by
+`git-credential-nixsmith`. It is never written into the session gitconfig or any
+temp file. However, a compromised agent process with sandbox access to
+`~/.config/nixsmith/` could read the token directly — scope it to only the
+repositories and permissions the agent actually needs.
+
 **Storage:** `~/.config/nixsmith/github-token` (mode 600)
 
 ## Gitea Token

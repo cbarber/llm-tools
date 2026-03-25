@@ -138,8 +138,9 @@ setup_github() {
   echo "  3. Repository access: All repositories"
   echo "     (or select specific repos you want agent to access)"
   echo "  4. Permissions:"
-  echo "     - Contents: Read"
+  echo "     - Contents: Read and write"
   echo "     - Pull requests: Read and write"
+  echo "     - Workflows: Read and write (only if agent will modify .github/workflows/)"
   echo "  5. Generate token"
   echo ""
   
