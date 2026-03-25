@@ -5,7 +5,8 @@
 # be accessible inside the sandbox. Callers mount or permit those paths using
 # their platform-specific mechanism (bwrap on Linux, sandbox-exec on macOS).
 #
-# Also loads GITHUB_TOKEN and generates the session gitconfig (GIT_CONFIG_GLOBAL).
+# Also generates the session gitconfig (GIT_CONFIG_GLOBAL) pointing to the
+# git-credential-nixsmith helper, which reads the token from disk at call time.
 #
 # Required by caller before sourcing:
 #   AGENT_GITCONFIG_PATH  — where to write the generated gitconfig file
@@ -37,20 +38,16 @@ gitconfig_target=""
 [[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
 
 GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
-if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
-  GITHUB_TOKEN=$(<"$GITHUB_TOKEN_FILE")
-  export GITHUB_TOKEN
-fi
 
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
   {
     cat <<EOF
 [url "https://github.com/"]
-	insteadOf = https://github.com/
-	insteadOf = git@github.com:
+       insteadOf = https://github.com/
+       insteadOf = git@github.com:
 
 [credential "https://github.com"]
-	helper = !printf 'username=x-access-token\npassword=${GITHUB_TOKEN}\n'
+       helper = !git-credential-nixsmith
 
 EOF
     [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"

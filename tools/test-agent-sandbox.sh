@@ -345,6 +345,11 @@ log_test "Agent gitconfig includes canonical gitconfig path when gitconfig is a 
 TEST_HOME=$(mktemp -d)
 DOTFILES_DIR=$(mktemp -d)
 
+# setup-sandbox-paths.sh only writes GIT_CONFIG_GLOBAL (which includes the user
+# gitconfig) when a token file exists — create a dummy so the include is generated.
+mkdir -p "$TEST_HOME/.config/nixsmith"
+echo "dummy" > "$TEST_HOME/.config/nixsmith/github-token"
+
 NESTED_CONFIG="$DOTFILES_DIR/.gitconfig-identity"
 REAL_GITCONFIG="$DOTFILES_DIR/.gitconfig"
 printf '[user]\n  email = test@example.com\n' > "$NESTED_CONFIG"
