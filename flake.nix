@@ -39,16 +39,16 @@
           opencode = self.packages.${system}.opencode;
           default = pkgs.mkShell {
             name = "dev-shell";
-            buildInputs =
-              with pkgs;
-              [
-                typescript
-                typescript-language-server
-                vtsls
-                bun
-                tools.spr
-                shellcheck
-              ];
+            buildInputs = with pkgs; [
+              typescript
+              typescript-language-server
+              vtsls
+              bun
+              tools.spr
+              shellcheck
+              markdownlint-cli2
+              nixfmt-rfc-style
+            ];
           };
         };
       }
