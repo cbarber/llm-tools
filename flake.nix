@@ -48,6 +48,7 @@
               shellcheck
               markdownlint-cli2
               nixfmt-rfc-style
+              pre-commit
             ];
           };
         };
