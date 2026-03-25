@@ -4,8 +4,7 @@ repos:
       - id: shellcheck
         name: shellcheck
         language: system
-        entry: bash tools/check-shell-scripts.sh --staged
-        pass_filenames: false
+        entry: shellcheck --severity=error
         types: [shell]
 
       - id: markdownlint
