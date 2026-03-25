@@ -20,3 +20,10 @@ repos:
         language: system
         entry: markdownlint-cli2
         types: [markdown]
+
+      - id: nixfmt
+        name: nixfmt
+        language: system
+        entry: nixfmt
+        types: [file]
+        files: \.nix$
