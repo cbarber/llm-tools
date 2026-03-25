@@ -69,13 +69,15 @@ fi
 git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/${DEFAULT_BRANCH})"...
 ```
 
-Commit after edit. An atomic commit is self-contained, related, and fully-functional.
+Commit after edit. An atomic commit is self-contained, related, and fully-functional. Atomic does not mean granular — it means self-contained and intentional. Three commits that together implement one thing are not three atomic commits; they are one commit that leaked its drafts.
 
 **Self-contained and related:** include all changes required for the commit's purpose, and only those changes. Do not mix unrelated concerns. For example, adding a new input field to a form and fixing a cache timeout bug are two commits, not one — even if both touch the same file.
 
 **Fully-functional:** every commit must leave the codebase buildable and working. Any checkout in history must be a valid stopping point.
 
 **Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
+
+**Before pushing:** review commits since branching with `git log --oneline origin/main..HEAD`. Squash any fix-of-fix chains into the commit they belong to using `--fixup` and `--autosquash`. Reviewers and future `git log` readers care about the finished result, not the iteration path.
 
 Format: `<type>(<scope>): <subject>`
 
@@ -114,6 +116,18 @@ bash tools/forge pr create --title "..." --body "..."
 **Rewriting commits:**
 
 `git rebase -i <ref>` is safe to use. GIT_SEQUENCE_EDITOR halts with a break, prints the todo path
+
+**Moving changes to an earlier commit:**
+
+```bash
+# Mark the target commit as `edit` in the rebase todo
+git rebase -i <ref>
+
+# At the edit stop, stage the changes you want in this commit
+git add -u .
+git rebase --continue
+# The later commit that originally had these lines becomes a no-op and is dropped
+```
 
 **Rewriting commit messages:**
 
