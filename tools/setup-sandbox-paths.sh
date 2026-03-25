@@ -11,6 +11,26 @@
 # Required by caller before sourcing:
 #   AGENT_GITCONFIG_PATH  — where to write the generated gitconfig file
 
+# bwrap bind-mounts paths literally — symlinks must exist inside the sandbox
+# at every step of the chain or traversal fails. Mount each link and the target.
+add_mount_ro() {
+  local target="$1"
+  while [[ -L "$target" ]]; do
+    SANDBOX_MOUNTS_RO+=("$target")
+    target=$(readlink -f "$target" 2>/dev/null) || return 0
+  done
+  [[ -e "$target" ]] && SANDBOX_MOUNTS_RO+=("$target")
+}
+
+add_mount_rw() {
+  local target="$1"
+  while [[ -L "$target" ]]; do
+    SANDBOX_MOUNTS_RW+=("$target")
+    target=$(readlink -f "$target" 2>/dev/null) || return 0
+  done
+  [[ -e "$target" ]] && SANDBOX_MOUNTS_RW+=("$target")
+}
+
 append_gitconfig_mounts() {
   local canonical="$1"
   local real dir
@@ -103,15 +123,15 @@ done
 
 if [[ -n "${SANDBOX_EXTRA_RO:-}" ]]; then
   IFS=':' read -ra EXTRA_RO <<<"$SANDBOX_EXTRA_RO"
-  SANDBOX_MOUNTS_RO+=("${EXTRA_RO[@]}")
+  for path in "${EXTRA_RO[@]}"; do add_mount_ro "$path"; done
 fi
 if [[ -n "${SANDBOX_EXTRA_RW:-}" ]]; then
   IFS=':' read -ra EXTRA_RW <<<"$SANDBOX_EXTRA_RW"
-  SANDBOX_MOUNTS_RW+=("${EXTRA_RW[@]}")
+  for path in "${EXTRA_RW[@]}"; do add_mount_rw "$path"; done
 fi
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
-  SANDBOX_MOUNTS_RW+=("${EXTRA_PATHS[@]}")
+  for path in "${EXTRA_PATHS[@]}"; do add_mount_rw "$path"; done
 fi
 
 if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]] && [[ -f "$HOME/.ssh/config.agent" ]]; then

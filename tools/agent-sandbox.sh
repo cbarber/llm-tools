@@ -239,6 +239,11 @@ fi
 SANDBOX_MOUNTS_RO=()
 SANDBOX_MOUNTS_RW=()
 
+AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
+mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
+# shellcheck source=setup-sandbox-paths.sh
+source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
+
 BWRAP_ARGS=(
   --dev-bind /dev /dev
   --proc /proc
@@ -250,9 +255,9 @@ BWRAP_ARGS=(
   --setenv AGENT_WORK_DIR /tmp
 )
 
-SANDBOX_MOUNTS_RO+=("/nix")
-SANDBOX_MOUNTS_RW+=("$(pwd)")
-SANDBOX_MOUNTS_RW+=("/tmp")
+add_mount_ro "/nix"
+add_mount_rw "$(pwd)"
+add_mount_rw "/tmp"
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
   debug_sandbox "Git repository detected"
@@ -263,7 +268,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     debug_sandbox "Git dir: $git_dir_abs"
 
     if [[ -d "$git_dir_abs" ]]; then
-      SANDBOX_MOUNTS_RW+=("$git_dir_abs")
+      add_mount_rw "$git_dir_abs"
       debug_sandbox "Mounted git dir (RW): $git_dir_abs"
 
       common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
@@ -272,13 +277,13 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
         debug_sandbox "Common git dir: $common_git_dir_abs"
 
         if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
-          SANDBOX_MOUNTS_RW+=("$common_git_dir_abs")
+          add_mount_rw "$common_git_dir_abs"
           debug_sandbox "Mounted common git dir (RW): $common_git_dir_abs"
 
           repo_root=$(dirname "$common_git_dir_abs")
           pwd_path="$(pwd)"
           if [[ "$repo_root" != "$pwd_path" ]]; then
-            SANDBOX_MOUNTS_RO+=("$repo_root")
+            add_mount_ro "$repo_root"
             debug_sandbox "Mounted repo root (RO): $repo_root"
           fi
         fi
@@ -287,16 +292,16 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
-[[ -d /etc/static/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/static/nix")
-[[ -d /etc/nix ]] && SANDBOX_MOUNTS_RO+=("/etc/nix")
-[[ -d /etc/ssl ]] && SANDBOX_MOUNTS_RO+=("/etc/ssl")
-[[ -d /etc/pki ]] && SANDBOX_MOUNTS_RO+=("/etc/pki")
-[[ -d /etc/static/ssl ]] && SANDBOX_MOUNTS_RO+=("/etc/static/ssl")
-[[ -f /etc/resolv.conf ]] && SANDBOX_MOUNTS_RO+=("/etc/resolv.conf")
-[[ -f /etc/hosts ]] && SANDBOX_MOUNTS_RO+=("/etc/hosts")
-[[ -d /usr/bin ]] && SANDBOX_MOUNTS_RO+=("/usr/bin")
-[[ -f /etc/passwd ]] && SANDBOX_MOUNTS_RO+=("/etc/passwd")
-[[ -f /etc/group ]] && SANDBOX_MOUNTS_RO+=("/etc/group")
+[[ -d /etc/static/nix ]] && add_mount_ro "/etc/static/nix"
+[[ -d /etc/nix ]] && add_mount_ro "/etc/nix"
+[[ -d /etc/ssl ]] && add_mount_ro "/etc/ssl"
+[[ -d /etc/pki ]] && add_mount_ro "/etc/pki"
+[[ -d /etc/static/ssl ]] && add_mount_ro "/etc/static/ssl"
+[[ -f /etc/resolv.conf ]] && add_mount_ro "/etc/resolv.conf"
+[[ -f /etc/hosts ]] && add_mount_ro "/etc/hosts"
+[[ -d /usr/bin ]] && add_mount_ro "/usr/bin"
+[[ -f /etc/passwd ]] && add_mount_ro "/etc/passwd"
+[[ -f /etc/group ]] && add_mount_ro "/etc/group"
 
 IFS=':' read -ra PATH_DIRS <<<"$PATH"
 for dir in "${PATH_DIRS[@]}"; do
@@ -312,18 +317,14 @@ if [[ -d /bin ]]; then
   for dir in "${PATH_DIRS[@]}"; do
     [[ "$dir" == "/bin" ]] && path_has_bin=true && break
   done
-  [[ "$path_has_bin" == "false" ]] && SANDBOX_MOUNTS_RO+=("/bin")
+  [[ "$path_has_bin" == "false" ]] && add_mount_ro "/bin"
 fi
 
 for lib_dir in /lib /lib64 /lib32 /usr/lib /usr/lib64 /usr/lib32; do
-  [[ -d "$lib_dir" ]] && SANDBOX_MOUNTS_RO+=("$lib_dir")
+  [[ -d "$lib_dir" ]] && add_mount_ro "$lib_dir"
 done
 
-mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
-AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
-# shellcheck source=setup-sandbox-paths.sh
-source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 
 build_mounts() {
   local mode=$1

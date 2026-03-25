@@ -356,6 +356,11 @@ printf '[user]\n  email = test@example.com\n' > "$NESTED_CONFIG"
 printf '[include]\n  path = %s\n' "$NESTED_CONFIG" > "$REAL_GITCONFIG"
 ln -s "$REAL_GITCONFIG" "$TEST_HOME/.gitconfig"
 
+# setup-sandbox-paths.sh only writes GIT_CONFIG_GLOBAL (which includes the user
+# gitconfig) when a token file exists — create a dummy so the include is generated.
+mkdir -p "$TEST_HOME/.config/nixsmith"
+echo "dummy" > "$TEST_HOME/.config/nixsmith/github-token"
+
 git_email=$(HOME="$TEST_HOME" "$SANDBOX_SCRIPT" bash -c 'git config user.email' 2>/dev/null || echo "")
 
 rm -rf "$TEST_HOME" "$DOTFILES_DIR"
@@ -364,6 +369,29 @@ if [[ "$git_email" == "test@example.com" ]]; then
     log_pass "Git identity resolves through symlinked gitconfig include chain"
 else
     log_fail "Git identity not resolvable — include chain broken for symlinked ~/.gitconfig (got: '$git_email')"
+fi
+
+# TEST 17: Multi-hop symlink chains are fully mounted in sandbox
+# bwrap bind-mounts paths literally — every link in a chain must be mounted
+# or traversal fails. Build a three-hop chain in /tmp (always mounted) to
+# exercise the resolution logic without depending on NixOS-specific paths.
+log_test "Multi-hop symlink chain accessible inside sandbox"
+
+CHAIN_DIR=$(mktemp -d)
+echo "content" > "$CHAIN_DIR/real-file"
+ln -s "$CHAIN_DIR/real-file" "$CHAIN_DIR/link-c"
+ln -s "$CHAIN_DIR/link-c"    "$CHAIN_DIR/link-b"
+ln -s "$CHAIN_DIR/link-b"    "$CHAIN_DIR/link-a"
+
+# Pass only the first symlink as the extra mount — add_mount_ro must walk the
+# chain and mount each intermediate link for the read to succeed inside the sandbox.
+chain_result=$(SANDBOX_EXTRA_RO="$CHAIN_DIR/link-a" "$SANDBOX_SCRIPT" cat "$CHAIN_DIR/link-a" 2>/dev/null || echo "")
+rm -rf "$CHAIN_DIR"
+
+if [[ "$chain_result" == "content" ]]; then
+  log_pass "File readable through three-hop symlink chain inside sandbox"
+else
+  log_fail "Could not read file through symlink chain (got: '$chain_result')"
 fi
 
 # Summary
