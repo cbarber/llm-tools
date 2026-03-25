@@ -9,6 +9,7 @@ Reference for OpenCode tool execution event hooks.
 Fires before all tool executions (bash, read, edit, write, etc.)
 
 **Event data:**
+
 ```json
 {
   "input": {
@@ -27,6 +28,7 @@ Fires before all tool executions (bash, read, edit, write, etc.)
 ```
 
 **Available args by tool:**
+
 - `bash`: `command`, `description`
 - `edit`: `filePath`, `oldString`, `newString`
 - `write`: `filePath`, `content`
@@ -37,6 +39,7 @@ Fires before all tool executions (bash, read, edit, write, etc.)
 Fires after all tool executions complete. Includes rich metadata.
 
 **Event data:**
+
 ```json
 {
   "input": {
@@ -55,6 +58,7 @@ Fires after all tool executions complete. Includes rich metadata.
 ```
 
 **Additional metadata by tool:**
+
 - `bash`: `output`, `exit` code
 - `edit`: `diff` (unified format), `diagnostics`
 - `write`: `diagnostics`

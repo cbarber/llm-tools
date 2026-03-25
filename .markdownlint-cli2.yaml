@@ -1,0 +1,18 @@
+globs:
+  - "**/*.md"
+  - "**/*.markdown"
+
+ignores:
+  - ".direnv/**"
+  - ".git/**"
+  - ".opencode/node_modules/**"
+  - ".beads/**"
+  - "update-summary.md"
+
+config:
+  # Line length is impractical to enforce in workflow docs, command examples, and tables
+  MD013: false
+  # <verb> and similar tags appear intentionally in workflow template prose
+  MD033: false
+  # Bare URLs appear intentionally in tool setup docs (copy-paste targets)
+  MD034: false

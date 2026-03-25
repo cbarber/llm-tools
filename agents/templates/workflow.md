@@ -80,6 +80,7 @@ Commit after edit. An atomic commit is self-contained, related, and fully-functi
 Format: `<type>(<scope>): <subject>`
 
 **Types:**
+
 * `feat` - New feature for the user
 * `fix` - Bug fix for the user
 * `refactor` - Code restructuring without behavior change
@@ -94,7 +95,7 @@ Format: `<type>(<scope>): <subject>`
 
 **Example:**
 
-```
+```text
 fix(sandbox): support XDG git config in Linux sandbox
 
 Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
@@ -191,6 +192,7 @@ bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc12
 ```
 
 **Key points:**
+
 * NEVER call `gh` or `tea` directly — use `bash tools/forge`
 * PR body must explain WHY the change was made
 * Link to beads issue if applicable
@@ -217,7 +219,7 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
 5. Handoff for context:
    Provide brief context about what was accomplished for session continuity:
 
-   ```
+   ```text
    Recent Work:
    - Completed llm-tools-xxx: Brief summary of what changed and why
 
@@ -231,6 +233,7 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
 
 **Rules:**
+
 * NEVER say "ready to push when you are" - YOU push
 * NEVER stop before pushing
 * Next session will auto-load state via temper
