@@ -3,7 +3,7 @@ name: Update Flake Dependencies
 on:
   schedule:
     # Run every Sunday at 00:00 UTC
-    - cron: '0 0 * * 0'
+    - cron: "0 0 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -14,18 +14,18 @@ jobs:
   update-flake:
     name: Update flake.lock
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v21
-      
+
       - name: Update flake inputs
         run: |
           nix flake update
-          
+
           # Check if there are changes
           if git diff --quiet flake.lock; then
             echo "No updates available"
@@ -34,39 +34,26 @@ jobs:
             echo "Updates found"
             echo "has_updates=true" >> $GITHUB_ENV
           fi
-      
+
       - name: Update overlay package hashes
         if: env.has_updates == 'true'
         run: |
           # Get current package versions from overlay
           OPENCODE_VERSION=$(grep -A3 'opencode = {' overlays/default.nix | grep 'version =' | sed 's/.*"\(.*\)".*/\1/')
           CLAUDE_VERSION=$(grep -A3 'claude-code = {' overlays/default.nix | grep 'version =' | sed 's/.*"\(.*\)".*/\1/')
-          
+
           echo "Updating opencode $OPENCODE_VERSION overlay hashes..."
           ./tools/update-package.sh opencode "$OPENCODE_VERSION" || echo "Opencode update failed, continuing..."
-          
+
           echo "Updating claude-code $CLAUDE_VERSION overlay hashes..."  
           ./tools/update-package.sh claude-code "$CLAUDE_VERSION" || echo "Claude-code update failed, continuing..."
-          
+
           # Check if overlay was updated
           if ! git diff --quiet overlays/default.nix; then
             echo "Overlay hashes updated"
             git add overlays/default.nix
           fi
-      
-      - name: Generate update summary
-        if: env.has_updates == 'true'
-        run: |
-          echo "## Flake Updates" > update-summary.md
-          echo "" >> update-summary.md
-          echo "The following dependencies were updated:" >> update-summary.md
-          echo "" >> update-summary.md
-          echo '```' >> update-summary.md
-          git diff flake.lock | grep -E '^\+|^-' | head -50 >> update-summary.md || true
-          echo '```' >> update-summary.md
-          echo "" >> update-summary.md
-          echo "Review the changes and merge if tests pass." >> update-summary.md
-      
+
       - name: Create Pull Request
         if: env.has_updates == 'true'
         uses: peter-evans/create-pull-request@v6
@@ -77,7 +64,6 @@ jobs:
           branch-suffix: timestamp
           delete-branch: true
           title: "chore: update flake.lock dependencies"
-          body-path: update-summary.md
           labels: |
             dependencies
             automated
