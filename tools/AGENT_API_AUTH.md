@@ -65,7 +65,7 @@ If automatic setup fails:
 
 ## forge CLI Usage
 
-**Tool:** `bash tools/forge` - Unified CLI wrapper that auto-detects GitHub vs Gitea from git remote.
+**Tool:** `forge` - Unified CLI wrapper that auto-detects GitHub vs Gitea from git remote.
 
 ### Creating a PR from Agent Work
 
@@ -77,12 +77,12 @@ git commit --fixup=abc123  # Fixup specific commit that needs changes
 git push -u origin agent/llm-tools-xyz
 
 # Create PR
-bash tools/forge pr create \
+forge pr create \
   --title "Fix validation logic" \
   --body "Addresses feedback from previous review. See beads issue llm-tools-xyz"
 
 # If tests failing
-bash tools/forge pr create --draft \
+forge pr create --draft \
   --title "WIP: Fix validation logic" \
   --body "Tests failing on line 42. Need guidance on edge case handling."
 ```
@@ -112,26 +112,26 @@ bash tools/forge pr create --draft \
 
 - Agents cannot approve their own PRs
 - CI must pass before merge
-- User provides final approval via: `bash tools/forge pr approve <number>`
+- User provides final approval via: `forge pr approve <number>`
 
 ### forge CLI Reference
 
 **PR Operations:**
 
 ```bash
-bash tools/forge pr create --title "..." --body "..." [--draft]
-bash tools/forge pr view <number> [--comments] [--json]
-bash tools/forge pr comment <number> "text"
-bash tools/forge pr list [--state=open|closed] [--json]
-bash tools/forge pr checkout <number>
-bash tools/forge pr approve <number>
+forge pr create --title "..." --body "..." [--draft]
+forge pr view <number> [--comments] [--json]
+forge pr comment <number> "text"
+forge pr list [--state=open|closed] [--json]
+forge pr checkout <number>
+forge pr approve <number>
 ```
 
 **Issue Operations:**
 
 ```bash
-bash tools/forge issue list [--state=open|closed] [--json]
-bash tools/forge issue show <number> [--json]
+forge issue list [--state=open|closed] [--json]
+forge issue show <number> [--json]
 ```
 
 **Notes:**
