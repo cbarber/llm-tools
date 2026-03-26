@@ -38,7 +38,7 @@ echo ""
 
 git status --short --branch
 
-bash tools/forge pr status
+forge pr status
 
 if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
   echo ""
@@ -46,7 +46,7 @@ if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
   bd ready --limit=5
 fi
 
-bash tools/forge pr next-action
+forge pr next-action
 ```
 
 ### dev-guidelines (tool.execute.before:edit|write)
@@ -110,7 +110,7 @@ When all commits are clean and work is complete: push and create a PR — do not
 
 ```bash
 git push -u origin <branch>
-bash tools/forge pr create --title "..." --body "..."
+forge pr create --title "..." --body "..."
 ```
 
 **Rewriting commits:**
@@ -160,21 +160,21 @@ git rebase --autosquash origin/${DEFAULT_BRANCH}
 ### pull-request (tool.execute.after:bash:.*forge pr create.*)
 
 ```bash
-bash tools/forge pr status
+forge pr status
 ```
 
 **Creating PRs:**
 
 ```bash
 git push -u origin <branch>
-bash tools/forge pr create --title "..." --body "..."
+forge pr create --title "..." --body "..."
 ```
 
 **Viewing PR status:**
 
 ```bash
-bash tools/forge pr view 123
-bash tools/forge pr comments 123
+forge pr view 123
+forge pr comments 123
 ```
 
 **Addressing review feedback:**
@@ -202,12 +202,12 @@ git push --force-with-lease
 **Replying to review comments:**
 
 ```bash
-bash tools/forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
+forge pr review-reply <pr-number> <comment-id> "Fixed in commit abc123"
 ```
 
 **Key points:**
 
-* NEVER call `gh` or `tea` directly — use `bash tools/forge`
+* NEVER call `gh` or `tea` directly — use `forge`
 * PR body must explain WHY the change was made
 * Link to beads issue if applicable
 * Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
@@ -238,7 +238,7 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
    - Completed llm-tools-xxx: Brief summary of what changed and why
 
    PR Status:
-   <EXECUTE: bash tools/forge pr status and paste output here>
+   <EXECUTE: forge pr status and paste output here>
 
    Context:
    - Any non-obvious decisions or gotchas for next session
