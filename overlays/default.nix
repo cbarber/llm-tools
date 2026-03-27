@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.2.26";
-    srcHash = "sha256-+bQEfrqv9tAmXUMcvyUM0hJGpXgt09IWoKYt8I/jBlU=";
-    nodeModulesHash = "sha256-byKXLpfvidfKl8PshUsW0grrRYRoVAYYlid0N6/ke2c=";
+    version = "1.3.3";
+    srcHash = "sha256-hHyG1s/aaIDpZOF/ZGd0BgBK/DLHfsLZjbbYcYhbFeQ=";
+    nodeModulesHash = "sha256-v9VF9n+fCydp373whhgopj8M+gzRGivy8iBErnqK4dw=";
   };
 
   # ============================================================================
@@ -39,8 +39,14 @@ in
           tag = "v${version}";
           hash = opencode.srcHash;
         };
-        patches = (old.patches or [ ]) ++ [ ];
-        # Override node_modules FOD with new src and hash
+        # 1.3.3+ calls `bun run vite build` which spawns vite.js via #!/usr/bin/env node.
+        # The node_modules FOD is copied read-only from the store, so we chmod before
+        # patching the shebang — same pattern as nixpkgs/tinyauth.
+        postConfigure = (old.postConfigure or "") + ''
+          chmod +w packages/app/node_modules/vite/bin/vite.js
+          substituteInPlace packages/app/node_modules/vite/bin/vite.js \
+            --replace-fail "/usr/bin/env node" "${prev.lib.getExe prev.bun}"
+        '';
         node_modules = old.node_modules.overrideAttrs (oldNm: {
           inherit version src;
           outputHash = opencode.nodeModulesHash;
