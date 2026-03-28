@@ -1,0 +1,146 @@
+From 7e8011b34ad3cd43305370bbfcb0c1943970c773 Mon Sep 17 00:00:00 2001
+From: Craig Barber <craigb@mojotech.com>
+Date: Sat, 28 Mar 2026 23:43:34 +0000
+Subject: [PATCH] fix(tui): fetch full message history for export and copy
+
+The TUI message store caps at 100 entries for rendering performance;
+/export and /copy were reading from that store, producing truncated
+transcripts on compacted or long sessions. Fetch all messages from the
+server via a testable helper with no limit.
+
+Authored-By: OpenCode (anthropic/claude-sonnet-4-6)
+---
+ .../src/cli/cmd/tui/routes/session/index.tsx  | 34 +++++++------------
+ .../src/cli/cmd/tui/util/transcript.test.ts   | 28 +++++++++++++++
+ .../src/cli/cmd/tui/util/transcript.ts        | 14 ++++++++
+ 3 files changed, 55 insertions(+), 21 deletions(-)
+ create mode 100644 packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
+
+diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+index fb62de9ac..4f1dec334 100644
+--- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+@@ -77,7 +77,7 @@ import { Global } from "@/global"
+ import { PermissionPrompt } from "./permission"
+ import { QuestionPrompt } from "./question"
+ import { DialogExportOptions } from "../../ui/dialog-export-options"
+-import { formatTranscript } from "../../util/transcript"
++import { fetchTranscriptMessages, formatTranscript } from "../../util/transcript"
+ import { UI } from "@/cli/ui.ts"
+ import { useTuiConfig } from "../../context/tui-config"
+ 
+@@ -833,16 +833,12 @@ export function Session() {
+         try {
+           const sessionData = session()
+           if (!sessionData) return
+-          const sessionMessages = messages()
+-          const transcript = formatTranscript(
+-            sessionData,
+-            sessionMessages.map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+-            {
+-              thinking: showThinking(),
+-              toolDetails: showDetails(),
+-              assistantMetadata: showAssistantMetadata(),
+-            },
+-          )
++          const msgs = await fetchTranscriptMessages(sdk.client, sessionData.id)
++          const transcript = formatTranscript(sessionData, msgs, {
++            thinking: showThinking(),
++            toolDetails: showDetails(),
++            assistantMetadata: showAssistantMetadata(),
++          })
+           await Clipboard.copy(transcript)
+           toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
+         } catch (error) {
+@@ -863,7 +859,7 @@ export function Session() {
+         try {
+           const sessionData = session()
+           if (!sessionData) return
+-          const sessionMessages = messages()
++          const msgs = await fetchTranscriptMessages(sdk.client, sessionData.id)
+ 
+           const defaultFilename = `session-${sessionData.id.slice(0, 8)}.md`
+ 
+@@ -878,15 +874,11 @@ export function Session() {
+ 
+           if (options === null) return
+ 
+-          const transcript = formatTranscript(
+-            sessionData,
+-            sessionMessages.map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+-            {
+-              thinking: options.thinking,
+-              toolDetails: options.toolDetails,
+-              assistantMetadata: options.assistantMetadata,
+-            },
+-          )
++          const transcript = formatTranscript(sessionData, msgs, {
++            thinking: options.thinking,
++            toolDetails: options.toolDetails,
++            assistantMetadata: options.assistantMetadata,
++          })
+ 
+           if (options.openWithoutSaving) {
+             // Just open in editor without saving
+diff --git a/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts b/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
+new file mode 100644
+index 000000000..ad9c88b60
+--- /dev/null
++++ b/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
+@@ -0,0 +1,28 @@
++import { expect, test } from "bun:test"
++import type { Part, UserMessage } from "@opencode-ai/sdk/v2"
++import { fetchTranscriptMessages } from "./transcript"
++
++function makeMsg(id: string): { info: UserMessage; parts: Part[] } {
++  return {
++    info: { id, role: "user", sessionID: "ses_test", time: { created: 0 } } as UserMessage,
++    parts: [{ type: "text", text: `content of ${id}`, synthetic: false }] as Part[],
++  }
++}
++
++test("returns all messages the server provides, including pre-compaction ones", async () => {
++  const serverMessages = Array.from({ length: 150 }, (_, i) => makeMsg(`msg_${i}`))
++  const client = {
++    session: {
++      // Mirrors server behaviour: honours limit when provided, returns all when absent.
++      messages: async (args: { sessionID: string; limit?: number }) => ({
++        data: args.limit ? serverMessages.slice(0, args.limit) : serverMessages,
++      }),
++    },
++  }
++
++  const result = await fetchTranscriptMessages(client as any, "ses_test")
++
++  expect(result).toHaveLength(150)
++  expect(result[0].info.id).toBe("msg_0")
++  expect(result[149].info.id).toBe("msg_149")
++})
+diff --git a/packages/opencode/src/cli/cmd/tui/util/transcript.ts b/packages/opencode/src/cli/cmd/tui/util/transcript.ts
+index 420c9dde1..35ff47989 100644
+--- a/packages/opencode/src/cli/cmd/tui/util/transcript.ts
++++ b/packages/opencode/src/cli/cmd/tui/util/transcript.ts
+@@ -1,6 +1,20 @@
+ import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
+ import { Locale } from "@/util/locale"
+ 
++type Client = {
++  session: {
++    messages: (args: { sessionID: string; limit?: number }) => Promise<{
++      data?: Array<{ info: UserMessage | AssistantMessage; parts: Part[] }>
++    }>
++  }
++}
++
++// Pre-compaction messages fall outside the TUI's 100-entry rendering store.
++export async function fetchTranscriptMessages(client: Client, sessionID: string): Promise<MessageWithParts[]> {
++  const result = await client.session.messages({ sessionID })
++  return (result.data ?? []).map((msg) => ({ info: msg.info, parts: msg.parts }))
++}
++
+ export type TranscriptOptions = {
+   thinking: boolean
+   toolDetails: boolean
+-- 
+2.53.0
+
