@@ -39,6 +39,11 @@ in
           tag = "v${version}";
           hash = opencode.srcHash;
         };
+        patches = (old.patches or [ ]) ++ [
+          # /export and /copy read from the 100-message TUI store instead of
+          # fetching full history; pre-compaction messages are silently dropped.
+          ./patches/opencode-export-full-transcript.patch
+        ];
         # 1.3.3+ calls `bun run vite build` which spawns vite.js via #!/usr/bin/env node.
         # The node_modules FOD is copied read-only from the store, so we chmod before
         # patching the shebang — same pattern as nixpkgs/tinyauth.
