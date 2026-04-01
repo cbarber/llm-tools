@@ -17,9 +17,6 @@ if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
   echo "Note: No ANTHROPIC_API_KEY found. Set it in .env or ${AGENT_ENV_CONFIG_DIR}/.env"
 fi
 
-# Inject the workflow file alongside project AGENTS.md.
-export OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"${AGENTS_TEMPLATE}\"]}"
-
 if [[ -z "${OPENCODE_PORT:-}" ]]; then
   while true; do
     OPENCODE_PORT=$(shuf -i 40000-50000 -n 1)
