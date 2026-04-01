@@ -11,7 +11,6 @@ This repository provides experimental environments for LLM agent tools, MCPs (Mo
 Running inside `nix develop .#opencode` or `nix develop .#claude-code` provides:
 
 - Sandboxed filesystem access (`IN_AGENT_SANDBOX` is set)
-- Workflow instructions injected automatically via `$AGENTS_TEMPLATE`
 - Pre-configured MCP, beads, and PR tooling
 
 Outside the nix shell, only this file is available.
@@ -24,8 +23,6 @@ llm-tools/
 ├── agents/
 │   ├── claude-code/             # Claude Code shell environment
 │   ├── opencode/                # OpenCode shell environment
-│   └── templates/
-│       └── workflow.md          # Default injected workflow
 ├── tools/                       # Shared MCP servers and agent tools
 └── .opencode/plugin/temper      # OpenCode temper plugin
 ```
@@ -39,7 +36,6 @@ Each agent in `agents/` provides an isolated development shell with:
 - Agent-specific tooling and configurations
 - Shared tools from the `tools/` directory
 - Authentication handling (API key + browser auth)
-- Workflow injection via `$AGENTS_TEMPLATE`
 - Auto-launch into the agent environment
 
 ### Tool Sharing

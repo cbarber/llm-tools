@@ -17,9 +17,9 @@ fi
 export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  claude() { agent-sandbox claude --append-system-prompt-file "${AGENTS_TEMPLATE}" "$@"; }
+  claude() { agent-sandbox claude "$@"; }
 else
-  claude() { command claude --append-system-prompt-file "${AGENTS_TEMPLATE}" "$@"; }
+  claude() { command claude "$@"; }
 fi
 export -f claude
 

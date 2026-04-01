@@ -1,22 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Shared shell setup sourced by all agent environments.
-# Callers must set TOOLS_DIR, AGENTS_TEMPLATE_DEFAULT, AGENTS_TEMPLATES_DIR,
-# and AGENT_ENV_CONFIG_DIR before sourcing this file.
+# Callers must set TOOLS_DIR and AGENT_ENV_CONFIG_DIR before sourcing this file.
 # Optional: set BEADS_POST_INIT to a command run after bd init in standard repos.
 
-select_workflow() {
-  [[ -z "${AGENTS_TEMPLATE:-}" ]] || {
-    [[ "${AGENTS_TEMPLATE}" != /* ]] \
-      && echo "${AGENTS_TEMPLATES_DIR}/${AGENTS_TEMPLATE}" \
-      || echo "${AGENTS_TEMPLATE}"
-    return
-  }
-  [[ -f ~/.config/nixsmith/workflow.md ]] && echo ~/.config/nixsmith/workflow.md && return
-  echo "${AGENTS_TEMPLATE_DEFAULT}"
-}
-
-export AGENTS_TEMPLATE="$(select_workflow)"
 export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
 
 if [[ -n "${AGENTS_SKILLS_DIR:-}" && -d "${AGENTS_SKILLS_DIR}" ]]; then
