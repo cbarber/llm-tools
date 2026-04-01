@@ -1,16 +1,6 @@
-# AGENTS.md
-
-This file provides guidance to LLM agents when working with code in this repository.
-
 ## Agent Environment
 
 You are running in a sandboxed environment by default. The sandbox isolates filesystem access while allowing read-write to the current project directory and necessary git directories. Check `IN_AGENT_SANDBOX` environment variable to confirm sandbox status.
-
-## Guidelines
-
-* Be succinct. Only provide examples if necessary
-* Be strategic. Plan first, ask questions, then execute
-* Challenge assumptions with evidence
 
 ## Workflow
 
@@ -48,13 +38,6 @@ fi
 
 forge pr next-action
 ```
-
-### dev-guidelines (tool.execute.before:edit|write)
-
-* Code must be self-documenting. Comments explain WHY, not WHAT
-* Avoid function side effects. Clear input → output
-* Avoid deep nesting. Return early
-* Delete code rather than commenting it out
 
 ### commit (tool.execute.after:edit|write)
 
@@ -245,9 +228,3 @@ See `tools/AGENT_API_AUTH.md` for token setup and full forge CLI reference.
    ```
 
    Note: Repository state (branch, available issues) is auto-injected via temper - don't duplicate that information.
-
-**Rules:**
-
-* NEVER say "ready to push when you are" - YOU push
-* NEVER stop before pushing
-* Next session will auto-load state via temper
