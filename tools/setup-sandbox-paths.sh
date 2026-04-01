@@ -86,6 +86,11 @@ else
   [[ -f "$HOME/.ssh/agent-gitea" ]]     && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea.pub")
 fi
 
+for ro_path in \
+  "$HOME/.agents"; do
+  [[ -e "$ro_path" ]] && SANDBOX_MOUNTS_RO+=("$ro_path")
+done
+
 for rw_path in \
   "$HOME/.config/opencode" \
   "$HOME/.config/nixsmith" \
