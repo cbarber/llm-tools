@@ -212,7 +212,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory }) => {
       
       const tool = input.tool;
       const sessionID = input.sessionID;
-      const command = tool === "bash" ? output.args?.command || "" : "";
+      const command = tool === "bash" ? input.args?.command || "" : "";
       const eventString = tool === "bash" 
         ? `tool.execute.after:bash:${command}`
         : `tool.execute.after:${tool}`;
