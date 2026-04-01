@@ -1,99 +1,122 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGENTS_MD="${AGENTS_TEMPLATE:-AGENTS.md}"
+# Skills are discovered from project-local first, then user-global, matching
+# the Agent Skills standard search order.
+SKILL_SEARCH_PATHS=(".agents/skills" "$HOME/.agents/skills")
 
 show_help() {
   cat <<EOF
-temper - Extract workflow subsections from AGENTS.md
+temper - Run mojo skills by name or event trigger
 
-Usage: temper [COMMAND]
-       temper --event EVENT_NAME
+Usage: temper [SKILL_NAME]
+       temper --event EVENT_STRING
 
 Commands:
-  init            Execute first bash block, show remaining text (default)
-  commit          Show commit workflow
-  pr              Show pull-request workflow
-  pull-request    Alias for pr
-  complete        Show session completion workflow
+  <name>          Run skill by name (e.g. temper mojo-init)
+  init            Alias for mojo-init
+  commit          Alias for mojo-commit
+  rebase          Alias for mojo-rebase
+  pr              Alias for mojo-pull-request
+  pull-request    Alias for mojo-pull-request
+  complete        Alias for mojo-complete
   help            Show this help
 
 Options:
-  --event NAME    Extract section matching event pattern in header
-                  Example: temper --event pre-edit
-                  Matches: ### pre-edit (edit|write)
-
-Environment:
-  AGENTS_MD       Path to AGENTS.md (default: AGENTS.md)
+  --event STRING  Inject all skills whose triggers match STRING
+                  Format: event:tool[:command]
+                  Example: temper --event tool.execute.after:edit
 EOF
 }
 
-extract_subsection() {
-  local section_name="$1"
-  
-  if [[ ! -f "$AGENTS_MD" ]]; then
-    echo "Error: $AGENTS_MD not found" >&2
-    return 1
-  fi
-  
-  awk -v section="$section_name" '
-    /^## Workflow$/ { in_workflow=1; next }
-    in_workflow && /^### / {
-      if (match($0, /^### ([^ ]+)/, parts) && parts[1] == section) {
-        in_section=1
-        next
-      }
-    }
-    in_workflow && in_section && /^###/ { exit }
-    in_workflow && /^## [^#]/ && !/^## Workflow$/ { exit }
-    in_section { print }
-  ' "$AGENTS_MD"
+# Find a skill directory by name across all search paths.
+# Project-local (.agents/skills/) takes precedence over user-global (~/.agents/skills/).
+find_skill() {
+  local name="$1"
+  for base in "${SKILL_SEARCH_PATHS[@]}"; do
+    [[ -f "${base}/${name}/SKILL.md" ]] && echo "${base}/${name}/SKILL.md" && return
+  done
+  return 1
 }
 
+# Iterate all skills across all search paths, deduplicating by name.
+# Project-local skills shadow user-global skills of the same name.
+each_skill() {
+  local -A seen=()
+  for base in "${SKILL_SEARCH_PATHS[@]}"; do
+    [[ -d "$base" ]] || continue
+    for skill_file in "${base}"/*/SKILL.md; do
+      [[ -f "$skill_file" ]] || continue
+      local name
+      name=$(basename "$(dirname "$skill_file")")
+      [[ -v seen["$name"] ]] && continue
+      seen["$name"]=1
+      echo "$skill_file"
+    done
+  done
+}
+
+# Strip YAML frontmatter (--- delimited block at top of file) and return body.
+strip_frontmatter() {
+  awk '/^---$/ { if (NR==1) { in_fm=1; next } if (in_fm) { in_fm=0; next } } !in_fm { print }' "$1"
+}
+
+# Read a single frontmatter field value by key from a SKILL.md file.
+read_frontmatter_field() {
+  local file="$1" key="$2"
+  awk -v key="$key" '
+    /^---$/ { if (NR==1) { in_fm=1; next } if (in_fm) { exit } }
+    in_fm && $0 ~ "^" key ": " { sub("^" key ": ", ""); print; exit }
+  ' "$file"
+}
+
+# Read the triggers block from frontmatter as newline-separated lines.
+read_triggers() {
+  local file="$1"
+  awk '
+    /^---$/ { if (NR==1) { in_fm=1; next } if (in_fm) { exit } }
+    in_fm && /^triggers:/ { in_triggers=1; next }
+    in_fm && in_triggers && /^  - / { print; next }
+    in_fm && in_triggers && /^[^ ]/ { exit }
+  ' "$file"
+}
+
+# Execute the first bash code block in content, then print remaining text.
 execute_bash_block() {
   local content="$1"
-  
   set +o pipefail
-  
+
   local in_bash_block=0
-  local bash_code=""
-  local remaining_text=""
-  local found_first_block=0
-  
+  local bash_code="" remaining_text=""
+
   while IFS= read -r line; do
-    if [[ "$line" =~ ^\`\`\`(bash)?$ ]]; then
-      if [[ $in_bash_block -eq 1 ]]; then
-        in_bash_block=0
-        found_first_block=1
-      else
-        in_bash_block=1
-      fi
+    if [[ "$line" == '```bash {exec}' ]]; then
+      in_bash_exec_block=1
       continue
     fi
-    
-    if [[ $in_bash_block -eq 1 ]] && [[ $found_first_block -eq 0 ]]; then
+    if [[ "$line" == '```' ]]; then
+      if [[ $in_bash_block -eq 1 ]]; then
+        in_bash_block=0
+        continue
+      fi
+    fi
+
+    if [[ $in_bash_block -eq 1 ]]; then
       bash_code+="$line"$'\n'
     else
       remaining_text+="$line"$'\n'
     fi
   done <<< "$content"
-  
+
   if [[ -n "$bash_code" ]]; then
-    # Capture both stdout and stderr, plus exit code
-    local temp_stdout
-    local temp_stderr
+    local temp_stdout temp_stderr exit_code=0
     temp_stdout=$(mktemp)
     temp_stderr=$(mktemp)
-    local exit_code=0
-    
+
     eval "$bash_code" >"$temp_stdout" 2>"$temp_stderr" || exit_code=$?
-    
-    # Always show stdout if present
-    if [[ -s "$temp_stdout" ]]; then
-      cat "$temp_stdout"
-    fi
-    
-    # If command failed, show error info
+
+    [[ -s "$temp_stdout" ]] && cat "$temp_stdout"
+
     if [[ $exit_code -ne 0 ]]; then
       echo ""
       echo "⚠️ **Command execution failed (exit code: $exit_code)**"
@@ -108,100 +131,92 @@ execute_bash_block() {
       echo "*Note: Workflow context may be incomplete.*"
       echo ""
     fi
-    
+
     rm -f "$temp_stdout" "$temp_stderr"
   fi
-  
-  if [[ -n "$remaining_text" ]]; then
-    echo "$remaining_text"
-  fi
-  
+
+  [[ -n "$remaining_text" ]] && echo "$remaining_text"
+
   set -o pipefail
 }
 
-extract_event_section() {
-  local event_string="$1"
-  local debug="${TEMPER_DEBUG:-0}"
-  
-  if [[ ! -f "$AGENTS_MD" ]]; then
-    echo "Error: $AGENTS_MD not found" >&2
-    return 1
-  fi
-  
-  [[ "$debug" == "1" ]] && echo "[temper] Matching event: $event_string" >&2
-  
+run_skill() {
+  local skill_file="$1"
   local content
-  content=$(awk -v event="$event_string" -v debug="$debug" '
-    /^##+ / {
-      if (match($0, /\(([^)]+)\)/, parts)) {
-        pattern = parts[1]
-        
-        if (debug == "1") {
-          print "[temper] Checking pattern: " pattern > "/dev/stderr"
-        }
-        
-        if (event ~ pattern) {
-          if (debug == "1") {
-            print "[temper] MATCH: " pattern > "/dev/stderr"
-          }
-          in_section=1
-          next
-        }
-      }
-    }
-    in_section && /^##+ / { exit }
-    in_section { print }
-  ' "$AGENTS_MD")
-  
+  content=$(strip_frontmatter "$skill_file")
   execute_bash_block "$content"
 }
 
-execute_init() {
-  local content
-  content=$(extract_subsection "init")
-  
-  if [[ -z "$content" ]]; then
-    echo "No init workflow found in $AGENTS_MD" >&2
+# Check whether an event string matches any trigger in a SKILL.md file.
+# Event string format: event[:tool[:command]]
+skill_matches_event() {
+  local skill_file="$1" event_string="$2"
+
+  local event_part tool_part command_part
+  event_part="${event_string%%:*}"
+  local rest="${event_string#*:}"
+  tool_part="${rest%%:*}"
+  command_part="${rest#*:}"
+  [[ "$command_part" == "$rest" ]] && command_part=""
+
+  while IFS= read -r trigger_line; do
+    # Each trigger line is one of: event, tool, command, when, blocking
+    local trigger_event trigger_tool trigger_command
+    trigger_event=$(echo "$trigger_line" | grep -oP '(?<=event: )\S+' || true)
+    trigger_tool=$(echo "$trigger_line" | grep -oP '(?<=tool: )\S+' || true)
+    trigger_command=$(echo "$trigger_line" | grep -oP '(?<=command: ).+' || true)
+
+    [[ -n "$trigger_event" ]] || continue
+    [[ "$event_part" == "$trigger_event" ]] || continue
+    [[ -z "$trigger_tool" || "$tool_part" =~ $trigger_tool ]] || continue
+    [[ -z "$trigger_command" || "$command_part" =~ $trigger_command ]] || continue
+
+    return 0
+  done < <(read_triggers "$skill_file")
+
+  return 1
+}
+
+run_by_name() {
+  local name="$1"
+  local skill_file
+  skill_file=$(find_skill "$name") || {
+    echo "Error: skill '$name' not found in ${SKILL_SEARCH_PATHS[*]}" >&2
     return 1
-  fi
-  
-  execute_bash_block "$content"
+  }
+  run_skill "$skill_file"
+}
+
+run_by_event() {
+  local event_string="$1"
+  local matched=0
+
+  while IFS= read -r skill_file; do
+    skill_matches_event "$skill_file" "$event_string" || continue
+    run_skill "$skill_file"
+    matched=1
+  done < <(each_skill)
+
+  return 0
 }
 
 main() {
-  local command="${1:-init}"
-  
-  # Handle --event flag
+  local command="${1:-mojo-init}"
+
   if [[ "$command" == "--event" ]]; then
-    if [[ -z "${2:-}" ]]; then
-      echo "Error: --event requires an event name" >&2
-      return 1
-    fi
-    extract_event_section "$2"
+    [[ -z "${2:-}" ]] && { echo "Error: --event requires an event string" >&2; return 1; }
+    run_by_event "$2"
     return
   fi
-  
+
   case "$command" in
-    init)
-      execute_init
-      ;;
-    commit)
-      execute_bash_block "$(extract_subsection "commit")"
-      ;;
-    pr|pull-request)
-      execute_bash_block "$(extract_subsection "pull-request")"
-      ;;
-    complete)
-      execute_bash_block "$(extract_subsection "complete")"
-      ;;
-    help|--help|-h)
-      show_help
-      ;;
-    *)
-      echo "Unknown command: $command" >&2
-      show_help >&2
-      return 1
-      ;;
+    init)             run_by_name "mojo-init" ;;
+    commit)           run_by_name "mojo-commit" ;;
+    rebase)           run_by_name "mojo-rebase" ;;
+    pr|pull-request)  run_by_name "mojo-pull-request" ;;
+    complete)         run_by_name "mojo-complete" ;;
+    help|--help|-h)   show_help ;;
+    *)                run_by_name "$command" ;;
   esac
 }
 
