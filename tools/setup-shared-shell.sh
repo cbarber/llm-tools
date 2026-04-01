@@ -19,6 +19,17 @@ select_workflow() {
 export AGENTS_TEMPLATE="$(select_workflow)"
 export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
 
+if [[ -n "${AGENTS_SKILLS_DIR:-}" && -d "${AGENTS_SKILLS_DIR}" ]]; then
+  for skill_dir in "${AGENTS_SKILLS_DIR}"/*/; do
+    skill_name=$(basename "$skill_dir")
+    dest="$HOME/.agents/skills/${skill_name}"
+    mkdir -p "$dest"
+    chmod -f u+w "$dest"/* 2>/dev/null || true
+    cp -rf "${skill_dir}." "$dest"
+    chmod -f u+w "$dest"/* 2>/dev/null || true
+  done
+fi
+
 [[ -f .env ]] && source .env
 [[ -f "${AGENT_ENV_CONFIG_DIR}/.env" ]] && source "${AGENT_ENV_CONFIG_DIR}/.env"
 

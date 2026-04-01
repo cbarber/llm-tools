@@ -24,6 +24,7 @@ pkgs.mkShell {
     export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
     export SETUP_SETTINGS_SCRIPT="${./setup-settings.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
+    export AGENTS_SKILLS_DIR="${../../agents/skills}"
     export TOOLS_DIR="${../../tools}"
     ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
     export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
