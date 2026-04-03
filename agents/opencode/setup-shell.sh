@@ -27,7 +27,7 @@ export OPENCODE_PORT
 export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
 echo "OpenCode API: $OPENCODE_API"
 
-${SETUP_MCP_SCRIPT}
+${SETUP_CONFIG_SCRIPT}
 
 if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
   PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
@@ -58,5 +58,5 @@ else
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Sandbox enabled: use 'agent-sandbox opencode' or just 'opencode' will be sandboxed"
   fi
-  echo "Available commands: cclsp, notify, bd, anvil, pr-poll"
+  echo "Available commands: notify, bd, anvil, pr-poll"
 fi
