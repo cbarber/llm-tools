@@ -21,9 +21,9 @@ let
   # CLAUDE-CODE
   # ============================================================================
   claude-code = {
-    version = "2.1.76";
-    srcHash = "sha256-kjzPTG32f35eN6S85gGLUCmsNwH70Sq5rruEs/0hioM=";
-    npmDepsHash = "";
+    version = "2.1.91";
+    srcHash = "sha256-u7jdM6hTYN05ZLPz630Yj7gI0PeCSArg4O6ItQRAMy4=";
+    npmDepsHash = "sha256-0ppKP+XMgTzVVZtL7GDsOjgvSPUDrUa7SoG048RLaNg=";
   };
 
 in
@@ -69,8 +69,20 @@ in
           url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz";
           hash = claude-code.srcHash;
         };
-        npmDepsHash = claude-code.npmDepsHash;
-        # package-lock.json is handled by the update script
+        # nixpkgs vendors a package-lock.json pinned to its own version.
+        # Override postPatch to substitute our version-matched lock file.
+        postPatch = ''
+          cp ${./claude-code-package-lock.json} package-lock.json
+          substituteInPlace cli.js \
+            --replace-fail '#!/bin/sh' '#!/usr/bin/env sh'
+        '';
+        # buildNpmPackage bakes npmDeps (a fetchNpmDeps FOD) at evaluation time
+        # using the original finalAttrs src. overrideAttrs does not re-evaluate
+        # it, so we must explicitly re-derive it from our new src + postPatch.
+        npmDeps = old.npmDeps.overrideAttrs {
+          inherit src postPatch;
+          outputHash = claude-code.npmDepsHash;
+        };
       })
     else
       prev.claude-code;
