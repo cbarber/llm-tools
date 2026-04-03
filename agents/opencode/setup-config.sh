@@ -5,20 +5,13 @@
 
 set -euo pipefail
 
-# Copy temper plugin from nix store if not already present
-if [[ ! -d ".opencode/plugin/temper" ]] && [[ -n "${OPENCODE_PLUGIN_TEMPER_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_TEMPER_DIR" ]]; then
-  mkdir -p .opencode/plugin
-  cp -r "$OPENCODE_PLUGIN_TEMPER_DIR" .opencode/plugin/
-  echo "Copied temper plugin from nix store to .opencode/plugin/temper"
-fi
-
-# Add temper plugin to opencode.json if not already present
-if [[ -f "opencode.json" ]] && ! grep -q ".opencode/plugin/temper" opencode.json 2>/dev/null; then
-  if [[ -d ".opencode/plugin/temper" ]]; then
-    tmp=$(mktemp)
-    jq '.plugin += ["./.opencode/plugin/temper"]' opencode.json > "$tmp" && mv "$tmp" opencode.json
-    echo "Added temper plugin to opencode.json"
-  fi
+# Copy temper plugin from nix store if not already present.
+# Temper lives in .opencode/plugins/ so OpenCode auto-loads it without
+# requiring an explicit entry in opencode.json.
+if [[ ! -f ".opencode/plugins/temper.ts" ]] && [[ -n "${OPENCODE_PLUGIN_TEMPER_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_TEMPER_DIR" ]]; then
+  mkdir -p .opencode/plugins
+  cp "$OPENCODE_PLUGIN_DIR/temper.ts" .opencode/plugins/temper.ts
+  echo "Copied temper plugin from nix store to .opencode/plugins/temper.ts"
 fi
 
 # Create opencode.json with beads plugin if it doesn't exist
