@@ -74,6 +74,27 @@ else
   PLUGINS_DIR=".opencode/plugins"
 fi
 
+# ---------------------------------------------------------------------------
+# share:disabled compliance assertion
+# ---------------------------------------------------------------------------
+# Corporate policy requires sharing to be disabled in all OpenCode configs.
+# Check every config that exists and auto-fix any violation with a warning.
+
+assert_share_disabled() {
+  local config="$1"
+  local current
+  current=$(jq -r '.share // empty' "$config" 2>/dev/null)
+  if [[ "$current" != "disabled" ]]; then
+    echo "WARNING: share is not set to 'disabled' in ${config} — fixing (corporate compliance requirement)" >&2
+    local tmp
+    tmp=$(mktemp)
+    jq '.share = "disabled"' "$config" > "$tmp" && mv "$tmp" "$config"
+  fi
+}
+
+[[ -f "$PROJECT_CONFIG" ]] && assert_share_disabled "$PROJECT_CONFIG"
+[[ -f "$GLOBAL_CONFIG" ]] && assert_share_disabled "$GLOBAL_CONFIG"
+
 if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
   TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
   TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
