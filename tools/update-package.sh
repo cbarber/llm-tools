@@ -184,6 +184,42 @@ update_opencode() {
   warn "Please verify the build works: nix build .#opencode"
 }
 
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+# Generate package-lock.json for claude-code by unpacking the npm tarball and
+# running `npm install --package-lock-only` inside it.
+# This mirrors the approach used by nixpkgs's nix-update --generate-lockfile:
+# https://github.com/Mic92/nix-update/blob/main/nix_update/lockfile.py
+generate_npm_lockfile() {
+  local version="$1"
+  local dest="$2"
+  local tarball_url
+  tarball_url="https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz"
+
+  info "Generating package-lock.json via npm install --package-lock-only..."
+
+  # Unpack tarball (npm tarballs use a package/ prefix)
+  curl -sL "$tarball_url" | tar -xz -C "$tmpdir"
+  local src_dir="${tmpdir}/package"
+
+  # Remove any existing lock so npm resolves fresh
+  rm -f "${src_dir}/package-lock.json"
+
+  # Run npm in a nix shell that provides nodejs. Matches nixpkgs update.sh pattern:
+  #   nix shell .#cacert .#nodejs ... --command bash
+  AUTHORIZED=1 nix shell nixpkgs#nodejs --command \
+    npm install --package-lock-only --prefix "$src_dir" 2>/dev/null
+
+  if [[ ! -f "${src_dir}/package-lock.json" ]]; then
+    error "npm failed to generate package-lock.json"
+    return 1
+  fi
+
+  cp "${src_dir}/package-lock.json" "$dest"
+  success "Generated package-lock.json at ${dest}"
+}
+
 # Update claude-code
 update_claude_code() {
   local version="${1:-}"
@@ -195,7 +231,7 @@ update_claude_code() {
 
   info "Updating claude-code to version $version"
 
-  # Get src hash
+  # Step 1: prefetch src hash
   local src_hash
   src_hash=$(prefetch_npm "@anthropic-ai/claude-code" "$version")
 
@@ -203,47 +239,64 @@ update_claude_code() {
     error "Failed to prefetch source"
     exit 1
   fi
-
   success "Source hash: $src_hash"
 
-  # Fetch package-lock.json content
-  info "Fetching package-lock.json..."
-  local lock_json
-  lock_json=$(curl -sL "https://registry.npmjs.org/@anthropic-ai/claude-code/$version" | \
-    jq -r '.dist.tarball' | \
-    xargs -I{} sh -c 'curl -sL "{}" | tar -xzO package/package-lock.json 2>/dev/null || echo ""')
+  # Step 2: generate package-lock.json (needed for nixpkgs buildNpmPackage)
+  local lock_file="${REPO_ROOT}/overlays/claude-code-package-lock.json"
+  generate_npm_lockfile "$version" "$lock_file"
 
-  echo ""
-  echo "============================================================================"
-  echo "Update overlays/default.nix with these values:"
-  echo "============================================================================"
-  echo ""
-  echo "  claude-code = {"
-  echo "    version = \"$version\";"
-  echo "    srcHash = \"$src_hash\";"
-  echo "    npmDepsHash = \"sha256-PLACEHOLDER\";  # See below"
-  echo "  };"
-  echo ""
-  echo "============================================================================"
-  echo "To get npmDepsHash:"
-  echo "============================================================================"
-  echo ""
-  echo "1. Update the overlay with the values above (use empty string for npmDepsHash)"
-  echo "2. Run: nix build .#claude-code 2>&1 | grep 'got:'"
-  echo "3. Copy the sha256-... hash to npmDepsHash"
-  echo ""
+  # Step 3: write overlay with empty npmDepsHash so the build fails with the
+  # correct hash in the error output (same trick used by nixpkgs update.sh)
+  cp "$OVERLAY_FILE" "$OVERLAY_FILE.bak"
+  update_overlay "claude-code" "$version" "$src_hash" ""
 
-  if [[ -n "$lock_json" ]]; then
-    echo "============================================================================"
-    echo "package-lock.json also needs updating for claude-code."
-    echo "The overlay approach may not work without matching lock file."
-    echo "Consider using nixpkgs directly or vendoring the full package."
-    echo "============================================================================"
+  # Step 4: build to discover npmDepsHash from Nix FOD error.
+  # Build the npmDeps FOD directly with an empty outputHash so nix reports
+  # the correct hash. We construct the expression inline with the new src and
+  # postPatch so the result is independent of the overlay file's current state.
+  info "Attempting build to discover npmDepsHash (this will fail, that's expected)..."
+  local lock_file_nix_path
+  lock_file_nix_path=$(nix-store --add "$lock_file")
+  local nix_output npm_deps_hash
+  nix_output=$(nix build --impure --no-link --expr \
+    "let pkgs = import (builtins.getFlake \"nixpkgs\").outPath { system = builtins.currentSystem; config.allowUnfree = true; }; in
+     (pkgs.claude-code.npmDeps.overrideAttrs (_: {
+       src = pkgs.fetchzip {
+         url = \"https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz\";
+         hash = \"${src_hash}\";
+       };
+       postPatch = ''
+         cp ${lock_file_nix_path} package-lock.json
+         substituteInPlace cli.js --replace-fail '#!/bin/sh' '#!/usr/bin/env sh'
+       '';
+       outputHash = \"\";
+       outputHashAlgo = \"sha256\";
+     }))" \
+    2>&1 || true)
+  npm_deps_hash=$(echo "$nix_output" | grep -oE 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]+' | sed 's/got:[[:space:]]*//' | tail -1)
+
+  if [[ -z "$npm_deps_hash" ]]; then
+    error "Failed to extract npmDepsHash from build output"
+    mv "$OVERLAY_FILE.bak" "$OVERLAY_FILE"
+    exit 1
   fi
+  success "npmDepsHash: $npm_deps_hash"
 
-  warn "Note: npmDepsHash requires a build attempt to discover."
-  warn "Set npmDepsHash = \"\" first, then build to get the actual hash."
-  warn "claude-code may also need package-lock.json updates (complex)."
+  # Step 5: write final overlay with correct hash
+  update_overlay "claude-code" "$version" "$src_hash" "$npm_deps_hash"
+  rm -f "$OVERLAY_FILE.bak"
+
+  echo ""
+  success "Successfully updated claude-code to version $version"
+  echo ""
+  echo "Changes made:"
+  echo "  ${OVERLAY_FILE}"
+  echo "    version:     $version"
+  echo "    srcHash:     $src_hash"
+  echo "    npmDepsHash: $npm_deps_hash"
+  echo "  ${lock_file}"
+  echo ""
+  warn "Verify the build: nix build .#claude-code"
 }
 
 # Main
