@@ -2,7 +2,6 @@
   "$schema": "https://opncd.ai/config.json",
   "share": "disabled",
   "plugin": [
-    "opencode-beads@0.3.0",
-    "./.opencode/plugin/temper"
+    "opencode-beads@0.3.0"
   ]
 }
