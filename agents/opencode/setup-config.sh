@@ -74,8 +74,20 @@ else
   PLUGINS_DIR=".opencode/plugins"
 fi
 
-if [[ ! -f "${PLUGINS_DIR}/temper.ts" ]] && [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
-  mkdir -p "$PLUGINS_DIR"
-  cp "$OPENCODE_PLUGIN_DIR/temper.ts" "${PLUGINS_DIR}/temper.ts"
-  echo "Copied temper plugin to ${PLUGINS_DIR}/temper.ts"
+if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
+  TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
+  TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
+
+  if [[ ! -f "$TEMPER_DEST" ]]; then
+    mkdir -p "$PLUGINS_DIR"
+    cp "$TEMPER_SRC" "$TEMPER_DEST"
+    echo "Installed temper plugin to ${TEMPER_DEST}"
+  else
+    src_hash=$(sha256sum "$TEMPER_SRC" | cut -d' ' -f1)
+    dest_hash=$(sha256sum "$TEMPER_DEST" | cut -d' ' -f1)
+    if [[ "$src_hash" != "$dest_hash" ]]; then
+      cp "$TEMPER_SRC" "$TEMPER_DEST"
+      echo "Updated temper plugin at ${TEMPER_DEST} (nix store version changed)"
+    fi
+  fi
 fi
