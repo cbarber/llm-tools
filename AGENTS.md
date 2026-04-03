@@ -53,9 +53,7 @@ Shell-generated files are created on first entry — edit the templates, not the
 
 | Generated file | Template source |
 | --- | --- |
-| `opencode.json` | `agents/opencode/setup-mcp.sh` |
-| `.mcp.json` | `agents/claude-code/setup-mcp.sh` |
-| `cclsp.json` | `agents/claude-code/setup-mcp.sh` |
+| `opencode.json` | `agents/opencode/setup-config.sh` |
 | `.claude/settings.local.json` | `agents/claude-code/settings.template.json` |
 
 ## Common Commands

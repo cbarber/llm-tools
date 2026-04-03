@@ -4,17 +4,5 @@
   "plugin": [
     "opencode-beads@0.3.0",
     "./.opencode/plugin/temper"
-  ],
-  "mcp": {
-    "lsp": {
-      "type": "local",
-      "command": [
-        "cclsp"
-      ],
-      "enabled": true,
-      "environment": {
-        "CCLSP_CONFIG_PATH": "cclsp.json"
-      }
-    }
-  }
+  ]
 }

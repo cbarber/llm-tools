@@ -1,4 +1,4 @@
-{ pkgs, bun2nix }:
+{ pkgs }:
 
 let
   beads = pkgs.buildGoModule {
@@ -27,7 +27,6 @@ let
     };
   };
 
-  cclsp = pkgs.callPackage ./cclsp.nix { inherit bun2nix; };
   claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
   tea = pkgs.tea;
 
@@ -49,7 +48,6 @@ let
 in
 {
   inherit
-    cclsp
     claude-code-scripts
     beads
     tea
@@ -64,7 +62,6 @@ in
     ;
 
   all = [
-    cclsp
     claude-code-scripts
     beads
     tea

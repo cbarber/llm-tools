@@ -23,7 +23,6 @@ else
 fi
 export -f claude
 
-${SETUP_MCP_SCRIPT}
 ${SETUP_SETTINGS_SCRIPT}
 
 if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
@@ -41,5 +40,5 @@ else
   if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
     echo "Sandbox enabled: use 'agent-sandbox claude' or just 'claude' will be sandboxed"
   fi
-  echo "Available commands: notify, cclsp, bd"
+  echo "Available commands: notify, bd"
 fi

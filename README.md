@@ -19,7 +19,6 @@ nix develop github:cbarber/llm-tools#opencode
 Both agents include:
 
 - Sandboxed execution (bubblewrap on Linux, sandbox-exec on macOS)
-- cclsp MCP server for LSP integration
 - Auto-detected language servers (Nix via nil)
 - Beads task management with git integration
 - Shared tooling (notify)
@@ -51,13 +50,12 @@ Auto-initializes in agent shells.
 
 Auto-generates on first run if missing:
 
-- `.mcp.json` / `opencode.json` - MCP server configuration
-- `cclsp.json` - Language server mappings for detected project languages
+- `opencode.json` - MCP server configuration
 
 Set `ANTHROPIC_API_KEY` in `.env` for API auth. Set `AUTO_LAUNCH=false` to skip auto-launch.
 
 ## Structure
 
 - `agents/` - Agent environments (claude-code, opencode)
-- `tools/` - Shared MCP servers (cclsp), scripts, and sandbox
+- `tools/` - Shared MCP servers, scripts, and sandbox
 - `flake.nix` - Root configuration

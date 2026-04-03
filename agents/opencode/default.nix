@@ -17,7 +17,7 @@ pkgs.mkShell {
   shellHook = ''
     export GIT_SEQUENCE_EDITOR="git-agent-sequence-editor"
     export GIT_EDITOR="git-agent-editor"
-    export SETUP_MCP_SCRIPT="${./setup-mcp.sh}"
+    export SETUP_CONFIG_SCRIPT="${./setup-config.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
     ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
