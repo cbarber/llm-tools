@@ -163,3 +163,10 @@ if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   SANDBOX_MOUNTS_RW+=("$HOME")
 fi
 
+# Serialize mount lists into env vars so forge doctor can display them inside
+# the sandbox. Colon-separated, matching the SANDBOX_EXTRA_RO/RW convention.
+# These are injected via bwrap --setenv by the caller (agent-sandbox.sh).
+NIXSMITH_SANDBOX_RO=$(IFS=:; echo "${SANDBOX_MOUNTS_RO[*]}")
+NIXSMITH_SANDBOX_RW=$(IFS=:; echo "${SANDBOX_MOUNTS_RW[*]}")
+export NIXSMITH_SANDBOX_RO NIXSMITH_SANDBOX_RW
+

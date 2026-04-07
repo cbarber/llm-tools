@@ -256,6 +256,8 @@ BWRAP_ARGS=(
   --setenv IN_AGENT_SANDBOX "1"
   --setenv AGENT_WORK_DIR /tmp
   --setenv GITHUB_TOKEN_FILE "${GITHUB_TOKEN_FILE:-}"
+  --setenv NIXSMITH_SANDBOX_RO "${NIXSMITH_SANDBOX_RO:-}"
+  --setenv NIXSMITH_SANDBOX_RW "${NIXSMITH_SANDBOX_RW:-}"
 )
 
 add_mount_ro "/nix"

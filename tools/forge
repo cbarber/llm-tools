@@ -62,27 +62,31 @@ authenticate_gitea() {
 
 FORGE_TYPE=$(detect_forge)
 
-# Ensure we have the right CLI tool and authenticate
-case "$FORGE_TYPE" in
-    github)
-        if ! command -v gh >/dev/null; then
-            echo "Error: gh CLI not found. Install with: nix-env -iA nixpkgs.gh" >&2
+# doctor runs before authentication — it is the tool used to diagnose auth
+# failures, so it must not require auth to start.
+if [[ "${1:-}" != "doctor" ]]; then
+    # Ensure we have the right CLI tool and authenticate
+    case "$FORGE_TYPE" in
+        github)
+            if ! command -v gh >/dev/null; then
+                echo "Error: gh CLI not found. Install with: nix-env -iA nixpkgs.gh" >&2
+                exit 1
+            fi
+            authenticate_github
+            ;;
+        gitea)
+            if ! command -v tea >/dev/null; then
+                echo "Error: tea CLI not found. Install with: nix-env -iA nixpkgs.tea" >&2
+                exit 1
+            fi
+            authenticate_gitea
+            ;;
+        *)
+            echo "Error: Unknown forge type. Remote must be GitHub or Gitea." >&2
             exit 1
-        fi
-        authenticate_github
-        ;;
-    gitea)
-        if ! command -v tea >/dev/null; then
-            echo "Error: tea CLI not found. Install with: nix-env -iA nixpkgs.tea" >&2
-            exit 1
-        fi
-        authenticate_gitea
-        ;;
-    *)
-        echo "Error: Unknown forge type. Remote must be GitHub or Gitea." >&2
-        exit 1
-        ;;
-esac
+            ;;
+    esac
+fi
 
 auto_detect_pr() {
     local branch
@@ -128,6 +132,182 @@ auto_detect_pr() {
     esac
 }
 
+doctor() {
+    local ok="  OK  " warn=" WARN " fail=" FAIL "
+    local pass=0 warnings=0 failures=0
+
+    check_ok()   { echo "[${ok}] $*";   ((pass++))     || true; }
+    check_warn() { echo "[${warn}] $*"; ((warnings++)) || true; }
+    check_fail() { echo "[${fail}] $*"; ((failures++)) || true; }
+
+    echo "forge doctor — sandbox health check"
+    echo "====================================="
+    echo ""
+
+    # ── 1. Git state ───────────────────────────────────────────────────────
+    echo "Git"
+    local branch upstream ahead behind dirty
+    branch=$(git branch --show-current 2>/dev/null || echo "")
+    if [[ -z "$branch" ]]; then
+        check_warn "branch: detached HEAD"
+    else
+        check_ok "branch: ${branch}"
+    fi
+
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+    if [[ -n "$upstream" ]]; then
+        read -r ahead behind < <(git rev-list --left-right --count "${upstream}...HEAD" 2>/dev/null || echo "0 0")
+        check_ok "upstream: ${upstream} (ahead ${ahead}, behind ${behind})"
+    else
+        check_warn "upstream: no tracking branch set"
+    fi
+
+    dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$dirty" -eq 0 ]]; then
+        check_ok "working tree: clean"
+    else
+        check_warn "working tree: ${dirty} modified file(s)"
+    fi
+    echo ""
+
+    # ── 2. GitHub auth ─────────────────────────────────────────────────────
+    echo "GitHub auth"
+    local gh_owner token_file
+    gh_owner=$(extract_github_owner 2>/dev/null || true)
+
+    if [[ -z "$gh_owner" ]]; then
+        check_warn "owner: not a GitHub remote (skipping auth checks)"
+    else
+        check_ok "owner: ${gh_owner}"
+        token_file="${HOME}/.config/nixsmith/github-token-${gh_owner}"
+
+        if [[ -f "$token_file" ]] && [[ -r "$token_file" ]]; then
+            check_ok "token file: ${token_file}"
+        else
+            check_fail "token file: ${token_file} (missing or unreadable)"
+        fi
+
+        # Live network check — always performed
+        local auth_out auth_user
+        if auth_out=$(GH_TOKEN=$(cat "$token_file" 2>/dev/null || true) gh auth status 2>&1); then
+            auth_user=$(echo "$auth_out" | grep -oE 'Logged in to github\.com account [^ ]+' | awk '{print $NF}' || true)
+            check_ok "gh auth status: ok${auth_user:+ (${auth_user})}"
+        else
+            check_fail "gh auth status: failed — ${auth_out}"
+        fi
+    fi
+    echo ""
+
+    # ── 3. Required tools in PATH ──────────────────────────────────────────
+    echo "Tools"
+    local tool ver
+    for tool in git bd bun temper gh; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            case "$tool" in
+                git)    ver=$(git --version 2>/dev/null | awk '{print $3}') ;;
+                bd)     ver=$(bd --version 2>/dev/null | head -1 || echo "?") ;;
+                bun)    ver=$(bun --version 2>/dev/null || echo "?") ;;
+                temper) ver=$(temper --version 2>/dev/null || echo "present") ;;
+                gh)     ver=$(gh --version 2>/dev/null | head -1 | awk '{print $3}') ;;
+                *)      ver="present" ;;
+            esac
+            check_ok "${tool}: ${ver}"
+        else
+            check_fail "${tool}: not found in PATH"
+        fi
+    done
+    echo ""
+
+    # ── 4. Sandbox env vars ────────────────────────────────────────────────
+    echo "Sandbox"
+    if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
+        check_ok "IN_AGENT_SANDBOX: ${IN_AGENT_SANDBOX}"
+    else
+        check_warn "IN_AGENT_SANDBOX: not set (running outside sandbox)"
+    fi
+
+    for var in OPENCODE_SESSION_ID BD_BRANCH; do
+        if [[ -n "${!var:-}" ]]; then
+            check_ok "${var}: ${!var}"
+        else
+            check_warn "${var}: not set"
+        fi
+    done
+
+    if [[ -n "${NIXSMITH_SANDBOX_RO:-}" ]]; then
+        echo ""
+        echo "  Read-only mounts:"
+        IFS=: read -ra _ro_mounts <<< "${NIXSMITH_SANDBOX_RO}"
+        for p in "${_ro_mounts[@]}"; do
+            [[ -n "$p" ]] && echo "    ro  $p"
+        done
+    fi
+    if [[ -n "${NIXSMITH_SANDBOX_RW:-}" ]]; then
+        echo ""
+        echo "  Read-write mounts:"
+        IFS=: read -ra _rw_mounts <<< "${NIXSMITH_SANDBOX_RW}"
+        for p in "${_rw_mounts[@]}"; do
+            [[ -n "$p" ]] && echo "    rw  $p"
+        done
+    fi
+    echo ""
+
+    # ── 5. Filesystem probes ───────────────────────────────────────────────
+    echo "Filesystem"
+    local probe
+    probe="$(pwd)/.nixsmith-doctor-probe"
+    if touch "$probe" 2>/dev/null && rm -f "$probe" 2>/dev/null; then
+        check_ok "project dir writable: $(pwd)"
+    else
+        check_fail "project dir not writable: $(pwd)"
+    fi
+
+    if [[ -n "${gh_owner:-}" ]]; then
+        local tf="${HOME}/.config/nixsmith/github-token-${gh_owner}"
+        if [[ -r "$tf" ]]; then
+            check_ok "token file readable: ${tf}"
+        else
+            check_fail "token file not readable: ${tf}"
+        fi
+    fi
+
+    if [[ -d "${HOME}/.agents/skills" ]]; then
+        check_ok "skills dir: ${HOME}/.agents/skills"
+    else
+        check_warn "skills dir: ${HOME}/.agents/skills (not found)"
+    fi
+    echo ""
+
+    # ── 6. Beads state ─────────────────────────────────────────────────────
+    echo "Beads"
+    if command -v bd >/dev/null 2>&1; then
+        local stats
+        if stats=$(bd stats --json 2>/dev/null); then
+            local open blocked
+            if command -v jq >/dev/null 2>&1; then
+                open=$(echo "$stats"    | jq -r '.summary.open_issues'    2>/dev/null || echo "?")
+                blocked=$(echo "$stats" | jq -r '.summary.blocked_issues' 2>/dev/null || echo "?")
+            else
+                open=$(echo "$stats"    | grep -o '"open_issues": *[0-9]*'    | grep -o '[0-9]*$' || echo "?")
+                blocked=$(echo "$stats" | grep -o '"blocked_issues": *[0-9]*' | grep -o '[0-9]*$' || echo "?")
+            fi
+            check_ok "issues: ${open} open, ${blocked} blocked"
+        else
+            check_warn "bd stats failed (no beads repo?)"
+        fi
+    else
+        check_warn "bd not in PATH — skipping beads checks"
+    fi
+    echo ""
+
+    # ── Summary ────────────────────────────────────────────────────────────
+    echo "====================================="
+    echo "  OK: ${pass}  WARN: ${warnings}  FAIL: ${failures}"
+    echo "====================================="
+
+    [[ "$failures" -eq 0 ]]
+}
+
 # Show usage
 usage() {
     cat <<EOF
@@ -137,6 +317,8 @@ Unified CLI for GitHub (gh) and Gitea (tea) operations.
 Auto-detects forge type from git remote.
 
 Commands:
+  doctor                       Sandbox health check (git, auth, tools, mounts)
+
   pr create --title TITLE --body BODY [--draft]
   pr view [NUMBER] [--json]
   pr ci [NUMBER] [--timeout SECONDS]
@@ -773,6 +955,9 @@ case "${1:-}" in
     --type)
         # Return forge type for scripts
         echo "$FORGE_TYPE"
+        ;;
+    doctor)
+        shift; doctor "$@"
         ;;
     pr)
         case "${2:-}" in
