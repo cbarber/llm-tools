@@ -6,10 +6,11 @@
 # their platform-specific mechanism (bwrap on Linux, sandbox-exec on macOS).
 #
 # Also generates the session gitconfig (GIT_CONFIG_GLOBAL) pointing to the
-# git-credential-nixsmith helper, which reads the token from disk at call time.
+# git-credential-nixsmith helper, which reads GITHUB_TOKEN_FILE env var.
 #
 # Required by caller before sourcing:
 #   AGENT_GITCONFIG_PATH  — where to write the generated gitconfig file
+#   extract_github_owner  — function from common-helpers.sh (sourced by caller)
 
 # bwrap bind-mounts paths literally — symlinks must exist inside the sandbox
 # at every step of the chain or traversal fails. Mount each link and the target.
@@ -57,7 +58,21 @@ gitconfig_target=""
 [[ -n "$xdg_gitconfig_target" ]] && append_gitconfig_mounts "$xdg_gitconfig_target"
 [[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
 
-GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
+# Resolve the per-org token file for the current repo's GitHub owner.
+# Falls back to the deprecated single-token path so that old installs that
+# have not yet migrated still get a credential helper injected (the migration
+# warning/block is in setup-agent-api-tokens.sh; here we stay permissive so
+# the sandbox can still open while the user reads the warning).
+_github_token_file=$(nixsmith_github_token_file 2>/dev/null || true)
+if [[ -n "$_github_token_file" ]]; then
+  GITHUB_TOKEN_FILE="${_github_token_file}"
+  # Fall back to legacy path only for gitconfig injection — the credential
+  # helper will fail at runtime if the file is missing, which is the right UX.
+  [[ ! -f "$GITHUB_TOKEN_FILE" ]] && GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
+else
+  GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
+fi
+export GITHUB_TOKEN_FILE
 
 if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
   {
@@ -86,6 +101,7 @@ else
   [[ -f "$HOME/.ssh/agent-gitea" ]]     && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea.pub")
 fi
 
+# shellcheck disable=SC2066
 for ro_path in \
   "$HOME/.agents"; do
   [[ -e "$ro_path" ]] && SANDBOX_MOUNTS_RO+=("$ro_path")

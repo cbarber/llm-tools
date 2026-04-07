@@ -34,7 +34,18 @@ let
   git-absorb = pkgs.git-absorb;
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
-  forge = pkgs.writeShellScriptBin "forge" (builtins.readFile ./forge);
+  forge = pkgs.stdenv.mkDerivation {
+    pname = "forge";
+    version = "0.1.0";
+    src = ./.;
+    dontBuild = true;
+    installPhase = ''
+      mkdir -p $out/bin
+      cp ${./forge} $out/bin/forge
+      cp ${./common-helpers.sh} $out/bin/common-helpers.sh
+      chmod +x $out/bin/forge
+    '';
+  };
   git-agent-sequence-editor = pkgs.writeShellScriptBin "git-agent-sequence-editor" (
     builtins.readFile ./git-agent-sequence-editor
   );

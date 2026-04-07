@@ -16,11 +16,25 @@ the repo was cloned or what URL rewrites exist in the host gitconfig.
 
 ## GitHub Token
 
+GitHub fine-grained PATs are scoped to a single organization. Tokens are stored
+**per owner** (org or username) so the agent can work across multiple GitHub organizations
+without conflicting credentials.
+
+**Token file naming:** `~/.config/nixsmith/github-token-<owner>`
+
+- `<owner>` is the GitHub org or username, always **lowercased**
+- GitHub names are case-insensitive; lowercasing avoids case-collision on Linux filesystems
+- Examples: `github-token-acmecorp`, `github-token-cbarber`
+
+**Token name on GitHub:** `nixsmith - <hostname> - <owner>`
+
+Naming the PAT with the owner makes it unambiguous when managing multiple tokens in the
+GitHub settings UI.
+
 **Requirements:**
 
-- Token name: `nixsmith - {hostname}`
 - Expiration: No expiration
-- Repository access: All repositories (or select specific repos)
+- Repository access: Repositories owned by `<owner>`
 - Permissions:
   - Contents: Read and write
   - Pull requests: Read and write
@@ -30,12 +44,30 @@ the repo was cloned or what URL rewrites exist in the host gitconfig.
 permission. Add it only if the agent needs to modify CI configuration.
 
 **Security note:** The token is read from disk at each git operation by
-`git-credential-nixsmith`. It is never written into the session gitconfig or any
-temp file. However, a compromised agent process with sandbox access to
-`~/.config/nixsmith/` could read the token directly — scope it to only the
-repositories and permissions the agent actually needs.
+`git-credential-nixsmith` via the `GITHUB_TOKEN_FILE` env var set at sandbox launch.
+It is never written into the session gitconfig or any temp file. However, a compromised
+agent process with sandbox access to `~/.config/nixsmith/` could read the token directly
+— scope it to only the repositories and permissions the agent actually needs.
 
-**Storage:** `~/.config/nixsmith/github-token` (mode 600)
+### Migration from single-token setup
+
+If you have an existing `~/.config/nixsmith/github-token` file, shell entry will be
+blocked with a migration command. Run it and re-enter the shell:
+
+```bash
+mv ~/.config/nixsmith/github-token \
+   ~/.config/nixsmith/github-token-<owner>
+```
+
+Replace `<owner>` with your GitHub username or org name (lowercase).
+
+### Manual setup
+
+```bash
+mkdir -p ~/.config/nixsmith
+echo "TOKEN" > ~/.config/nixsmith/github-token-<owner>
+chmod 600 ~/.config/nixsmith/github-token-<owner>
+```
 
 ## Gitea Token
 
@@ -47,15 +79,9 @@ repositories and permissions the agent actually needs.
 
 **Storage:** `~/.config/nixsmith/tea/config.yml` (via tea CLI)
 
-## Manual Setup
 
-If automatic setup fails:
 
-**GitHub:**
 
-1. Visit: https://github.com/settings/personal-access-tokens/new
-2. Configure token as above
-3. Store: `mkdir -p ~/.config/nixsmith && echo "TOKEN" > ~/.config/nixsmith/github-token && chmod 600 ~/.config/nixsmith/github-token`
 
 **Gitea:**
 

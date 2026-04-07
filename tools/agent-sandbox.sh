@@ -241,6 +241,8 @@ SANDBOX_MOUNTS_RW=()
 
 AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
+# shellcheck source=common-helpers.sh
+source "${TOOLS_DIR:-$(dirname "$0")}/common-helpers.sh"
 # shellcheck source=setup-sandbox-paths.sh
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 
@@ -253,6 +255,7 @@ BWRAP_ARGS=(
   --setenv PATH "$PATH"
   --setenv IN_AGENT_SANDBOX "1"
   --setenv AGENT_WORK_DIR /tmp
+  --setenv GITHUB_TOKEN_FILE "${GITHUB_TOKEN_FILE:-}"
 )
 
 add_mount_ro "/nix"
