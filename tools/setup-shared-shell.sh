@@ -4,7 +4,11 @@ set -euo pipefail
 # Callers must set TOOLS_DIR and AGENT_ENV_CONFIG_DIR before sourcing this file.
 # Optional: set BEADS_POST_INIT to a command run after bd init in standard repos.
 
-export DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+export DEFAULT_BRANCH
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+
+# shellcheck source=common-helpers.sh
+source "${TOOLS_DIR}/common-helpers.sh"
 
 if [[ -n "${AGENTS_SKILLS_DIR:-}" && -d "${AGENTS_SKILLS_DIR}" ]]; then
   for skill_dir in "${AGENTS_SKILLS_DIR}"/*/; do
@@ -95,4 +99,14 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
     echo "Error: API token setup failed" >&2
     exit 1
   }
+
+  # Export GH_TOKEN for the current shell session so forge and gh CLI work
+  # without the sandbox credential helper. Resolved from the per-owner token
+  # file; silently skipped when not a GitHub repo or token doesn't exist yet.
+  _gh_token_file=$(nixsmith_github_token_file 2>/dev/null || true)
+  if [[ -n "$_gh_token_file" ]] && [[ -f "$_gh_token_file" ]]; then
+    export GH_TOKEN
+    GH_TOKEN=$(cat "$_gh_token_file")
+  fi
+  unset _gh_token_file
 fi

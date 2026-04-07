@@ -6,6 +6,9 @@ set -euo pipefail
 
 NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
 
+# shellcheck source=common-helpers.sh
+source "$(dirname "$0")/common-helpers.sh"
+
 # Wrapper for tea that uses nixsmith namespace
 run_tea() {
     XDG_CONFIG_HOME="${NIXSMITH_CONFIG}" tea "$@"
@@ -29,7 +32,14 @@ detect_forge() {
 
 # Authenticate GitHub
 authenticate_github() {
-    if [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
+    local token_file
+    token_file=$(nixsmith_github_token_file 2>/dev/null || true)
+
+    if [[ -n "$token_file" ]] && [[ -f "$token_file" ]]; then
+        GH_TOKEN=$(cat "$token_file")
+        export GH_TOKEN
+    elif [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
+        # Legacy single-token fallback — only reached if migration has not run.
         GH_TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
         export GH_TOKEN
     elif gh auth status &>/dev/null 2>&1; then
