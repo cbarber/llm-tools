@@ -79,10 +79,6 @@ chmod 600 ~/.config/nixsmith/github-token-<owner>
 
 **Storage:** `~/.config/nixsmith/tea/config.yml` (via tea CLI)
 
-
-
-
-
 **Gitea:**
 
 1. Visit: {gitea-url}/user/settings/applications
@@ -93,13 +89,24 @@ chmod 600 ~/.config/nixsmith/github-token-<owner>
 
 **Tool:** `forge` - Unified CLI wrapper that auto-detects GitHub vs Gitea from git remote.
 
+### Health check
+
+Before debugging auth failures, run:
+
+```bash
+forge doctor
+```
+
+Reports: git state, token file presence, live `gh auth status`, required tools in PATH,
+sandbox mount lists (`NIXSMITH_SANDBOX_RO`/`NIXSMITH_SANDBOX_RW`), filesystem probes,
+and beads stats — all with `OK`/`WARN`/`FAIL` prefixes.
+
 ### Creating a PR from Agent Work
 
 **Complete workflow:**
 
 ```bash
 # After completing work
-git commit --fixup=abc123  # Fixup specific commit that needs changes
 git push -u origin agent/llm-tools-xyz
 
 # Create PR
@@ -142,6 +149,12 @@ forge pr create --draft \
 
 ### forge CLI Reference
 
+**Diagnostics:**
+
+```bash
+forge doctor                  # Sandbox health check
+```
+
 **PR Operations:**
 
 ```bash
@@ -171,8 +184,12 @@ forge issue show <number> [--json]
 
 **forge authentication fails:**
 
-- Verify token files exist and are readable (mode 600)
-- Test GitHub: `GH_TOKEN=$(cat ~/.config/nixsmith/github-token) gh auth status`
+```bash
+forge doctor          # Start here — shows token file path and live auth status
+```
+
+- Verify token file exists and is readable (mode 600)
+- Test manually: `GH_TOKEN=$(cat ~/.config/nixsmith/github-token-<owner>) gh auth status`
 - Test Gitea: `XDG_CONFIG_HOME=~/.config/nixsmith tea repos list`
 
 **Token verification fails:**
@@ -183,7 +200,7 @@ forge issue show <number> [--json]
 
 **Permission errors:**
 
-- Check file modes: `chmod 600 ~/.config/nixsmith/github-token`
+- Check file modes: `chmod 600 ~/.config/nixsmith/github-token-<owner>`
 - Check directory mode: `chmod 700 ~/.config/nixsmith`
 
 ## Reviewing LLM Commits
