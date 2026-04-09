@@ -13,23 +13,23 @@ Authored-By: OpenCode (anthropic/claude-sonnet-4-6)
  .../src/cli/cmd/tui/routes/session/index.tsx  | 34 +++++++------------
  .../src/cli/cmd/tui/util/transcript.test.ts   | 28 +++++++++++++++
  .../src/cli/cmd/tui/util/transcript.ts        | 14 ++++++++
- 3 files changed, 55 insertions(+), 21 deletions(-)
+ 3 files changed, 56 insertions(+), 20 deletions(-)
  create mode 100644 packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
 
 diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
 index fb62de9ac..4f1dec334 100644
 --- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
 +++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-@@ -77,7 +77,7 @@ import { Global } from "@/global"
- import { PermissionPrompt } from "./permission"
+@@ -78,7 +78,7 @@
  import { QuestionPrompt } from "./question"
  import { DialogExportOptions } from "../../ui/dialog-export-options"
+ import * as Model from "../../util/model"
 -import { formatTranscript } from "../../util/transcript"
 +import { fetchTranscriptMessages, formatTranscript } from "../../util/transcript"
  import { UI } from "@/cli/ui.ts"
  import { useTuiConfig } from "../../context/tui-config"
- 
-@@ -833,16 +833,12 @@ export function Session() {
+ import { getScrollAcceleration } from "../../util/scroll"
+@@ -844,17 +844,13 @@
          try {
            const sessionData = session()
            if (!sessionData) return
@@ -41,6 +41,7 @@ index fb62de9ac..4f1dec334 100644
 -              thinking: showThinking(),
 -              toolDetails: showDetails(),
 -              assistantMetadata: showAssistantMetadata(),
+-              providers: sync.data.provider,
 -            },
 -          )
 +          const msgs = await fetchTranscriptMessages(sdk.client, sessionData.id)
@@ -48,11 +49,12 @@ index fb62de9ac..4f1dec334 100644
 +            thinking: showThinking(),
 +            toolDetails: showDetails(),
 +            assistantMetadata: showAssistantMetadata(),
++            providers: sync.data.provider,
 +          })
            await Clipboard.copy(transcript)
            toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
          } catch (error) {
-@@ -863,7 +859,7 @@ export function Session() {
+@@ -875,7 +871,7 @@
          try {
            const sessionData = session()
            if (!sessionData) return
@@ -61,7 +63,7 @@ index fb62de9ac..4f1dec334 100644
  
            const defaultFilename = `session-${sessionData.id.slice(0, 8)}.md`
  
-@@ -878,15 +874,11 @@ export function Session() {
+@@ -890,16 +886,12 @@
  
            if (options === null) return
  
@@ -72,12 +74,14 @@ index fb62de9ac..4f1dec334 100644
 -              thinking: options.thinking,
 -              toolDetails: options.toolDetails,
 -              assistantMetadata: options.assistantMetadata,
+-              providers: sync.data.provider,
 -            },
 -          )
 +          const transcript = formatTranscript(sessionData, msgs, {
 +            thinking: options.thinking,
 +            toolDetails: options.toolDetails,
 +            assistantMetadata: options.assistantMetadata,
++            providers: sync.data.provider,
 +          })
  
            if (options.openWithoutSaving) {
@@ -120,9 +124,9 @@ diff --git a/packages/opencode/src/cli/cmd/tui/util/transcript.ts b/packages/ope
 index 420c9dde1..35ff47989 100644
 --- a/packages/opencode/src/cli/cmd/tui/util/transcript.ts
 +++ b/packages/opencode/src/cli/cmd/tui/util/transcript.ts
-@@ -1,6 +1,20 @@
- import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
+@@ -2,6 +2,20 @@
  import { Locale } from "@/util/locale"
+ import * as Model from "./model"
  
 +type Client = {
 +  session: {
@@ -141,6 +145,3 @@ index 420c9dde1..35ff47989 100644
  export type TranscriptOptions = {
    thinking: boolean
    toolDetails: boolean
--- 
-2.53.0
-
