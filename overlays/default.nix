@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.4.2";
-    srcHash = "sha256-B5+xLV3weGb1RAfkKumcRZbNZ1idrB45c+IjKsYPNGQ=";
-    nodeModulesHash = "sha256-hVXlQcUuvUudIB35Td6ucBYopM/QOSx59tQbCTqoB/0=";
+    version = "1.4.11";
+    srcHash = "sha256-jlxR2BODV8wk0sP4Kkyza7Zr5I+Q003gldCfp2eYOt8=";
+    nodeModulesHash = "sha256-rF+l0Hho0QEvMS5jaImhMlhKjjf1R66X20R6lEZcZeg=";
   };
 
   # ============================================================================
@@ -44,14 +44,6 @@ in
           # fetching full history; pre-compaction messages are silently dropped.
           ./patches/opencode-export-full-transcript.patch
         ];
-        # 1.3.3+ calls `bun run vite build` which spawns vite.js via #!/usr/bin/env node.
-        # The node_modules FOD is copied read-only from the store, so we chmod before
-        # patching the shebang — same pattern as nixpkgs/tinyauth.
-        postConfigure = (old.postConfigure or "") + ''
-          chmod +w packages/app/node_modules/vite/bin/vite.js
-          substituteInPlace packages/app/node_modules/vite/bin/vite.js \
-            --replace-fail "/usr/bin/env node" "${prev.lib.getExe prev.bun}"
-        '';
         node_modules = old.node_modules.overrideAttrs (oldNm: {
           inherit version src;
           outputHash = opencode.nodeModulesHash;
