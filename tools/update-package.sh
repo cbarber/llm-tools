@@ -81,22 +81,74 @@ prefetch_npm() {
   nix hash convert --hash-algo sha256 --from nix32 "$nix32_hash"
 }
 
-# Try to build and extract FOD hash from error
-extract_fod_hash() {
-  local attr="$1"
-  info "Attempting build to discover FOD hash (this will fail, that's expected)..."
+# Build the opencode node_modules FOD directly with a sentinel hash and
+# --option substitute false to force a local build. Nix will report the
+# correct hash in its "hash mismatch" error regardless of lockfile issues.
+compute_opencode_node_modules_hash() {
+  local version="$1" src_hash="$2"
+  info "Computing nodeModulesHash (building FOD with substitute disabled, this may take a while)..."
 
-  # Build with empty hash to get the expected hash from error
+  # Sentinel value: valid SRI format but wrong — forces nix to build and report
+  local sentinel="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
   local output
-  output=$(nix build ".#$attr" 2>&1 || true)
+  output=$(nix build --no-link --option substitute false --impure --expr "
+    let
+      flake   = builtins.getFlake (toString $(pwd));
+      pkgs    = flake.inputs.nixpkgs.legacyPackages.\${builtins.currentSystem};
+      inherit (pkgs) lib stdenvNoCC bun writableTmpDirAsHomeHook;
+      src = pkgs.fetchFromGitHub {
+        owner = \"anomalyco\";
+        repo  = \"opencode\";
+        tag   = \"v${version}\";
+        hash  = \"${src_hash}\";
+      };
+    in
+    stdenvNoCC.mkDerivation {
+      pname   = \"opencode-node_modules\";
+      version = \"${version}\";
+      inherit src;
+      nativeBuildInputs = [ bun writableTmpDirAsHomeHook ];
+      dontConfigure = true;
+      buildPhase = ''
+        runHook preBuild
+        export BUN_INSTALL_CACHE_DIR=\$(mktemp -d)
+        bun install \\
+          --cpu=\"*\" \\
+          --frozen-lockfile \\
+          --filter ./ \\
+          --filter ./packages/app \\
+          --filter ./packages/desktop \\
+          --filter ./packages/opencode \\
+          --filter ./packages/shared \\
+          --ignore-scripts \\
+          --no-progress \\
+          --os=\"*\"
+        bun --bun ./nix/scripts/canonicalize-node-modules.ts
+        bun --bun ./nix/scripts/normalize-bun-binaries.ts
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p \$out
+        find . -type d -name node_modules -exec cp -R --parents {} \$out \\;
+        runHook postInstall
+      '';
+      dontFixup    = true;
+      outputHash     = \"${sentinel}\";
+      outputHashAlgo = \"sha256\";
+      outputHashMode = \"recursive\";
+    }
+  " 2>&1 || true)
 
-  # Extract hash from error message
   local hash
-  hash=$(echo "$output" | grep -oE 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]+' | sed 's/got:[[:space:]]*//' | head -1)
+  hash=$(echo "$output" | grep -oE 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]+' | sed 's/got:[[:space:]]*//' | tail -1)
 
   if [[ -n "$hash" ]]; then
     echo "$hash"
   else
+    # Surface the raw output so the caller can diagnose
+    echo "$output" >&2
     echo ""
   fi
 }
@@ -149,19 +201,12 @@ update_opencode() {
 
   success "Source hash: $src_hash"
 
-  # Temporarily update overlay with empty FOD hash
-  info "Temporarily updating overlay with empty nodeModulesHash..."
-  update_overlay "opencode" "$version" "$src_hash" ""
-
-  # Attempt build to get the correct hash
-  info "Building to discover nodeModulesHash (this will fail, that's expected)..."
+  # Compute the node_modules FOD hash by building with substitute disabled
   local node_modules_hash
-  node_modules_hash=$(extract_fod_hash "packages.x86_64-linux.opencode")
+  node_modules_hash=$(compute_opencode_node_modules_hash "$version" "$src_hash")
 
   if [[ -z "$node_modules_hash" ]]; then
-    error "Failed to extract nodeModulesHash from build output"
-    error "Restoring backup..."
-    mv "$OVERLAY_FILE.bak" "$OVERLAY_FILE"
+    error "Failed to compute nodeModulesHash — see output above for details"
     exit 1
   fi
 

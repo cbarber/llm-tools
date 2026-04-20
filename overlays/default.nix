@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.4.11";
-    srcHash = "sha256-jlxR2BODV8wk0sP4Kkyza7Zr5I+Q003gldCfp2eYOt8=";
-    nodeModulesHash = "sha256-rF+l0Hho0QEvMS5jaImhMlhKjjf1R66X20R6lEZcZeg=";
+    version = "1.14.19";
+    srcHash = "sha256-kKFqMf+l+V1kaf6bZtKfUSRYYjKc3VNgxlxic2fM2fo=";
+    nodeModulesHash = "sha256-RYyYp7LXMZP8RWZps1Esu8tW/rBM30QbH9Qrwi00adI=";
   };
 
   # ============================================================================
@@ -46,6 +46,27 @@ in
         ];
         node_modules = old.node_modules.overrideAttrs (oldNm: {
           inherit version src;
+          # 1.14.x expanded the workspace; override buildPhase to include all
+          # required --filter targets. This supersedes the nixpkgs-inherited
+          # buildPhase which only filtered ./packages/opencode --production.
+          buildPhase = ''
+            runHook preBuild
+            export BUN_INSTALL_CACHE_DIR=$(mktemp -d)
+            bun install \
+              --cpu="*" \
+              --frozen-lockfile \
+              --filter ./ \
+              --filter ./packages/app \
+              --filter ./packages/desktop \
+              --filter ./packages/opencode \
+              --filter ./packages/shared \
+              --ignore-scripts \
+              --no-progress \
+              --os="*"
+            bun --bun ./nix/scripts/canonicalize-node-modules.ts
+            bun --bun ./nix/scripts/normalize-bun-binaries.ts
+            runHook postBuild
+          '';
           outputHash = opencode.nodeModulesHash;
         });
       })
