@@ -91,7 +91,7 @@ execute_bash_block() {
 
   while IFS= read -r line; do
     if [[ "$line" == '```bash {exec}' ]]; then
-      in_bash_exec_block=1
+      in_bash_block=1
       continue
     fi
     if [[ "$line" == '```' ]]; then
