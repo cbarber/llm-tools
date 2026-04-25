@@ -4,11 +4,9 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"; }
-else
-  opencode() { command opencode --port "${OPENCODE_PORT}" "$@"; }
+  sandboxed-opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"; }
+  export -f sandboxed-opencode
 fi
-export -f opencode
 
 export AGENT_ENV_CONFIG_DIR="${HOME}/.config/opencode"
 source "${TOOLS_DIR}/setup-shared-shell.sh"
@@ -52,11 +50,17 @@ fi
 
 # Don't exec — background pr-poll daemon must survive the launch.
 if [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
-  opencode
+  if declare -f sandboxed-opencode >/dev/null 2>&1; then
+    sandboxed-opencode
+  else
+    command opencode --port "${OPENCODE_PORT}"
+  fi
 else
-  echo "OpenCode environment ready. Run 'opencode' to start."
-  if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-    echo "Sandbox enabled: use 'agent-sandbox opencode' or just 'opencode' will be sandboxed"
+  echo "OpenCode environment ready."
+  if declare -f sandboxed-opencode >/dev/null 2>&1; then
+    echo "Run 'sandboxed-opencode' to start (sandboxed + API port configured)."
+  else
+    echo "Run 'opencode' to start. Warning: sandbox is not available."
   fi
   echo "Available commands: notify, bd, anvil, pr-poll"
 fi
