@@ -14,12 +14,6 @@ git() {
       return 1
     fi
 
-    if command -v temper >/dev/null 2>&1 && [[ -f AGENTS.md ]]; then
-      echo "📋 Commit Format:"
-      echo ""
-      temper commit
-      echo ""
-    fi
     shift
     command git commit "$@"
     return
