@@ -2,26 +2,26 @@ name: Test macOS Sandbox
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'tools/agent-sandbox.sh'
-      - 'tools/macos-sandbox.sh'
-      - 'tools/macos-sandbox-profile.sb'
-      - 'tools/test-agent-sandbox.sh'
-      - 'agents/**'
-      - 'flake.nix'
-      - 'flake.lock'
-      - '.github/workflows/test-macos-sandbox.yml'
+      - "tools/agent-sandbox.sh"
+      - "tools/macos-sandbox.sh"
+      - "tools/macos-sandbox-profile.sb"
+      - "tools/test-agent-sandbox.sh"
+      - "agents/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/test-macos-sandbox.yml"
   pull_request:
     paths:
-      - 'tools/agent-sandbox.sh'
-      - 'tools/macos-sandbox.sh'
-      - 'tools/macos-sandbox-profile.sb'
-      - 'tools/test-agent-sandbox.sh'
-      - 'agents/**'
-      - 'flake.nix'
-      - 'flake.lock'
-      - '.github/workflows/test-macos-sandbox.yml'
+      - "tools/agent-sandbox.sh"
+      - "tools/macos-sandbox.sh"
+      - "tools/macos-sandbox-profile.sb"
+      - "tools/test-agent-sandbox.sh"
+      - "agents/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/test-macos-sandbox.yml"
   workflow_dispatch:
 
 jobs:
@@ -135,7 +135,6 @@ jobs:
       - name: IN_AGENT_SANDBOX is set inside sandbox
         run: |
           bash tools/agent-sandbox.sh bash -c '[[ "$IN_AGENT_SANDBOX" == "1" ]] || { echo "FAIL: IN_AGENT_SANDBOX not set"; exit 1; }'
-
 
   test-flake:
     name: Test nix develop .#opencode on macOS
