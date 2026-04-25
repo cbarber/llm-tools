@@ -156,8 +156,34 @@ setup_file() {
     "$SANDBOX_SCRIPT" bash -c 'git config user.email'
   rm -rf "$test_home" "$dotfiles_dir"
 
+  echo "# output: $output" >&3
   [ "$status" -eq 0 ]
   [ "$output" = "test@example.com" ]
+}
+
+@test "IN_AGENT_SANDBOX is set inside sandbox" {
+  run "$SANDBOX_SCRIPT" bash -c 'echo "$IN_AGENT_SANDBOX"'
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "$output" = "1" ]
+}
+
+@test "SANDBOX_EXTRA_RW grants write access to extra paths" {
+  local extra_dir
+  extra_dir=$(mktemp -d)
+  run env SANDBOX_EXTRA_RW="$extra_dir" "$SANDBOX_SCRIPT" bash -c "echo ok > $extra_dir/test.txt && cat $extra_dir/test.txt"
+  rm -rf "$extra_dir"
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "$output" = "ok" ]
+}
+
+@test "agent config directories are writable" {
+  mkdir -p "$HOME/.config/opencode" "$HOME/.claude"
+  run "$SANDBOX_SCRIPT" bash -c 'touch ~/.config/opencode/sandbox-test.txt && rm ~/.config/opencode/sandbox-test.txt'
+  [ "$status" -eq 0 ]
+  run "$SANDBOX_SCRIPT" bash -c 'touch ~/.claude/sandbox-test.txt && rm ~/.claude/sandbox-test.txt'
+  [ "$status" -eq 0 ]
 }
 
 @test "multi-hop symlink chain is accessible inside sandbox" {
@@ -171,6 +197,7 @@ setup_file() {
   run env SANDBOX_EXTRA_RO="$chain_dir/link-a" "$SANDBOX_SCRIPT" cat "$chain_dir/link-a"
   rm -rf "$chain_dir"
 
+  echo "# output: $output" >&3
   [ "$status" -eq 0 ]
   [ "$output" = "content" ]
 }
