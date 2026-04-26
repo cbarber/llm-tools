@@ -9,3 +9,4 @@
 result
 tools/*/result
 tools/*/flake.lock
+tests/node_modules/
