@@ -1,0 +1,53 @@
+name: Test Agent Harness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/**"
+      - "tools/setup-shared-aliases.sh"
+      - ".opencode/plugins/temper.ts"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/test-agent-harness.yml"
+  pull_request:
+    paths:
+      - "tests/**"
+      - "tools/setup-shared-aliases.sh"
+      - ".opencode/plugins/temper.ts"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/test-agent-harness.yml"
+  workflow_dispatch:
+
+jobs:
+  test-agent-harness:
+    name: Test opencode + temper plugin stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Configure AppArmor for bubblewrap
+        run: |
+          sudo tee /etc/apparmor.d/nix-bwrap << 'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+
+          profile nix-bwrap /nix/store/*/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+          sudo apparmor_parser -r /etc/apparmor.d/nix-bwrap
+
+      - name: Warm nix .#opencode cache
+        run: nix build .#opencode
+
+      - name: Run agent harness tests
+        env:
+          AUTO_LAUNCH: "false"
+          BD_SKIP_SETUP: "true"
+          SKIP_AGENT_SETUP: "true"
+        run: nix develop .#default --command bash -c "bun install --cwd tests && bun test ./tests/test-agent-harness.test.ts"
