@@ -128,9 +128,9 @@ generate_key() {
   debug "Key does not exist - generating..."
   debug "Checking if $AGENT_KEY_DIR exists..."
   if [[ ! -d "$AGENT_KEY_DIR" ]]; then
-    debug "ERROR: $AGENT_KEY_DIR does not exist!"
-    echo "Error: $AGENT_KEY_DIR directory does not exist" >&2
-    return 1
+    debug "$AGENT_KEY_DIR does not exist - creating it"
+    mkdir -p "$AGENT_KEY_DIR"
+    chmod 700 "$AGENT_KEY_DIR"
   fi
   debug "$AGENT_KEY_DIR exists"
   
@@ -194,8 +194,8 @@ echo "------------------------------"
 SANDBOX_SCRIPT="$(dirname "$0")/agent-sandbox.sh"
 debug "Sandbox script path: $SANDBOX_SCRIPT"
 
-if [[ -f "$SANDBOX_SCRIPT" ]]; then
-  debug "Sandbox script exists"
+if [[ -f "$SANDBOX_SCRIPT" ]] && [[ -w "$SANDBOX_SCRIPT" ]]; then
+  debug "Sandbox script exists and is writable"
   # Check if agent SSH keys are already mounted
   if ! grep -q "agent-github" "$SANDBOX_SCRIPT"; then
     debug "Sandbox script needs updating - adding agent key mounts"
