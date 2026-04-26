@@ -28,12 +28,10 @@ debug "TERM: ${TERM:-<unset>}"
 debug "=========================================="
 
 AGENT_KEY_DIR="$HOME/.ssh"
-GITHUB_KEY="$AGENT_KEY_DIR/agent-github"
 GITLAB_KEY="$AGENT_KEY_DIR/agent-gitlab"
 GITEA_KEY="$AGENT_KEY_DIR/agent-gitea"
 
 debug "Key paths configured:"
-debug "  GITHUB_KEY: $GITHUB_KEY"
 debug "  GITLAB_KEY: $GITLAB_KEY"
 debug "  GITEA_KEY: $GITEA_KEY"
 
@@ -64,11 +62,7 @@ fi
 debug "Remote URL found: $remote_url"
 
 debug "Checking for existing keys..."
-if [[ "$remote_url" =~ github\.com ]] && [[ -f "$GITHUB_KEY" ]]; then
-  debug "GitHub remote detected and key exists - exiting early"
-  echo "✓ Agent SSH keys verified (GitHub key exists)"
-  exit 0
-elif [[ "$remote_url" =~ gitlab\.com ]] && [[ -f "$GITLAB_KEY" ]]; then
+if [[ "$remote_url" =~ gitlab\.com ]] && [[ -f "$GITLAB_KEY" ]]; then
   debug "GitLab remote detected and key exists - exiting early"
   echo "✓ Agent SSH keys verified (GitLab key exists)"
   exit 0
@@ -90,12 +84,7 @@ if git remote -v &>/dev/null; then
     CURRENT_REPO="$REMOTE_URL"
     
     # Detect platform
-    if [[ "$REMOTE_URL" =~ github\.com[:/]([^/]+)/([^/\.]+) ]]; then
-      CURRENT_PLATFORM="github"
-      CURRENT_KEY="$GITHUB_KEY"
-      REPO_OWNER="${BASH_REMATCH[1]}"
-      REPO_NAME="${BASH_REMATCH[2]}"
-    elif [[ "$REMOTE_URL" =~ gitlab\.com[:/]([^/]+)/([^/\.]+) ]]; then
+    if [[ "$REMOTE_URL" =~ gitlab\.com[:/]([^/]+)/([^/\.]+) ]]; then
       CURRENT_PLATFORM="gitlab"
       CURRENT_KEY="$GITLAB_KEY"
       REPO_OWNER="${BASH_REMATCH[1]}"
@@ -150,7 +139,6 @@ generate_key() {
 echo "1. Generating Agent SSH Keys"
 echo "------------------------------"
 debug "Generating keys for all platforms..."
-generate_key "$GITHUB_KEY" "github"
 generate_key "$GITLAB_KEY" "gitlab"
 generate_key "$GITEA_KEY" "gitea"
 debug "Key generation complete"
@@ -298,10 +286,6 @@ else
   echo "Not in a git repository or remote not configured."
   echo ""
   echo "For each repository you want agents to access:"
-  echo ""
-  echo "GitHub:"
-  echo "  Repository → Settings → Deploy Keys → Add deploy key"
-  echo "  Use key: $GITHUB_KEY.pub"
   echo ""
   echo "GitLab:"
   echo "  Project → Settings → Repository → Deploy Keys → Add deploy key"
