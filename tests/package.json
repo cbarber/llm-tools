@@ -1,0 +1,11 @@
+{
+  "name": "llm-tools-test-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test-agent-harness.ts"
+  },
+  "dependencies": {
+    "llm-mock-server": "^1.0.8"
+  }
+}
