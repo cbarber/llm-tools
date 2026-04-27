@@ -95,7 +95,7 @@ assert_share_disabled() {
 [[ -f "$PROJECT_CONFIG" ]] && assert_share_disabled "$PROJECT_CONFIG"
 [[ -f "$GLOBAL_CONFIG" ]] && assert_share_disabled "$GLOBAL_CONFIG"
 
-if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
+if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]] && [[ ! -f "${GLOBAL_CONFIG_DIR}/plugins/temper.ts" ]]; then
   TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
   TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
 
