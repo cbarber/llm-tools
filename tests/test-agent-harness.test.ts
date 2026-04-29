@@ -216,11 +216,22 @@ beforeAll(async () => {
   // Title generator requests have no tools — return a title and move on
   mock.when((req) => req.toolNames.length === 0).reply("Test session title");
 
-  // Task requests: scripted two-turn workflow
-  //   Turn 1: model calls bash with git add + git commit
+  // Task requests: scripted three-turn workflow
+  //   Turn 1: model calls todowrite (mark task in_progress)
+  //   Turn 2: model calls bash with git add + git commit
   //            → triggers mojo-commit via tool.execute.after
-  //   Turn 2: model replies with plain text (done)
+  //   Turn 3: model replies with plain text (done)
   mock.when((req) => req.toolNames.length > 0).replySequence([
+    {
+      reply: {
+        tools: [{
+          name: "todowrite",
+          args: {
+            todos: [{ id: "1", content: "Update README.md", status: "in_progress", priority: "high" }],
+          },
+        }],
+      },
+    },
     {
       reply: {
         tools: [{
@@ -312,5 +323,21 @@ describe("temper plugin — mojo-commit (9a9d417 regression)", () => {
       }
     }
     expect(aliasInToolResult).toBe(0);
+  });
+});
+
+describe("temper plugin — regex fix (todowrite must not trigger mojo-commit)", () => {
+  it("does not inject mojo-commit after a todowrite tool call", () => {
+    // Before anchoring to ^(edit|write)$, "edit|write" matched "todowrite"
+    // as a substring, causing mojo-commit to inject on every todo update.
+    // Turn 1 is todowrite; Turn 2 is the request after it completes.
+    // mojo-commit must not appear in Turn 2's messages.
+    const tasks = taskRequests(history);
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    const afterTodowrite = tasks[1].request.messages;
+    const hasMojoCommitAfterTodowrite = afterTodowrite.some(
+      (m) => m.role === "user" && m.content.includes("# mojo-commit")
+    );
+    expect(hasMojoCommitAfterTodowrite).toBe(false);
   });
 });
