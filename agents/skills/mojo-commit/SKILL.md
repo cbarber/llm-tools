@@ -3,7 +3,7 @@ name: mojo-commit
 description: Atomic commit workflow with conventional commit format
 triggers:
   - event: tool.execute.after
-    tool: "edit|write"
+    tool: "^(edit|write)$"
   - event: tool.execute.after
     tool: bash
     command: "git add"

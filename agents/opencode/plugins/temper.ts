@@ -10,12 +10,15 @@ import { createOpencodeClient as createV2Client } from "@opencode-ai/sdk/v2/clie
 
 type OpencodeClient = PluginInput["client"];
 
+type TriggerAction = "inject" | "reset" | "fail";
+
 type Trigger = {
   event: string;
   tool?: string;
   command?: string;
   when?: string;
   blocking?: boolean;
+  action?: TriggerAction;
 };
 
 type Skill = {
@@ -25,6 +28,21 @@ type Skill = {
   triggers: Trigger[];
   content: string;
 };
+
+// Discriminated union carrying the full context for each event type.
+// The tool.execute.after variant carries the live output object so that
+// "fail" actions can mutate it before OpenCode serialises the tool result.
+type DispatchContext =
+  | { event: "session.created" }
+  | { event: "session.idle" }
+  | { event: "tool.execute.before"; tool: string }
+  | {
+      event: "tool.execute.after";
+      tool: string;
+      command: string;
+      output: { title: string; output: string; metadata: any };
+    }
+  | { event: "todo.updated"; todos: Array<{ content: string; status: string; priority: string; id: string }> };
 
 // Parses the subset of YAML used by our skill frontmatter schema.
 // Handles scalar fields (name, description, once) and the triggers list.
@@ -52,7 +70,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
     if (line.startsWith("  - event:")) {
       if (current?.event) triggers.push(current as Trigger);
       current = { event: line.replace(/.*event:\s*/, "").trim() };
-    } else if (current && line.match(/^\s+(tool|command|when|blocking):/)) {
+    } else if (current && line.match(/^\s+(tool|command|when|blocking|action):/)) {
       const kv = line.match(/^\s+(\w+):\s+(.+)$/);
       if (kv) {
         const key = kv[1] as keyof Trigger;
@@ -82,8 +100,10 @@ async function toSkill(raw: { name: string; description: string; location: strin
   };
 }
 
-function matchesTrigger(trigger: Trigger, event: string, tool: string, command: string): boolean {
-  if (trigger.event !== event) return false;
+function matchesTrigger(trigger: Trigger, ctx: DispatchContext): boolean {
+  if (trigger.event !== ctx.event) return false;
+  const tool = "tool" in ctx ? ctx.tool : "";
+  const command = "command" in ctx ? ctx.command : "";
   if (trigger.tool && !new RegExp(trigger.tool).test(tool)) return false;
   if (trigger.command && !new RegExp(trigger.command).test(command)) return false;
   return true;
@@ -175,22 +195,34 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
   async function dispatchEvent(
     sessionID: string,
-    event: string,
-    tool: string,
-    command: string
+    ctx: DispatchContext,
   ): Promise<void> {
     // Load skills on every dispatch so changes to ~/.agents/skills/ take
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
-    await logEvent(logPath, "dispatch", { event, tool, command, skillCount: skills.length });
+    await logEvent(logPath, "dispatch", { ctx, skillCount: skills.length });
 
     for (const skill of skills) {
-      const trigger = skill.triggers.find((t) => matchesTrigger(t, event, tool, command));
+      const trigger = skill.triggers.find((t) => matchesTrigger(t, ctx));
       if (!trigger) {
         continue;
       }
 
+      const action: TriggerAction = trigger.action ?? "inject";
+
+      // reset action: clear firedOnce for this skill and stop — no injection,
+      // no throttle check, no when guard needed.
+      if (action === "reset") {
+        const onceKey = `${sessionID}:${skill.name}`;
+        if (firedOnce.has(onceKey)) {
+          firedOnce.delete(onceKey);
+          await logEvent(logPath, "dispatch-reset", { skill: skill.name });
+        }
+        continue;
+      }
+
+      // inject and fail: honour once and throttle guards.
       const onceKey = `${sessionID}:${skill.name}`;
       if (skill.once && firedOnce.has(onceKey)) {
         await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
@@ -203,7 +235,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         if (!passed) continue;
       }
 
-      const throttleKey = `${sessionID}:${skill.name}:${event}`;
+      const throttleKey = `${sessionID}:${skill.name}:${ctx.event}`;
       const now = Date.now();
       if (now - (throttleMap.get(throttleKey) ?? 0) < THROTTLE_MS) {
         await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "throttled" });
@@ -213,8 +245,22 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
       if (skill.once) firedOnce.add(onceKey);
 
-      await logEvent(logPath, "dispatch-inject", { skill: skill.name });
-      await injectSkill(client, $, directory, sessionID, skill.content);
+      if (action === "fail") {
+        // fail is only meaningful on tool.execute.before — throwing there
+        // prevents the tool from running and delivers the error message as the
+        // tool result the model sees. Guard at runtime; misconfigured triggers
+        // on other events are silently ignored.
+        if (ctx.event !== "tool.execute.before") {
+          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "fail-requires-tool.execute.before" });
+          continue;
+        }
+        const rendered = await executeBashBlock($, skill.content, directory);
+        await logEvent(logPath, "dispatch-fail", { skill: skill.name });
+        throw new Error(rendered);
+      } else {
+        await logEvent(logPath, "dispatch-inject", { skill: skill.name });
+        await injectSkill(client, $, directory, sessionID, skill.content);
+      }
     }
   }
 
@@ -225,24 +271,33 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "chat.message": async (_input, output) => {
       const sessionID = output.message.sessionID;
-      await dispatchEvent(sessionID, "session.created", "", "");
+      await dispatchEvent(sessionID, { event: "session.created" });
     },
 
     "tool.execute.before": async (input, _output) => {
       await logEvent(logPath, "tool.execute.before", { tool: input.tool });
-      await dispatchEvent(input.sessionID, "tool.execute.before", input.tool, "");
+      await dispatchEvent(input.sessionID, { event: "tool.execute.before", tool: input.tool });
     },
 
-    "tool.execute.after": async (input, _output) => {
+    "tool.execute.after": async (input, output) => {
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
       await logEvent(logPath, "tool.execute.after", { tool: input.tool, command });
-      await dispatchEvent(input.sessionID, "tool.execute.after", input.tool, command);
+      await dispatchEvent(input.sessionID, {
+        event: "tool.execute.after",
+        tool: input.tool,
+        command,
+        output,
+      });
     },
 
     event: async ({ event }) => {
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
-        await dispatchEvent(sessionID, "session.idle", "", "");
+        await dispatchEvent(sessionID, { event: "session.idle" });
+      }
+      if (event.type === "todo.updated") {
+        const { sessionID, todos } = event.properties;
+        await logEvent(logPath, "todo.updated", { sessionID, todos });
       }
     },
   };
@@ -260,7 +315,14 @@ if (import.meta.main) {
     process.exit(1);
   }
   console.error("triggers:", JSON.stringify(skill.triggers, null, 2));
-  const trigger = skill.triggers.find((t) => matchesTrigger(t, event, tool, command));
+  const ctx: DispatchContext = event === "tool.execute.after"
+    ? { event, tool, command, output: { title: "", output: "", metadata: null } }
+    : event === "tool.execute.before"
+    ? { event, tool }
+    : event === "session.idle" || event === "session.created"
+    ? { event: event as "session.idle" | "session.created" }
+    : { event: "session.created" };
+  const trigger = skill.triggers.find((t) => matchesTrigger(t, ctx));
   if (!trigger) {
     console.error(`no trigger matched event="${event}" tool="${tool}" command="${command}"`);
     process.exit(1);
