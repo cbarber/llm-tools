@@ -7,6 +7,7 @@ ignores:
   - ".git/**"
   - ".opencode/node_modules/**"
   - ".beads/**"
+  - "tests/node_modules/**"
   - "update-summary.md"
 
 config:
