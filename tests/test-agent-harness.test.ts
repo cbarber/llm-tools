@@ -216,11 +216,22 @@ beforeAll(async () => {
   // Title generator requests have no tools — return a title and move on
   mock.when((req) => req.toolNames.length === 0).reply("Test session title");
 
-  // Task requests: scripted two-turn workflow
-  //   Turn 1: model calls bash with git add + git commit
+  // Task requests: scripted three-turn workflow
+  //   Turn 1: model calls todowrite (mark task in_progress)
+  //   Turn 2: model calls bash with git add + git commit
   //            → triggers mojo-commit via tool.execute.after
-  //   Turn 2: model replies with plain text (done)
+  //   Turn 3: model replies with plain text (done)
   mock.when((req) => req.toolNames.length > 0).replySequence([
+    {
+      reply: {
+        tools: [{
+          name: "todowrite",
+          args: {
+            todos: [{ id: "1", content: "Update README.md", status: "in_progress", priority: "high" }],
+          },
+        }],
+      },
+    },
     {
       reply: {
         tools: [{
@@ -312,5 +323,125 @@ describe("temper plugin — mojo-commit (9a9d417 regression)", () => {
       }
     }
     expect(aliasInToolResult).toBe(0);
+  });
+});
+
+describe("temper plugin — regex fix (todowrite must not trigger mojo-commit)", () => {
+  it("does not inject mojo-commit after a todowrite tool call", () => {
+    // Before anchoring to ^(edit|write)$, "edit|write" matched "todowrite"
+    // as a substring, causing mojo-commit to inject on every todo update.
+    // Turn 1 is todowrite; Turn 2 is the request after it completes.
+    // mojo-commit must not appear in Turn 2's messages.
+    const tasks = taskRequests(history);
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    const afterTodowrite = tasks[1].request.messages;
+    const hasMojoCommitAfterTodowrite = afterTodowrite.some(
+      (m) => m.role === "user" && m.content.includes("# mojo-commit")
+    );
+    expect(hasMojoCommitAfterTodowrite).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mojo-edit-nudge: fail action blocks the first edit and delivers nudge text
+// ---------------------------------------------------------------------------
+
+let nudgeMock: MockServer;
+let nudgeHistory: RequestHistory;
+let stopNudgeOpencode: () => void;
+
+beforeAll(async () => {
+  const mockPort = await findFreePort();
+  const ocPort = await findFreePort();
+
+  nudgeMock = await createMock({ port: mockPort, logLevel: "none" });
+
+  nudgeMock.when((req) => req.toolNames.length === 0).reply("Test session title");
+
+  // Scripted workflow for fail action test:
+  //   Turn 1: model calls edit
+  //            → mojo-edit-nudge fires on tool.execute.before, throws
+  //            → edit is blocked; model receives tool error with nudge content
+  //   Turn 2: model calls edit again (retry after seeing nudge)
+  //            → mojo-edit-nudge already fired (once:true); edit proceeds
+  //   Turn 3: model replies done
+  nudgeMock.when((req) => req.toolNames.length > 0).replySequence([
+    {
+      reply: {
+        tools: [{
+          name: "edit",
+          args: {
+            filePath: "/tmp/test.txt",
+            oldString: "hello",
+            newString: "hello world",
+          },
+        }],
+      },
+    },
+    {
+      reply: {
+        tools: [{
+          name: "edit",
+          args: {
+            filePath: "/tmp/test.txt",
+            oldString: "hello",
+            newString: "hello world",
+          },
+        }],
+      },
+    },
+    { reply: { text: "Done." } },
+    { reply: { text: "All done." } },
+  ]);
+
+  const dir = await createFixtureRepo();
+  // Create the file the edit tool will target
+  await writeFile("/tmp/test.txt", "hello\n");
+  await writeOpencodeConfig(dir, `${nudgeMock.url}/v1`);
+
+  stopNudgeOpencode = await startOpencode(dir, ocPort);
+
+  const sessionID = await createSession(ocPort, dir);
+  await sendPromptAndWait(ocPort, sessionID, "Update the test file.", nudgeMock);
+
+  nudgeHistory = nudgeMock.history;
+
+  await rm(dir, { recursive: true, force: true }).catch(() => {});
+}, 90_000);
+
+afterAll(async () => {
+  stopNudgeOpencode?.();
+  await nudgeMock?.stop();
+});
+
+describe("temper plugin — mojo-edit-nudge fail action", () => {
+  it("delivers nudge content as tool error on first edit", () => {
+    // The fail action throws in tool.execute.before, preventing the edit from
+    // running. OpenCode delivers the thrown message as the tool result.
+    // The second request should have a tool message containing the nudge heading.
+    const tasks = nudgeHistory.all.filter(
+      (e) => !e.request.systemMessage.includes("title generator")
+    );
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    const afterFirstEdit = tasks[1].request.messages;
+    const nudgeInToolResult = afterFirstEdit.some(
+      (m) => m.role === "tool" && m.content.includes("# mojo-edit-nudge")
+    );
+    expect(nudgeInToolResult).toBe(true);
+  });
+
+  it("does not block the second edit (once:true resets after first fire)", () => {
+    // After the nudge fires once, firedOnce prevents it from firing again
+    // until a git commit resets it. The second edit must not produce another
+    // tool error with nudge content.
+    const tasks = nudgeHistory.all.filter(
+      (e) => !e.request.systemMessage.includes("title generator")
+    );
+    expect(tasks.length).toBeGreaterThanOrEqual(3);
+    const afterSecondEdit = tasks[2].request.messages;
+    const nudgeAgain = afterSecondEdit.some(
+      (m) => m.role === "tool" && m.content.includes("# mojo-edit-nudge")
+    );
+    expect(nudgeAgain).toBe(false);
   });
 });
