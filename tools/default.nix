@@ -56,6 +56,7 @@ let
     builtins.readFile ./git-credential-nixsmith
   );
   pre-commit = pkgs.pre-commit;
+  rsync = pkgs.rsync;
 in
 {
   inherit
@@ -84,5 +85,6 @@ in
     git-agent-editor
     git-credential-nixsmith
     pre-commit
+    rsync
   ];
 }
