@@ -14,10 +14,8 @@ if [[ -n "${AGENTS_SKILLS_DIR:-}" && -d "${AGENTS_SKILLS_DIR}" ]]; then
   for skill_dir in "${AGENTS_SKILLS_DIR}"/*/; do
     skill_name=$(basename "$skill_dir")
     dest="$HOME/.agents/skills/${skill_name}"
-    mkdir -p "$dest"
-    chmod -f u+w "$dest"/* 2>/dev/null || true
-    cp -rf "${skill_dir}." "$dest"
-    chmod -f u+w "$dest"/* 2>/dev/null || true
+    mkdir -p "$dest" 2>/dev/null || true
+    rsync --checksum --recursive "${skill_dir}" "$dest/" 2>/dev/null || true
   done
 fi
 
