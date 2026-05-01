@@ -92,11 +92,14 @@ compute_opencode_node_modules_hash() {
   local sentinel="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
   local output
-  output=$(nix build --no-link --option substitute false --impure --expr "
+  output=$(nix build --impure --no-link --expr "
     let
-      flake   = builtins.getFlake (toString $(pwd));
-      pkgs    = flake.inputs.nixpkgs.legacyPackages.\${builtins.currentSystem};
-      inherit (pkgs) lib stdenvNoCC bun writableTmpDirAsHomeHook;
+      flake = builtins.getFlake (toString $(pwd));
+      pkgs = import (flake.inputs.nixpkgs) {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
+        overlays = [ (import ${REPO_ROOT}/overlays) ];
+      };
       src = pkgs.fetchFromGitHub {
         owner = \"anomalyco\";
         repo  = \"opencode\";
@@ -104,41 +107,13 @@ compute_opencode_node_modules_hash() {
         hash  = \"${src_hash}\";
       };
     in
-    stdenvNoCC.mkDerivation {
-      pname   = \"opencode-node_modules\";
-      version = \"${version}\";
+    pkgs.opencode.node_modules.overrideAttrs (_: {
       inherit src;
-      nativeBuildInputs = [ bun writableTmpDirAsHomeHook ];
-      dontConfigure = true;
-      buildPhase = ''
-        runHook preBuild
-        export BUN_INSTALL_CACHE_DIR=\$(mktemp -d)
-        bun install \\
-          --cpu=\"*\" \\
-          --frozen-lockfile \\
-          --filter ./ \\
-          --filter ./packages/app \\
-          --filter ./packages/desktop \\
-          --filter ./packages/opencode \\
-          --filter ./packages/shared \\
-          --ignore-scripts \\
-          --no-progress \\
-          --os=\"*\"
-        bun --bun ./nix/scripts/canonicalize-node-modules.ts
-        bun --bun ./nix/scripts/normalize-bun-binaries.ts
-        runHook postBuild
-      '';
-      installPhase = ''
-        runHook preInstall
-        mkdir -p \$out
-        find . -type d -name node_modules -exec cp -R --parents {} \$out \\;
-        runHook postInstall
-      '';
-      dontFixup    = true;
+      version        = \"${version}\";
       outputHash     = \"${sentinel}\";
       outputHashAlgo = \"sha256\";
       outputHashMode = \"recursive\";
-    }
+    })
   " 2>&1 || true)
 
   local hash
