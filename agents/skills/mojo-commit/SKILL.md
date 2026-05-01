@@ -32,19 +32,28 @@ Commit after edit. An atomic commit is self-contained, related, and fully-functi
 
 **Before pushing:** review commits since branching with `git log --oneline origin/main..HEAD`. Squash any fix-of-fix chains into the commit they belong to using `--fixup` and `--autosquash`.
 
-Format: `<type>(<scope>): <subject>`
+Write commit messages succinct and exact. Conventional Commits format. No fluff. Why over what.
 
-**Types:**
+**Subject line:**
 
-* `feat` - New feature for the user
-* `fix` - Bug fix for the user
-* `refactor` - Code restructuring without behavior change
-* `test` - Adding or updating tests
-* `docs` - Documentation changes
-* `style` - Formatting, whitespace (no code change)
-* `chore` - Build tasks, dependencies (no production code change)
+- `<type>(<scope>): <imperative summary>` — `<scope>` optional
+- Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`, `revert`
+- Imperative mood: "add", "fix", "remove" — not "added", "adds", "adding"
+- ≤50 chars when possible, no hard cap
 
-**Body:** 1-2 sentences on WHY (motivation, rationale). Omit if subject is sufficient. Never itemize implementation.
+**Body (only if needed):**
+
+- Skip entirely when subject is self-explanatory
+- Add body only for: non-obvious *why*, breaking changes, migration notes, linked issues
+- Wrap at 72 chars
+- Never itemize implementation.
+- Reference issues/PRs at end: `Closes #42`, `Refs #17`
+
+**What NEVER goes in:**
+
+- "This commit does X", "I", "we", "now", "currently" — the diff says what
+- Emoji (unless project convention requires)
+- Restating the file name when scope already says it
 
 **Footer:** `Authored-By: <agent> (<model>)`
 
@@ -53,8 +62,7 @@ Format: `<type>(<scope>): <subject>`
 ```text
 fix(sandbox): support XDG git config in Linux sandbox
 
-Git reads both ~/.config/git/config (XDG) and ~/.gitconfig (legacy).
-Linux sandbox only mounted legacy file, breaking XDG-only users.
+Linux sandbox script only mounted legacy file, breaking XDG-only users.
 
 Authored-By: claude-code (claude-3.7-sonnet)
 ```
@@ -66,6 +74,4 @@ git push -u origin <branch>
 forge pr create --title "..." --body "..."
 ```
 
-* PR body must explain WHY the change was made
-* Link to beads issue if applicable
-* Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
+- Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
