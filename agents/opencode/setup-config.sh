@@ -11,14 +11,14 @@ PROJECT_CONFIG="opencode.json"
 # ---------------------------------------------------------------------------
 # Config discovery and creation
 # ---------------------------------------------------------------------------
-# Determine which config is active (project takes precedence over global).
+# Determine which config is active (global takes precedence over project).
 # If neither exists, prompt the user to choose a location. Requires a tty —
 # automated environments must pre-create the config.
 
-if [[ -f "$PROJECT_CONFIG" ]]; then
-  CONFIG_LOCATION="project"
-elif [[ -f "$GLOBAL_CONFIG" ]]; then
+if [[ -f "$GLOBAL_CONFIG" ]]; then
   CONFIG_LOCATION="global"
+elif [[ -f "$PROJECT_CONFIG" ]]; then
+  CONFIG_LOCATION="project"
 else
   # No config found — require interactive terminal
   if [[ ! -t 0 ]]; then
@@ -95,7 +95,7 @@ assert_share_disabled() {
 [[ -f "$PROJECT_CONFIG" ]] && assert_share_disabled "$PROJECT_CONFIG"
 [[ -f "$GLOBAL_CONFIG" ]] && assert_share_disabled "$GLOBAL_CONFIG"
 
-if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]] && [[ ! -f "${GLOBAL_CONFIG_DIR}/plugins/temper.ts" ]]; then
+if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
   TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
   TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
 
