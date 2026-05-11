@@ -117,9 +117,16 @@ describe("temper plugin — mojo-init", () => {
     const tasks = taskRequests(history);
     expect(tasks.length).toBeGreaterThanOrEqual(1);
 
-    const count = tasks[0].request.messages.filter(
+    const mojoInitMessages = tasks[0].request.messages.filter(
       (m) => m.role === "user" && m.content.includes("# mojo-init")
-    ).length;
+    );
+    const count = mojoInitMessages.length;
+    if (count !== 1) {
+      console.error(`mojo-init appeared ${count} times. Messages containing it:`);
+      for (const m of mojoInitMessages) console.error(` [${m.role}] ${m.content.slice(0, 300)}`);
+      console.error("All messages in first task:");
+      for (const m of tasks[0].request.messages) console.error(`  [${m.role}] ${m.content.slice(0, 120).replace(/\n/g, "↵")}`);
+    }
     expect(count).toBe(1);
   });
 });
