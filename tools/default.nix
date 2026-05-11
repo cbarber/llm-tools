@@ -57,6 +57,8 @@ let
   );
   pre-commit = pkgs.pre-commit;
   rsync = pkgs.rsync;
+  jq = pkgs.jq;
+  curl = pkgs.curl;
 in
 {
   inherit
@@ -86,5 +88,7 @@ in
     git-credential-nixsmith
     pre-commit
     rsync
+    pkgs.jq
+    pkgs.curl
   ];
 }
