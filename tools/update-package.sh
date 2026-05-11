@@ -91,10 +91,14 @@ compute_opencode_node_modules_hash() {
   # Sentinel value: valid SRI format but wrong — forces nix to build and report
   local sentinel="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
+  local flake_src
+  flake_src=$(nix eval --raw --impure --expr \
+    "(builtins.fetchTree { type = \"git\"; url = \"file://${REPO_ROOT}\"; }).outPath" 2>/dev/null)
+
   local output
   output=$(nix build --impure --no-link --expr "
     let
-      flake = builtins.getFlake (toString $(pwd));
+      flake = builtins.getFlake \"path:${flake_src}\";
       pkgs = import (flake.inputs.nixpkgs) {
         system = builtins.currentSystem;
         config.allowUnfree = true;
