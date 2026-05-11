@@ -11,7 +11,11 @@ pkgs.mkShell {
       gh
       tea
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ bubblewrap ]
+    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+      bubblewrap
+      iproute2
+      coreutils
+    ]
     ++ tools.all;
 
   shellHook = ''
