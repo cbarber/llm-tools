@@ -1,9 +1,18 @@
 ---
 name: mojo-complete
 description: Session completion checklist — fires when unpushed work remains
+once: true
 triggers:
   - event: session.idle
     when: "git log origin/HEAD..HEAD --oneline 2>/dev/null | grep -q ."
+  - event: tool.execute.after
+    tool: bash
+    command: "git commit"
+    action: reset
+  - event: tool.execute.after
+    tool: bash
+    command: "git rebase"
+    action: reset
 ---
 
 # mojo-complete
