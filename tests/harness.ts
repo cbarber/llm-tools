@@ -91,13 +91,14 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
   const nixSmithDir = join(import.meta.dir, "..");
   const stderr: Buffer[] = [];
 
+  const inSandbox = process.env.IN_AGENT_SANDBOX === "1";
+  const [cmd, args]: [string, string[]] = inSandbox
+    ? ["opencode", ["serve", "--port", String(port)]]
+    : ["nix", ["develop", `${nixSmithDir}#opencode`, "--command", "bash", "-c", `agent-sandbox opencode serve --port ${port}`]];
+
   const proc = spawn(
-    "nix",
-    [
-      "develop", `${nixSmithDir}#opencode`,
-      "--command", "bash", "-c",
-      `agent-sandbox opencode serve --port ${port}`,
-    ],
+    cmd,
+    args,
     {
       cwd: dir,
       env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "" },
