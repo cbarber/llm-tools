@@ -186,3 +186,23 @@ export async function sendPromptAndWait(
     }
   }
 }
+
+export async function restartOpencode(
+  stop: () => void,
+  dir: string,
+  port: number,
+): Promise<() => void> {
+  stop();
+  return startOpencode(dir, port);
+}
+
+export async function verifySession(port: number, sessionID: string): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/session/${sessionID}`);
+  if (!res.ok) {
+    throw new Error(`verifySession: expected 200, got ${res.status} for session ${sessionID}`);
+  }
+  const body = (await res.json()) as { id?: string };
+  if (body.id !== sessionID) {
+    throw new Error(`verifySession: returned id "${body.id}" does not match expected "${sessionID}"`);
+  }
+}
