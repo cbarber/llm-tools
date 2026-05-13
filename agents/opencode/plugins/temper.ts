@@ -167,7 +167,10 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
   }
 }
 
+const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
+  if (_registeredDirs.has(directory)) return {};
+  _registeredDirs.add(directory);
   const logPath = `${directory}/.opencode/event.log`;
   const firedOnce = new Set<string>();
   const throttleMap = new Map<string, number>();
