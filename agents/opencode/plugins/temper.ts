@@ -19,6 +19,7 @@ type Trigger = {
   when?: string;
   blocking?: boolean;
   action?: TriggerAction;
+  worktree?: boolean;
 };
 
 type Skill = {
@@ -40,6 +41,7 @@ type DispatchContext =
     event: "tool.execute.after";
     tool: string;
     command: string;
+    filePath?: string;
     output: { title: string; output: string; metadata: any };
   }
   | { event: "todo.updated"; todos: Array<{ content: string; status: string; priority: string; id: string }> };
@@ -70,7 +72,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
     if (line.startsWith("  - event:")) {
       if (current?.event) triggers.push(current as Trigger);
       current = { event: line.replace(/.*event:\s*/, "").trim() };
-    } else if (current && line.match(/^\s+(tool|command|when|blocking|action):/)) {
+    } else if (current && line.match(/^\s+(tool|command|when|blocking|action|worktree):/)) {
       const kv = line.match(/^\s+(\w+):\s+(.+)$/);
       if (kv) {
         const key = kv[1] as keyof Trigger;
@@ -274,13 +276,14 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
       const action: TriggerAction = trigger.action ?? "inject";
 
-      // reset action: clear firedOnce for this skill and stop — no injection,
-      // no throttle check, no when guard needed.
+      // reset action: clear firedOnce and throttle for this skill — no injection.
       if (action === "reset") {
-        if (state.firedOnce.has(skill.name)) {
-          state.firedOnce.delete(skill.name);
-          await logEvent(logPath, "dispatch-reset", { skill: skill.name });
+        state.firedOnce.delete(skill.name);
+        const throttlePrefix = `${sessionID}:${skill.name}:`;
+        for (const key of throttleMap.keys()) {
+          if (key.startsWith(throttlePrefix)) throttleMap.delete(key);
         }
+        await logEvent(logPath, "dispatch-reset", { skill: skill.name });
         continue;
       }
 
@@ -294,6 +297,19 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         const passed = await evalWhen($, trigger.when, directory);
         await logEvent(logPath, "dispatch-when", { skill: skill.name, when: trigger.when, passed });
         if (!passed) continue;
+      }
+
+      if (trigger.worktree) {
+        const filePath = "filePath" in ctx ? (ctx.filePath ?? "") : "";
+        if (!filePath) {
+          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "worktree-no-filepath" });
+          continue;
+        }
+        const worktreeRoot = (await $.cwd(directory)`git rev-parse --show-toplevel`.nothrow().text()).trim();
+        if (!filePath.startsWith(worktreeRoot + "/") && filePath !== worktreeRoot) {
+          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "worktree-outside", filePath, worktreeRoot });
+          continue;
+        }
       }
 
       const throttleKey = `${sessionID}:${skill.name}:${ctx.event}`;
@@ -342,11 +358,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "tool.execute.after": async (input, output) => {
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
-      await logEvent(logPath, "tool.execute.after", { tool: input.tool, command });
+      const filePath: string = (input.tool === "edit" || input.tool === "write")
+        ? (input.args?.filePath ?? "")
+        : "";
+      await logEvent(logPath, "tool.execute.after", { tool: input.tool, command, filePath });
       await dispatchEvent(input.sessionID, {
         event: "tool.execute.after",
         tool: input.tool,
         command,
+        filePath,
         output,
       });
     },
