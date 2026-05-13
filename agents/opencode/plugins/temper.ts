@@ -167,18 +167,68 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
   }
 }
 
+type SessionState = {
+  firedOnce: Set<string>;
+  lastInjectionTokens: Map<string, number>;
+};
+
+const sessionStore = new Map<string, SessionState>();
+const pendingHydration = new Map<string, Promise<SessionState>>();
+
 const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
   if (_registeredDirs.has(directory)) return {};
   _registeredDirs.add(directory);
   const logPath = `${directory}/.opencode/event.log`;
-  const firedOnce = new Set<string>();
   const throttleMap = new Map<string, number>();
   const THROTTLE_MS = 60_000;
 
   // client.app.skills() is only available on the v2 SDK client.
   // The plugin-injected client uses the legacy SDK, so we instantiate v2 directly.
   const v2 = createV2Client({ baseUrl: serverUrl.toString() });
+
+  async function hydrateSession(sessionID: string): Promise<SessionState> {
+    const state: SessionState = {
+      firedOnce: new Set<string>(),
+      lastInjectionTokens: new Map<string, number>(),
+    };
+
+    try {
+      const response = await v2.session.messages({ sessionID });
+      const messages = response.data ?? [];
+
+      const foundInHistory: string[] = [];
+      for (const { parts } of messages) {
+        for (const part of parts) {
+          if (part.type === "text" && part.synthetic) {
+            const m = part.text.match(/^# (\S+)/m);
+            if (m) {
+              state.firedOnce.add(m[1]);
+              foundInHistory.push(m[1]);
+            }
+          } else if (part.type === "tool" && part.tool === "skill") {
+            const input = (part.state as { input?: { name?: string } }).input;
+            const name = input?.name;
+            if (name) {
+              state.firedOnce.add(name);
+              if (!foundInHistory.includes(name)) foundInHistory.push(name);
+            }
+          }
+        }
+      }
+
+      await logEvent(logPath, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
+
+      // If no messages yet, don't cache — allow re-hydration on next event
+      // once the server has loaded the session history.
+      if (messages.length === 0) return state;
+    } catch (error) {
+      await logEvent(logPath, "hydrate-error", { sessionID, error: String(error) });
+    }
+
+    sessionStore.set(sessionID, state);
+    return state;
+  }
 
   async function loadSkills(): Promise<Skill[]> {
     try {
@@ -204,6 +254,16 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
+    let state: SessionState;
+    if (sessionStore.has(sessionID)) {
+      state = sessionStore.get(sessionID)!;
+    } else {
+      if (!pendingHydration.has(sessionID)) {
+        pendingHydration.set(sessionID, hydrateSession(sessionID).finally(() => pendingHydration.delete(sessionID)));
+      }
+      state = await pendingHydration.get(sessionID)!;
+    }
+
     await logEvent(logPath, "dispatch", { ctx, skillCount: skills.length });
 
     for (const skill of skills) {
@@ -217,17 +277,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       // reset action: clear firedOnce for this skill and stop — no injection,
       // no throttle check, no when guard needed.
       if (action === "reset") {
-        const onceKey = `${sessionID}:${skill.name}`;
-        if (firedOnce.has(onceKey)) {
-          firedOnce.delete(onceKey);
+        if (state.firedOnce.has(skill.name)) {
+          state.firedOnce.delete(skill.name);
           await logEvent(logPath, "dispatch-reset", { skill: skill.name });
         }
         continue;
       }
 
       // inject and fail: honour once and throttle guards.
-      const onceKey = `${sessionID}:${skill.name}`;
-      if (skill.once && firedOnce.has(onceKey)) {
+      if (skill.once && state.firedOnce.has(skill.name)) {
         await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
         continue;
       }
@@ -246,7 +304,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
       throttleMap.set(throttleKey, now);
 
-      if (skill.once) firedOnce.add(onceKey);
+      if (skill.once) state.firedOnce.add(skill.name);
 
       if (action === "fail") {
         // fail is only meaningful on tool.execute.before — throwing there
@@ -301,6 +359,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
         await logEvent(logPath, "todo.updated", { sessionID, todos });
+      }
+      if (event.type === "message.updated") {
+        const { info } = event.properties;
+        if (info.role === "assistant" && "agent" in info) {
+          const sid = info.sessionID;
+          const agentName = (info as { agent: string }).agent;
+          const st = sessionStore.get(sid);
+          if (st) st.lastAssistantAgent = agentName;
+        }
       }
     },
   };
