@@ -170,6 +170,7 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
 type SessionState = {
   firedOnce: Set<string>;
   lastInjectionTokens: Map<string, number>;
+  lastAssistantAgent: string;
 };
 
 const sessionStore = new Map<string, SessionState>();
@@ -191,6 +192,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     const state: SessionState = {
       firedOnce: new Set<string>(),
       lastInjectionTokens: new Map<string, number>(),
+      lastAssistantAgent: "",
     };
 
     try {
@@ -199,6 +201,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const onceSkillNames = new Set(skills.filter((s) => s.once).map((s) => s.name));
 
       const foundInHistory: string[] = [];
+      for (const msg of messages) {
+        if (msg.info.role === "assistant" && "agent" in msg.info) {
+          state.lastAssistantAgent = (msg.info as { agent: string }).agent;
+        }
+      }
       for (const { parts } of messages) {
         for (const part of parts) {
           if (part.type === "text" && part.synthetic) {
@@ -293,6 +300,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         if (!passed) continue;
       }
 
+      if (state.lastAssistantAgent === "plan") {
+        await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "plan-mode" });
+        continue;
+      }
+
       const throttleKey = `${sessionID}:${skill.name}:${ctx.event}`;
       const now = Date.now();
       if (now - (throttleMap.get(throttleKey) ?? 0) < THROTTLE_MS) {
@@ -356,6 +368,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
         await logEvent(logPath, "todo.updated", { sessionID, todos });
+      }
+      if (event.type === "message.updated") {
+        const { info } = event.properties;
+        if (info.role === "assistant" && "agent" in info) {
+          const sid = info.sessionID;
+          const agentName = (info as { agent: string }).agent;
+          const st = sessionStore.get(sid);
+          if (st) st.lastAssistantAgent = agentName;
+        }
       }
     },
   };
