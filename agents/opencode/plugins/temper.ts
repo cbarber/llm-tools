@@ -172,6 +172,7 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
 type SessionState = {
   firedOnce: Set<string>;
   lastInjectionTokens: Map<string, number>;
+  lastAssistantAgent: string;
 };
 
 const sessionStore = new Map<string, SessionState>();
@@ -193,6 +194,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     const state: SessionState = {
       firedOnce: new Set<string>(),
       lastInjectionTokens: new Map<string, number>(),
+      lastAssistantAgent: "",
     };
 
     try {
@@ -200,6 +202,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const messages = response.data ?? [];
 
       const foundInHistory: string[] = [];
+      for (const msg of messages) {
+        if (msg.info.role === "assistant" && "agent" in msg.info) {
+          state.lastAssistantAgent = (msg.info as { agent: string }).agent;
+        }
+      }
       for (const { parts } of messages) {
         for (const part of parts) {
           if (part.type === "text" && part.synthetic) {
@@ -297,6 +304,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         const passed = await evalWhen($, trigger.when, directory);
         await logEvent(logPath, "dispatch-when", { skill: skill.name, when: trigger.when, passed });
         if (!passed) continue;
+      }
+
+      if (state.lastAssistantAgent === "plan") {
+        await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "plan-mode" });
+        continue;
       }
 
       if (trigger.worktree) {
