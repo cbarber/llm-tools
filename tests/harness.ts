@@ -109,7 +109,7 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
 
 
   await waitFor(async () => {
-    try { return (await fetch(`http://127.0.0.1:${port}/session`)).ok; }
+    try { return (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok; }
     catch { return false; }
   }, 30_000, "opencode serve to start").catch((err) => {
     process.stderr.write("[opencode stderr]\n" + Buffer.concat(stderr).toString() + "\n");
@@ -155,6 +155,7 @@ export async function sendPromptAndWait(
       noReply: false,
       parts: [{ type: "text", text, synthetic: false }],
     }),
+    signal: AbortSignal.timeout(10_000),
   }).then((r) => r.text());
 
   // Wait for history to stabilize: no new requests for 2 consecutive seconds
