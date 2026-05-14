@@ -50,4 +50,5 @@ jobs:
           AUTO_LAUNCH: "false"
           BD_SKIP_SETUP: "true"
           SKIP_AGENT_SETUP: "true"
+          HARNESS_DEBUG: "1"
         run: nix develop .#default --command bash -c "bun install --cwd tests && bun test ./tests/test-agent-harness.test.ts ./tests/test-mojo-edit-nudge.test.ts"
