@@ -105,12 +105,23 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  proc.stderr?.on("data", (d: Buffer) => stderr.push(d));
+  const debug = process.env.HARNESS_DEBUG === "1";
+  proc.stderr?.on("data", (d: Buffer) => {
+    stderr.push(d);
+    if (debug) process.stderr.write(d);
+  });
 
-
+  if (debug) process.stderr.write(`[harness] startOpencode: waiting for port ${port}\n`);
   await waitFor(async () => {
-    try { return (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok; }
-    catch { return false; }
+    try {
+      const ok = (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok;
+      if (ok && debug) process.stderr.write(`[harness] startOpencode: port ${port} ready\n`);
+      return ok;
+    }
+    catch (e) {
+      if (debug) process.stderr.write(`[harness] startOpencode: fetch attempt failed: ${e}\n`);
+      return false;
+    }
   }, 30_000, "opencode serve to start").catch((err) => {
     process.stderr.write("[opencode stderr]\n" + Buffer.concat(stderr).toString() + "\n");
     proc.kill("SIGTERM");
@@ -119,9 +130,7 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
 
   return () => {
     proc.kill("SIGTERM");
-    if (process.env.HARNESS_DEBUG && stderr.length) {
-      process.stderr.write(Buffer.concat(stderr).toString());
-    }
+    if (debug && stderr.length) process.stderr.write(Buffer.concat(stderr).toString());
   };
 }
 
@@ -148,6 +157,8 @@ export async function sendPromptAndWait(
   text: string,
   mock: MockServer,
 ): Promise<void> {
+  const debug = process.env.HARNESS_DEBUG === "1";
+  if (debug) process.stderr.write(`[harness] sendPromptAndWait: posting prompt\n`);
   await fetch(`http://127.0.0.1:${port}/session/${sessionID}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -157,6 +168,7 @@ export async function sendPromptAndWait(
     }),
     signal: AbortSignal.timeout(10_000),
   }).then((r) => r.text());
+  if (debug) process.stderr.write(`[harness] sendPromptAndWait: prompt posted, waiting for history to stabilize\n`);
 
   // Wait for history to stabilize: no new requests for 2 consecutive seconds
   let lastCount = mock.history.count();
