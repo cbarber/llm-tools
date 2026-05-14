@@ -22,6 +22,7 @@ import {
   sendPromptAndWait,
   startOpencode,
   verifySession,
+  waitForMessages,
   writeOpencodeConfig,
 } from "./harness";
 
@@ -35,14 +36,27 @@ function countMojoInitInjections(mock: MockServer, afterRequestIndex: number): {
   count: number;
   messages: Array<{ reqIndex: number; role: string; content: string }>;
 } {
+  // Count net-new mojo-init injections after the given request index.
+  // Each injection adds one user message to the history; it then appears
+  // in all subsequent requests too. A delta approach avoids counting the
+  // same injection multiple times as it propagates through history.
   const tasks = taskRequests(mock);
   const found: Array<{ reqIndex: number; role: string; content: string }> = [];
+  let prevCount = afterRequestIndex > 0
+    ? tasks[afterRequestIndex - 1]?.request.messages.filter(
+        (m) => m.role === "user" && m.content.includes("# mojo-init")
+      ).length ?? 0
+    : 0;
   for (let i = afterRequestIndex; i < tasks.length; i++) {
-    for (const m of tasks[i].request.messages) {
-      if (m.role === "user" && m.content.includes("# mojo-init")) {
+    const cur = tasks[i].request.messages.filter(
+      (m) => m.role === "user" && m.content.includes("# mojo-init")
+    );
+    if (cur.length > prevCount) {
+      for (const m of cur.slice(prevCount)) {
         found.push({ reqIndex: i, role: m.role, content: m.content });
       }
     }
+    prevCount = cur.length;
   }
   return { count: found.length, messages: found };
 }
@@ -74,6 +88,7 @@ describe("temper plugin — firedOnce hydration on restart (synthetic injection)
 
     stop = await restartOpencode(stop, dir, ocPort);
     await verifySession(ocPort, sessionID);
+    await waitForMessages(ocPort, sessionID);
 
     await sendPromptAndWait(ocPort, sessionID, "Hello after restart.", mock);
 
@@ -103,11 +118,20 @@ describe("temper plugin — firedOnce hydration on restart (synthetic injection)
     expect(found).toBe(1);
   });
 
-  // OpenCode loads session history lazily after chat.message fires, so the
-  // messages API returns 0 at hydration time on the first post-restart
-  // dispatch. Suppressing this requires an OpenCode-side signal for when
-  // session history is fully loaded (e.g. a session.ready event).
-  it.todo("mojo-init does NOT re-appear in requests after restart — blocked by OpenCode lazy session history loading");
+  it("mojo-init does NOT re-appear in requests after restart", () => {
+    const { count, messages } = countMojoInitInjections(mock, requestCountBeforeRestart);
+    if (count > 0) {
+      const tasks = taskRequests(mock);
+      console.error(`[DIAGNOSTIC] mojo-init appeared ${count} time(s) AFTER restart`);
+      for (const m of messages) console.error(`  req[${m.reqIndex}] [${m.role}]: ${m.content.slice(0, 200).replace(/\n/g, "↵")}`);
+      for (let i = requestCountBeforeRestart; i < tasks.length; i++) {
+        for (const m of tasks[i].request.messages) {
+          console.error(`    [${m.role}]${m.content.includes("# mojo-init") ? " *** MOJO-INIT ***" : ""}: ${m.content.slice(0, 100).replace(/\n/g, "↵")}`);
+        }
+      }
+    }
+    expect(count).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -145,6 +169,7 @@ describe("temper plugin — firedOnce hydration on restart (skill tool call)", (
 
     stop = await restartOpencode(stop, dir, ocPort);
     await verifySession(ocPort, sessionID);
+    await waitForMessages(ocPort, sessionID);
 
     await sendPromptAndWait(ocPort, sessionID, "Hello after restart.", mock);
 
@@ -160,8 +185,19 @@ describe("temper plugin — firedOnce hydration on restart (skill tool call)", (
     expect(requestCountBeforeRestart).toBeGreaterThan(0);
   });
 
-  // Same lazy-loading constraint as Suite 1 — the skill tool call is visible
-  // in history but only after OpenCode loads it, which happens after the
-  // first post-restart chat.message fires.
-  it.todo("mojo-init does NOT appear after restart when skill was tool-called before — blocked by OpenCode lazy session history loading");
+  it("mojo-init does NOT appear as synthetic injection after restart when skill was tool-called before", () => {
+    const { count, messages } = countMojoInitInjections(mock, requestCountBeforeRestart);
+    if (count > 0) {
+      const tasks = taskRequests(mock);
+      console.error(`[DIAGNOSTIC] mojo-init appeared ${count} time(s) AFTER restart`);
+      for (const m of messages) console.error(`  req[${m.reqIndex}] [${m.role}]: ${m.content.slice(0, 200).replace(/\n/g, "↵")}`);
+      for (let i = 0; i < requestCountBeforeRestart; i++) {
+        for (const m of tasks[i].request.messages) {
+          const notable = m.content.includes("mojo-init") || m.content.includes("skill");
+          console.error(`  pre-restart req[${i}] [${m.role}]${notable ? " ***" : ""}: ${m.content.slice(0, 100).replace(/\n/g, "↵")}`);
+        }
+      }
+    }
+    expect(count).toBe(0);
+  });
 });

@@ -117,17 +117,25 @@ describe("temper plugin — mojo-init", () => {
     const tasks = taskRequests(history);
     expect(tasks.length).toBeGreaterThanOrEqual(1);
 
-    const mojoInitMessages = tasks[0].request.messages.filter(
-      (m) => m.role === "user" && m.content.includes("# mojo-init")
-    );
-    const count = mojoInitMessages.length;
-    if (count !== 1) {
-      console.error(`mojo-init appeared ${count} times. Messages containing it:`);
-      for (const m of mojoInitMessages) console.error(` [${m.role}] ${m.content.slice(0, 300)}`);
-      console.error("All messages in first task:");
-      for (const m of tasks[0].request.messages) console.error(`  [${m.role}] ${m.content.slice(0, 120).replace(/\n/g, "↵")}`);
+    let injectionCount = 0;
+    let prevCount = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      const cur = tasks[i].request.messages.filter(
+        (m) => m.role === "user" && m.content.includes("# mojo-init")
+      ).length;
+      if (cur > prevCount) injectionCount += cur - prevCount;
+      prevCount = cur;
     }
-    expect(count).toBe(1);
+    if (injectionCount !== 1) {
+      console.error(`mojo-init injected ${injectionCount} time(s) across ${tasks.length} requests`);
+      for (let i = 0; i < tasks.length; i++) {
+        for (const m of tasks[i].request.messages) {
+          if (m.content.includes("# mojo-init"))
+            console.error(`  tasks[${i}] [${m.role}]: ${m.content.slice(0, 120).replace(/\n/g, "↵")}`);
+        }
+      }
+    }
+    expect(injectionCount).toBe(1);
   });
 });
 

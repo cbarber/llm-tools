@@ -84,6 +84,10 @@ async function createFixtureRepoWithRemote(): Promise<string> {
   await mkdir(join(dir, ".beads"));
   await mkdir(join(dir, ".opencode"));
 
+  // Switch to a feature branch so the agent-sandbox git() guard allows commits
+  // (the guard blocks commits on the default branch when origin/HEAD is set).
+  await git("checkout", "-b", "fix/test-branch");
+
   // Add an unpushed commit so the mojo-complete when-guard passes
   await writeFile(join(dir, "UNPUSHED.md"), "# Unpushed\n");
   await git("add", ".");
@@ -251,6 +255,9 @@ describe("mojo-complete — reset on git commit allows re-fire", () => {
     await sendPromptAndWait(ocPort, sessionID, "First prompt before commit.", mock);
     await new Promise((r) => setTimeout(r, 1000));
     await sendPromptAndWait(ocPort, sessionID, "Second prompt: please commit.", mock);
+    // Third prompt flushes the post-reset mojo-complete injection into LLM
+    // history; noReply injections only appear in subsequent request messages.
+    await sendPromptAndWait(ocPort, sessionID, "Third prompt.", mock);
 
     try {
       const log = await readFile(join(dir, ".opencode", "event.log"), "utf8");

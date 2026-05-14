@@ -169,7 +169,10 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
   }
 }
 
+type SessionPhase = "new" | "pending-restore" | "restored";
+
 type SessionState = {
+  phase: SessionPhase;
   firedOnce: Set<string>;
   lastInjectionTokens: Map<string, number>;
   lastAssistantAgent: string;
@@ -191,11 +194,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   const v2 = createV2Client({ baseUrl: serverUrl.toString() });
 
   async function hydrateSession(sessionID: string): Promise<SessionState> {
-    const state: SessionState = {
-      firedOnce: new Set<string>(),
-      lastInjectionTokens: new Map<string, number>(),
-      lastAssistantAgent: "",
-    };
+    const state = sessionStore.get(sessionID)!;
 
     try {
       const response = await v2.session.messages({ sessionID });
@@ -226,16 +225,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         }
       }
 
+      // If no prior injections found, this is a new session — discard any
+      // agent name set from in-flight streaming (e.g. plan agent mid-turn).
+      if (state.firedOnce.size === 0) state.lastAssistantAgent = "";
       await logEvent(logPath, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
-
-      // If no messages yet, don't cache — allow re-hydration on next event
-      // once the server has loaded the session history.
-      if (messages.length === 0) return state;
     } catch (error) {
       await logEvent(logPath, "hydrate-error", { sessionID, error: String(error) });
     }
 
-    sessionStore.set(sessionID, state);
+    state.phase = "restored";
     return state;
   }
 
@@ -263,14 +261,10 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
-    let state: SessionState;
-    if (sessionStore.has(sessionID)) {
-      state = sessionStore.get(sessionID)!;
-    } else {
-      if (!pendingHydration.has(sessionID)) {
-        pendingHydration.set(sessionID, hydrateSession(sessionID).finally(() => pendingHydration.delete(sessionID)));
-      }
-      state = await pendingHydration.get(sessionID)!;
+    const state = sessionStore.get(sessionID);
+    if (!state || state.phase === "pending-restore") {
+      await logEvent(logPath, "dispatch-skip-no-state", { ctx });
+      return;
     }
 
     await logEvent(logPath, "dispatch", { ctx, skillCount: skills.length });
@@ -358,9 +352,18 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (input.sessionID) output.env.OPENCODE_SESSION_ID = input.sessionID;
     },
 
-    "chat.message": async (_input, output) => {
-      const sessionID = output.message.sessionID;
-      await dispatchEvent(sessionID, { event: "session.created" });
+    "chat.message": async (input, _output) => {
+      const { sessionID } = input;
+      if (sessionStore.has(sessionID)) return;
+      // No prior session.updated — fresh process restore where session.updated
+      // does not re-fire. chat.message fires at ~+94ms with messages API = 0.
+      // Mark pending-restore; session.status at ~+275ms will hydrate.
+      sessionStore.set(sessionID, {
+        phase: "pending-restore",
+        firedOnce: new Set(),
+        lastInjectionTokens: new Map(),
+        lastAssistantAgent: "",
+      });
     },
 
     "tool.execute.before": async (input, _output) => {
@@ -384,9 +387,39 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     },
 
     event: async ({ event }) => {
+      if (event.type === "session.updated") {
+        // session.updated fires before chat.message for both new and restored
+        // sessions. Create pending-restore state to suppress the chat.message
+        // replay until session.status confirms history is loaded.
+        const sid = (event.properties as any).sessionID;
+        if (sid && !sessionStore.has(sid)) {
+          sessionStore.set(sid, {
+            phase: "pending-restore",
+            firedOnce: new Set(),
+            lastInjectionTokens: new Map(),
+            lastAssistantAgent: "",
+          });
+        }
+      }
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
+        if (pendingHydration.has(sessionID)) await pendingHydration.get(sessionID);
         await dispatchEvent(sessionID, { event: "session.idle" });
+      }
+      if (event.type === "session.status") {
+        // session.status fires ~275ms after restart with history loaded.
+        // Transition pending-restore → restored by hydrating firedOnce from history.
+        // pendingHydration is set synchronously before any await to prevent
+        // concurrent session.status events from double-hydrating.
+        const sid = (event.properties as any).sessionID;
+        const state = sessionStore.get(sid);
+        if (sid && state?.phase === "pending-restore" && !pendingHydration.has(sid)) {
+          const p = hydrateSession(sid).then(async () => {
+            await dispatchEvent(sid, { event: "session.created" });
+          }).finally(() => pendingHydration.delete(sid));
+          pendingHydration.set(sid, p);
+          await p;
+        }
       }
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
@@ -398,7 +431,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
           const sid = info.sessionID;
           const agentName = (info as { agent: string }).agent;
           const st = sessionStore.get(sid);
-          if (st) st.lastAssistantAgent = agentName;
+          if (st && st.phase === "restored") st.lastAssistantAgent = agentName;
         }
       }
     },

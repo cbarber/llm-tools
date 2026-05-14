@@ -189,6 +189,22 @@ export async function sendPromptAndWait(
       stableFor = 0;
     }
   }
+
+  // Wait for session idle and allow plugin session.idle hooks to settle.
+  // REST status reflects idle before the plugin event hook fires;
+  // the 300ms buffer covers that asynchronous gap.
+  const idleDeadline = Date.now() + 10_000;
+  while (Date.now() < idleDeadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/status`, { signal: AbortSignal.timeout(2_000) });
+      const statuses = await res.json() as Record<string, { type: string }>;
+      if (statuses[sessionID]?.type === "idle") {
+        await new Promise((r) => setTimeout(r, 300));
+        break;
+      }
+    } catch { /* retry */ }
+    await new Promise((r) => setTimeout(r, 200));
+  }
 }
 
 export async function restartOpencode(
@@ -211,4 +227,14 @@ export async function verifySession(port: number, sessionID: string): Promise<vo
   if (body.id !== sessionID) {
     throw new Error(`verifySession: returned id "${body.id}" does not match expected "${sessionID}"`);
   }
+}
+
+export async function waitForMessages(port: number, sessionID: string, timeoutMs = 10_000): Promise<void> {
+  await waitFor(async () => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/${sessionID}/message`, { signal: AbortSignal.timeout(2_000) });
+      const msgs = await res.json() as unknown[];
+      return msgs.length > 0;
+    } catch { return false; }
+  }, timeoutMs, `messages to load for session ${sessionID}`);
 }
