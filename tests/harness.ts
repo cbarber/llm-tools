@@ -1,7 +1,7 @@
 import type { MockServer } from "llm-mock-server";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, mkdir, writeFile, access, copyFile, symlink } from "node:fs/promises";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
@@ -87,9 +87,40 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
 // opencode server
 // ---------------------------------------------------------------------------
 
-export async function startOpencode(dir: string, port: number): Promise<() => void> {
+export async function startOpencode(
+  dir: string,
+  port: number,
+  envOverrides: Record<string, string> = {},
+): Promise<() => void> {
   const nixSmithDir = join(import.meta.dir, "..");
   const stderr: Buffer[] = [];
+
+  // Create a temp HOME unless the caller provides one (e.g. recorder test).
+  // This ensures the spawned opencode loads the WIP temper.ts from the repo
+  // rather than whatever version was last installed into the real HOME.
+  let tempHome: string | undefined;
+  if (!envOverrides.HOME) {
+    tempHome = await mkdtemp(join(tmpdir(), "opencode-harness-home-"));
+    const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
+    await mkdir(pluginsDir, { recursive: true });
+    const temperSrc = process.env.OPENCODE_PLUGIN_DIR
+      ? join(process.env.OPENCODE_PLUGIN_DIR, "temper.ts")
+      : join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
+    await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
+    // Symlink skills from the real HOME so v2.app.skills() returns them.
+    const realSkills = join(homedir(), ".agents", "skills");
+    await mkdir(join(tempHome, ".agents"), { recursive: true });
+    await symlink(realSkills, join(tempHome, ".agents", "skills")).catch(() => {});
+  }
+
+  // Ensure the nixsmith token file for owner "test" exists so that
+  // setup-agent-api-tokens.sh exits early when the fixture repo's remote
+  // is set to https://github.com/test/test (extract_github_owner → "test").
+  const nixsmithHome = envOverrides.HOME ?? tempHome ?? homedir();
+  const nixsmithDir = join(nixsmithHome, ".config", "nixsmith");
+  const tokenFile = join(nixsmithDir, "github-token-test");
+  await mkdir(nixsmithDir, { recursive: true });
+  await access(tokenFile).catch(() => writeFile(tokenFile, "harness-test-token\n", { mode: 0o600 }));
 
   const inSandbox = process.env.IN_AGENT_SANDBOX === "1";
   const [cmd, args]: [string, string[]] = inSandbox
@@ -101,7 +132,7 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
     args,
     {
       cwd: dir,
-      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "" },
+      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", ...(tempHome ? { HOME: tempHome } : {}), ...envOverrides },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
