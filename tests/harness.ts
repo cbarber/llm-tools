@@ -111,8 +111,12 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
     if (debug) process.stderr.write(d);
   });
 
+  let exitCode: number | null = null;
+  proc.on("exit", (code) => { exitCode = code ?? 1; });
+
   if (debug) process.stderr.write(`[harness] startOpencode: waiting for port ${port}\n`);
   await waitFor(async () => {
+    if (exitCode !== null) throw new Error(`opencode exited with code ${exitCode}`);
     try {
       const ok = (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok;
       if (ok && debug) process.stderr.write(`[harness] startOpencode: port ${port} ready\n`);
