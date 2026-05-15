@@ -1,10 +1,11 @@
 import type { MockServer } from "llm-mock-server";
-import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { ChildProcessByStdio, execFile, spawn } from "node:child_process";
+import { mkdtemp, mkdir, writeFile, copyFile, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
+import Stream from "node:stream";
 
 const execFileAsync = promisify(execFile);
 
@@ -87,55 +88,89 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
 // opencode server
 // ---------------------------------------------------------------------------
 
-export async function startOpencode(dir: string, port: number): Promise<() => void> {
-  const nixSmithDir = join(import.meta.dir, "..");
+export async function startOpencode(
+  dir: string,
+  port: number,
+  skipTemperInstall: boolean = false,
+) {
   const stderr: Buffer[] = [];
 
-  const inSandbox = process.env.IN_AGENT_SANDBOX === "1";
-  const [cmd, args]: [string, string[]] = inSandbox
-    ? ["opencode", ["serve", "--port", String(port)]]
-    : ["nix", ["develop", `${nixSmithDir}#opencode`, "--command", "bash", "-c", `agent-sandbox opencode serve --port ${port}`]];
+  const tempHome = await createTempHome(skipTemperInstall);
 
-  const proc = spawn(
-    cmd,
-    args,
-    {
-      cwd: dir,
-      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
   const debug = process.env.HARNESS_DEBUG === "1";
-  proc.stderr?.on("data", (d: Buffer) => {
-    stderr.push(d);
-    if (debug) process.stderr.write(d);
-  });
 
-  let exitCode: number | null = null;
-  proc.on("exit", (code) => { exitCode = code ?? 1; });
+  let proc: ChildProcessByStdio<null, Stream.Readable, Stream.Readable> | undefined;
 
-  if (debug) process.stderr.write(`[harness] startOpencode: waiting for port ${port}\n`);
-  await waitFor(async () => {
-    if (exitCode !== null) throw new Error(`opencode exited with code ${exitCode}`);
-    try {
-      const ok = (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok;
-      if (ok && debug) process.stderr.write(`[harness] startOpencode: port ${port} ready\n`);
-      return ok;
-    }
-    catch (e) {
-      if (debug) process.stderr.write(`[harness] startOpencode: fetch attempt failed: ${e}\n`);
-      return false;
-    }
-  }, 30_000, "opencode serve to start").catch((err) => {
-    process.stderr.write("[opencode stderr]\n" + Buffer.concat(stderr).toString() + "\n");
-    proc.kill("SIGTERM");
-    throw err;
-  });
+  const start = async () => {
+    proc = spawn(
+      "opencode",
+      ["serve", "--port", String(port)],
+      {
+        cwd: dir,
+        env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", HOME: tempHome },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    proc.stderr?.on("data", (d: Buffer) => {
+      stderr.push(d);
+      if (debug) process.stderr.write(d);
+    });
 
-  return () => {
-    proc.kill("SIGTERM");
+    let exitCode: number | null = null;
+    proc.on("exit", (code) => { exitCode = code ?? 1; });
+
+    if (debug) process.stderr.write(`[harness] startOpencode: waiting for port ${port}\n`);
+    await waitFor(async () => {
+      if (exitCode !== null) throw new Error(`opencode exited with code ${exitCode}`);
+      try {
+        const ok = (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok;
+        if (ok && debug) process.stderr.write(`[harness] startOpencode: port ${port} ready\n`);
+        return ok;
+      }
+      catch (e) {
+        if (debug) process.stderr.write(`[harness] startOpencode: fetch attempt failed: ${e}\n`);
+        return false;
+      }
+    }, 30_000, "opencode serve to start").catch((err) => {
+      process.stderr.write("[opencode stderr]\n" + Buffer.concat(stderr).toString() + "\n");
+      proc?.kill("SIGTERM");
+      throw err;
+    });
+  };
+
+  const stop = () => {
+    proc?.kill("SIGTERM");
     if (debug && stderr.length) process.stderr.write(Buffer.concat(stderr).toString());
   };
+
+  await start();
+
+  return {
+    stop,
+    restart: async () => {
+      stop();
+      await start();
+      return stop;
+    }
+  }
+}
+
+async function createTempHome(skipTemperInstall: boolean) {
+  const tempHome = await mkdtemp(join(tmpdir(), "opencode-harness-home-"));
+
+  if (!skipTemperInstall) {
+    const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
+    await mkdir(pluginsDir, { recursive: true });
+    const temperSrc = join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
+    await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
+  }
+
+  // Symlink skills from the real HOME so v2.app.skills() returns them.
+  const projectSkills = join(import.meta.dir, "..", "agents", "skills");
+  await mkdir(join(tempHome, ".agents"), { recursive: true });
+  await cp(projectSkills, join(tempHome, ".agents", "skills"), { recursive: true });
+
+  return tempHome;
 }
 
 export async function createSession(port: number, dir: string): Promise<string> {
@@ -189,15 +224,6 @@ export async function sendPromptAndWait(
       stableFor = 0;
     }
   }
-}
-
-export async function restartOpencode(
-  stop: () => void,
-  dir: string,
-  port: number,
-): Promise<() => void> {
-  stop();
-  return startOpencode(dir, port);
 }
 
 export async function verifySession(port: number, sessionID: string): Promise<void> {
