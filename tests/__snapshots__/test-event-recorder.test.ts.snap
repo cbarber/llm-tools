@@ -1,0 +1,59 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`event recorder — snapshot baseline event type sequence matches snapshot 1`] = `
+[
+  "[hook.event] session.updated",
+  "[hook.chat.message] chat.message",
+  "[hook.event] session.status",
+  "[hook.event] session.status",
+  "[hook.tool.before] tool.execute.before",
+  "[hook.event] session.diff",
+  "[hook.shell.env] shell.env",
+  "[hook.tool.after] tool.execute.after",
+  "[hook.event] session.status",
+  "[hook.event] session.status",
+  "[hook.event] message.part.delta",
+  "[hook.event] session.diff",
+  "[hook.event] session.status",
+  "[hook.event] session.status",
+  "[hook.event] session.idle",
+  "[hook.event] session.diff",
+]
+`;
+
+exports[`event recorder — snapshot baseline event type counts match snapshot (order-independent, for readable diffs) 1`] = `
+{
+  "[hook.chat.message] chat.message": 1,
+  "[hook.event] message.part.delta": 1,
+  "[hook.event] session.diff": 3,
+  "[hook.event] session.idle": 1,
+  "[hook.event] session.status": 6,
+  "[hook.event] session.updated": 1,
+  "[hook.shell.env] shell.env": 1,
+  "[hook.tool.after] tool.execute.after": 1,
+  "[hook.tool.before] tool.execute.before": 1,
+}
+`;
+
+exports[`event recorder — restore snapshot event type sequence matches snapshot 1`] = `
+[
+  "[hook.chat.message] chat.message",
+  "[hook.event] session.status",
+  "[hook.event] session.status",
+  "[hook.event] message.part.delta",
+  "[hook.event] session.diff",
+  "[hook.event] session.status",
+  "[hook.event] session.status",
+  "[hook.event] session.idle",
+  "[hook.event] session.diff",
+]
+`;
+
+exports[`event recorder — restore snapshot events before first post-restore prompt (spontaneous restore events) 1`] = `[]`;
+
+exports[`event recorder — restore snapshot session.updated fires — or does not — before chat.message on restore 1`] = `
+{
+  "firstEventType": "chat.message",
+  "sessionUpdatedBeforeChat": null,
+}
+`;
