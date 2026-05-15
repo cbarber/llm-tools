@@ -63,7 +63,7 @@ beforeAll(async () => {
   await writeFile("/tmp/test.txt", "hello\n");
   await writeOpencodeConfig(dir, `${nudgeMock.url}/v1`);
 
-  stopNudgeOpencode = await startOpencode(dir, ocPort);
+  stopNudgeOpencode = (await startOpencode(dir, ocPort)).stop;
 
   const sessionID = await createSession(ocPort, dir);
   await sendPromptAndWait(ocPort, sessionID, "Update the test file.", nudgeMock);

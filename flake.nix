@@ -48,6 +48,7 @@
                 nixfmt-rfc-style
                 pre-commit
                 bats
+                opencode
               ]
               ++ lib.optionals stdenv.isLinux [ bubblewrap ];
           };
