@@ -87,52 +87,57 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
 // opencode server
 // ---------------------------------------------------------------------------
 
+/**
+ * Create an isolated HOME with the WIP temper plugin and skills.
+ * Call once per test file and pass the result to startOpencode to share
+ * the same plugin environment across all suites in the file.
+ */
+export async function createTempHome(): Promise<string> {
+  const tempHome = await mkdtemp(join(tmpdir(), "opencode-harness-home-"));
+  const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
+  await mkdir(pluginsDir, { recursive: true });
+  const temperSrc = process.env.OPENCODE_PLUGIN_DIR
+    ? join(process.env.OPENCODE_PLUGIN_DIR, "temper.ts")
+    : join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
+  await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
+  const realSkills = join(homedir(), ".agents", "skills");
+  await mkdir(join(tempHome, ".agents"), { recursive: true });
+  await symlink(realSkills, join(tempHome, ".agents", "skills")).catch(() => {});
+  const nixsmithDir = join(tempHome, ".config", "nixsmith");
+  await mkdir(nixsmithDir, { recursive: true });
+  await access(join(nixsmithDir, "github-token-test")).catch(() =>
+    writeFile(join(nixsmithDir, "github-token-test"), "harness-test-token\n", { mode: 0o600 })
+  );
+  return tempHome;
+}
+
 export async function startOpencode(
   dir: string,
   port: number,
   envOverrides: Record<string, string> = {},
-): Promise<() => void> {
-  const nixSmithDir = join(import.meta.dir, "..");
+): Promise<{ stop: () => void; tempHome: string }> {
   const stderr: Buffer[] = [];
 
-  // Create a temp HOME unless the caller provides one (e.g. recorder test).
-  // This ensures the spawned opencode loads the WIP temper.ts from the repo
-  // rather than whatever version was last installed into the real HOME.
-  let tempHome: string | undefined;
-  if (!envOverrides.HOME) {
-    tempHome = await mkdtemp(join(tmpdir(), "opencode-harness-home-"));
-    const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
-    await mkdir(pluginsDir, { recursive: true });
-    const temperSrc = process.env.OPENCODE_PLUGIN_DIR
-      ? join(process.env.OPENCODE_PLUGIN_DIR, "temper.ts")
-      : join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
-    await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
-    // Symlink skills from the real HOME so v2.app.skills() returns them.
-    const realSkills = join(homedir(), ".agents", "skills");
-    await mkdir(join(tempHome, ".agents"), { recursive: true });
-    await symlink(realSkills, join(tempHome, ".agents", "skills")).catch(() => {});
+  // Use caller-provided HOME or create a fresh isolated one.
+  const tempHome = envOverrides.HOME ?? await createTempHome();
+
+  // When caller provides their own HOME (e.g. recorder test fakeHome),
+  // ensure the nixsmith token is present there too.
+  if (envOverrides.HOME) {
+    const nixsmithDir = join(envOverrides.HOME, ".config", "nixsmith");
+    const tokenFile = join(nixsmithDir, "github-token-test");
+    await mkdir(nixsmithDir, { recursive: true });
+    await access(tokenFile).catch(() => writeFile(tokenFile, "harness-test-token\n", { mode: 0o600 }));
   }
 
-  // Ensure the nixsmith token file for owner "test" exists so that
-  // setup-agent-api-tokens.sh exits early when the fixture repo's remote
-  // is set to https://github.com/test/test (extract_github_owner → "test").
-  const nixsmithHome = envOverrides.HOME ?? tempHome ?? homedir();
-  const nixsmithDir = join(nixsmithHome, ".config", "nixsmith");
-  const tokenFile = join(nixsmithDir, "github-token-test");
-  await mkdir(nixsmithDir, { recursive: true });
-  await access(tokenFile).catch(() => writeFile(tokenFile, "harness-test-token\n", { mode: 0o600 }));
-
-  const inSandbox = process.env.IN_AGENT_SANDBOX === "1";
-  const [cmd, args]: [string, string[]] = inSandbox
-    ? ["opencode", ["serve", "--port", String(port)]]
-    : ["nix", ["develop", `${nixSmithDir}#opencode`, "--command", "bash", "-c", `agent-sandbox opencode serve --port ${port}`]];
+  const [cmd, args]: [string, string[]] = ["opencode", ["serve", "--port", String(port)]];
 
   const proc = spawn(
     cmd,
     args,
     {
       cwd: dir,
-      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", ...(tempHome ? { HOME: tempHome } : {}), ...envOverrides },
+      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", HOME: tempHome, ...envOverrides },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -163,10 +168,11 @@ export async function startOpencode(
     throw err;
   });
 
-  return () => {
+  const stop = () => {
     proc.kill("SIGTERM");
     if (debug && stderr.length) process.stderr.write(Buffer.concat(stderr).toString());
   };
+  return { stop, tempHome };
 }
 
 export async function createSession(port: number, dir: string): Promise<string> {
@@ -243,7 +249,7 @@ export async function restartOpencode(
   dir: string,
   port: number,
   waitMs = 1_500,
-): Promise<() => void> {
+): Promise<{ stop: () => void; tempHome: string }> {
   stop();
   await new Promise((r) => setTimeout(r, waitMs));
   return startOpencode(dir, port);
