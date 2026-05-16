@@ -1,7 +1,7 @@
 import type { MockServer } from "llm-mock-server";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, mkdir, writeFile, access, copyFile, symlink } from "node:fs/promises";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
@@ -87,21 +87,57 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
 // opencode server
 // ---------------------------------------------------------------------------
 
-export async function startOpencode(dir: string, port: number): Promise<() => void> {
-  const nixSmithDir = join(import.meta.dir, "..");
+/**
+ * Create an isolated HOME with the WIP temper plugin and skills.
+ * Call once per test file and pass the result to startOpencode to share
+ * the same plugin environment across all suites in the file.
+ */
+export async function createTempHome(): Promise<string> {
+  const tempHome = await mkdtemp(join(tmpdir(), "opencode-harness-home-"));
+  const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
+  await mkdir(pluginsDir, { recursive: true });
+  const temperSrc = process.env.OPENCODE_PLUGIN_DIR
+    ? join(process.env.OPENCODE_PLUGIN_DIR, "temper.ts")
+    : join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
+  await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
+  const realSkills = join(homedir(), ".agents", "skills");
+  await mkdir(join(tempHome, ".agents"), { recursive: true });
+  await symlink(realSkills, join(tempHome, ".agents", "skills")).catch(() => {});
+  const nixsmithDir = join(tempHome, ".config", "nixsmith");
+  await mkdir(nixsmithDir, { recursive: true });
+  await access(join(nixsmithDir, "github-token-test")).catch(() =>
+    writeFile(join(nixsmithDir, "github-token-test"), "harness-test-token\n", { mode: 0o600 })
+  );
+  return tempHome;
+}
+
+export async function startOpencode(
+  dir: string,
+  port: number,
+  envOverrides: Record<string, string> = {},
+): Promise<{ stop: () => void; tempHome: string }> {
   const stderr: Buffer[] = [];
 
-  const inSandbox = process.env.IN_AGENT_SANDBOX === "1";
-  const [cmd, args]: [string, string[]] = inSandbox
-    ? ["opencode", ["serve", "--port", String(port)]]
-    : ["nix", ["develop", `${nixSmithDir}#opencode`, "--command", "bash", "-c", `agent-sandbox opencode serve --port ${port}`]];
+  // Use caller-provided HOME or create a fresh isolated one.
+  const tempHome = envOverrides.HOME ?? await createTempHome();
+
+  // When caller provides their own HOME (e.g. recorder test fakeHome),
+  // ensure the nixsmith token is present there too.
+  if (envOverrides.HOME) {
+    const nixsmithDir = join(envOverrides.HOME, ".config", "nixsmith");
+    const tokenFile = join(nixsmithDir, "github-token-test");
+    await mkdir(nixsmithDir, { recursive: true });
+    await access(tokenFile).catch(() => writeFile(tokenFile, "harness-test-token\n", { mode: 0o600 }));
+  }
+
+  const [cmd, args]: [string, string[]] = ["opencode", ["serve", "--port", String(port)]];
 
   const proc = spawn(
     cmd,
     args,
     {
       cwd: dir,
-      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "" },
+      env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", HOME: tempHome, ...envOverrides },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -111,8 +147,12 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
     if (debug) process.stderr.write(d);
   });
 
+  let exitCode: number | null = null;
+  proc.on("exit", (code) => { exitCode = code ?? 1; });
+
   if (debug) process.stderr.write(`[harness] startOpencode: waiting for port ${port}\n`);
   await waitFor(async () => {
+    if (exitCode !== null) throw new Error(`opencode exited with code ${exitCode}`);
     try {
       const ok = (await fetch(`http://127.0.0.1:${port}/session`, { signal: AbortSignal.timeout(4_000) })).ok;
       if (ok && debug) process.stderr.write(`[harness] startOpencode: port ${port} ready\n`);
@@ -128,10 +168,11 @@ export async function startOpencode(dir: string, port: number): Promise<() => vo
     throw err;
   });
 
-  return () => {
+  const stop = () => {
     proc.kill("SIGTERM");
     if (debug && stderr.length) process.stderr.write(Buffer.concat(stderr).toString());
   };
+  return { stop, tempHome };
 }
 
 export async function createSession(port: number, dir: string): Promise<string> {
@@ -185,4 +226,52 @@ export async function sendPromptAndWait(
       stableFor = 0;
     }
   }
+
+  // Wait for session idle and allow plugin session.idle hooks to settle.
+  // REST status reflects idle before the plugin event hook fires;
+  // the 300ms buffer covers that asynchronous gap.
+  const idleDeadline = Date.now() + 10_000;
+  while (Date.now() < idleDeadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/status`, { signal: AbortSignal.timeout(2_000) });
+      const statuses = await res.json() as Record<string, { type: string }>;
+      if (statuses[sessionID]?.type === "idle") {
+        await new Promise((r) => setTimeout(r, 300));
+        break;
+      }
+    } catch { /* retry */ }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+export async function restartOpencode(
+  stop: () => void,
+  dir: string,
+  port: number,
+  waitMs = 1_500,
+): Promise<{ stop: () => void; tempHome: string }> {
+  stop();
+  await new Promise((r) => setTimeout(r, waitMs));
+  return startOpencode(dir, port);
+}
+
+export async function verifySession(port: number, sessionID: string): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/session/${sessionID}`);
+  if (!res.ok) {
+    throw new Error(`verifySession: expected 200, got ${res.status} for session ${sessionID}`);
+  }
+  const body = (await res.json()) as { id?: string };
+  if (body.id !== sessionID) {
+    throw new Error(`verifySession: returned id "${body.id}" does not match expected "${sessionID}"`);
+  }
+}
+
+export async function waitForMessages(port: number, sessionID: string, timeoutMs = 10_000): Promise<void> {
+  await waitFor(async () => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/${sessionID}/message`, { signal: AbortSignal.timeout(2_000) });
+      const msgs = await res.json() as unknown[];
+      return msgs.length > 0;
+    } catch { return false; }
+  }, timeoutMs, `messages to load for session ${sessionID}`);
 }

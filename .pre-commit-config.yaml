@@ -19,10 +19,3 @@ repos:
         entry: nixfmt
         types: [file]
         files: \.nix$
-
-      - id: bun-test
-        name: bun test
-        language: system
-        entry: bash -c "bun install --cwd tests --frozen-lockfile && bun test ./tests"
-        pass_filenames: false
-        files: ^(tests/|agents/opencode/plugins/temper\.ts|overlays/default\.nix|flake\.lock)

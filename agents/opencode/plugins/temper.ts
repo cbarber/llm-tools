@@ -19,6 +19,7 @@ type Trigger = {
   when?: string;
   blocking?: boolean;
   action?: TriggerAction;
+  worktree?: boolean;
 };
 
 type Skill = {
@@ -40,6 +41,7 @@ type DispatchContext =
     event: "tool.execute.after";
     tool: string;
     command: string;
+    filePath?: string;
     output: { title: string; output: string; metadata: any };
   }
   | { event: "todo.updated"; todos: Array<{ content: string; status: string; priority: string; id: string }> };
@@ -70,7 +72,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
     if (line.startsWith("  - event:")) {
       if (current?.event) triggers.push(current as Trigger);
       current = { event: line.replace(/.*event:\s*/, "").trim() };
-    } else if (current && line.match(/^\s+(tool|command|when|blocking|action):/)) {
+    } else if (current && line.match(/^\s+(tool|command|when|blocking|action|worktree):/)) {
       const kv = line.match(/^\s+(\w+):\s+(.+)$/);
       if (kv) {
         const key = kv[1] as keyof Trigger;
@@ -167,18 +169,73 @@ async function logEvent(logPath: string, eventName: string, data: unknown): Prom
   }
 }
 
+type SessionPhase = "new" | "pending-restore" | "restored";
+
+type SessionState = {
+  phase: SessionPhase;
+  firedOnce: Set<string>;
+  lastInjectionTokens: Map<string, number>;
+  lastAssistantAgent: string;
+};
+
+const sessionStore = new Map<string, SessionState>();
+const pendingHydration = new Map<string, Promise<SessionState>>();
+
 const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
   if (_registeredDirs.has(directory)) return {};
   _registeredDirs.add(directory);
   const logPath = `${directory}/.opencode/event.log`;
-  const firedOnce = new Set<string>();
   const throttleMap = new Map<string, number>();
   const THROTTLE_MS = 60_000;
 
   // client.app.skills() is only available on the v2 SDK client.
   // The plugin-injected client uses the legacy SDK, so we instantiate v2 directly.
   const v2 = createV2Client({ baseUrl: serverUrl.toString() });
+
+  async function hydrateSession(sessionID: string): Promise<SessionState> {
+    const state = sessionStore.get(sessionID)!;
+
+    try {
+      const response = await v2.session.messages({ sessionID });
+      const messages = response.data ?? [];
+
+      const foundInHistory: string[] = [];
+      for (const msg of messages) {
+        if (msg.info.role === "assistant" && "agent" in msg.info) {
+          state.lastAssistantAgent = (msg.info as { agent: string }).agent;
+        }
+      }
+      for (const { parts } of messages) {
+        for (const part of parts) {
+          if (part.type === "text" && part.synthetic) {
+            const m = part.text.match(/^# (\S+)/m);
+            if (m) {
+              state.firedOnce.add(m[1]);
+              foundInHistory.push(m[1]);
+            }
+          } else if (part.type === "tool" && part.tool === "skill") {
+            const input = (part.state as { input?: { name?: string } }).input;
+            const name = input?.name;
+            if (name) {
+              state.firedOnce.add(name);
+              if (!foundInHistory.includes(name)) foundInHistory.push(name);
+            }
+          }
+        }
+      }
+
+      // If no prior injections found, this is a new session — discard any
+      // agent name set from in-flight streaming (e.g. plan agent mid-turn).
+      if (state.firedOnce.size === 0) state.lastAssistantAgent = "";
+      await logEvent(logPath, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
+    } catch (error) {
+      await logEvent(logPath, "hydrate-error", { sessionID, error: String(error) });
+    }
+
+    state.phase = "restored";
+    return state;
+  }
 
   async function loadSkills(): Promise<Skill[]> {
     try {
@@ -204,6 +261,12 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
+    const state = sessionStore.get(sessionID);
+    if (!state || state.phase === "pending-restore") {
+      await logEvent(logPath, "dispatch-skip-no-state", { ctx });
+      return;
+    }
+
     await logEvent(logPath, "dispatch", { ctx, skillCount: skills.length });
 
     for (const skill of skills) {
@@ -214,20 +277,19 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
       const action: TriggerAction = trigger.action ?? "inject";
 
-      // reset action: clear firedOnce for this skill and stop — no injection,
-      // no throttle check, no when guard needed.
+      // reset action: clear firedOnce and throttle for this skill — no injection.
       if (action === "reset") {
-        const onceKey = `${sessionID}:${skill.name}`;
-        if (firedOnce.has(onceKey)) {
-          firedOnce.delete(onceKey);
-          await logEvent(logPath, "dispatch-reset", { skill: skill.name });
+        state.firedOnce.delete(skill.name);
+        const throttlePrefix = `${sessionID}:${skill.name}:`;
+        for (const key of throttleMap.keys()) {
+          if (key.startsWith(throttlePrefix)) throttleMap.delete(key);
         }
+        await logEvent(logPath, "dispatch-reset", { skill: skill.name });
         continue;
       }
 
       // inject and fail: honour once and throttle guards.
-      const onceKey = `${sessionID}:${skill.name}`;
-      if (skill.once && firedOnce.has(onceKey)) {
+      if (skill.once && state.firedOnce.has(skill.name)) {
         await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
         continue;
       }
@@ -238,6 +300,24 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         if (!passed) continue;
       }
 
+      if (state.lastAssistantAgent === "plan") {
+        await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "plan-mode" });
+        continue;
+      }
+
+      if (trigger.worktree) {
+        const filePath = "filePath" in ctx ? (ctx.filePath ?? "") : "";
+        if (!filePath) {
+          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "worktree-no-filepath" });
+          continue;
+        }
+        const worktreeRoot = (await $.cwd(directory)`git rev-parse --show-toplevel`.nothrow().text()).trim();
+        if (!filePath.startsWith(worktreeRoot + "/") && filePath !== worktreeRoot) {
+          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "worktree-outside", filePath, worktreeRoot });
+          continue;
+        }
+      }
+
       const throttleKey = `${sessionID}:${skill.name}:${ctx.event}`;
       const now = Date.now();
       if (now - (throttleMap.get(throttleKey) ?? 0) < THROTTLE_MS) {
@@ -246,7 +326,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
       throttleMap.set(throttleKey, now);
 
-      if (skill.once) firedOnce.add(onceKey);
+      if (skill.once) state.firedOnce.add(skill.name);
 
       if (action === "fail") {
         // fail is only meaningful on tool.execute.before — throwing there
@@ -272,9 +352,18 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (input.sessionID) output.env.OPENCODE_SESSION_ID = input.sessionID;
     },
 
-    "chat.message": async (_input, output) => {
-      const sessionID = output.message.sessionID;
-      await dispatchEvent(sessionID, { event: "session.created" });
+    "chat.message": async (input, _output) => {
+      const { sessionID } = input;
+      if (sessionStore.has(sessionID)) return;
+      // No prior session.updated — fresh process restore where session.updated
+      // does not re-fire. chat.message fires at ~+94ms with messages API = 0.
+      // Mark pending-restore; session.status at ~+275ms will hydrate.
+      sessionStore.set(sessionID, {
+        phase: "pending-restore",
+        firedOnce: new Set(),
+        lastInjectionTokens: new Map(),
+        lastAssistantAgent: "",
+      });
     },
 
     "tool.execute.before": async (input, _output) => {
@@ -284,23 +373,66 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "tool.execute.after": async (input, output) => {
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
-      await logEvent(logPath, "tool.execute.after", { tool: input.tool, command });
+      const filePath: string = (input.tool === "edit" || input.tool === "write")
+        ? (input.args?.filePath ?? "")
+        : "";
+      await logEvent(logPath, "tool.execute.after", { tool: input.tool, command, filePath });
       await dispatchEvent(input.sessionID, {
         event: "tool.execute.after",
         tool: input.tool,
         command,
+        filePath,
         output,
       });
     },
 
     event: async ({ event }) => {
+      if (event.type === "session.updated") {
+        // session.updated fires before chat.message for both new and restored
+        // sessions. Create pending-restore state to suppress the chat.message
+        // replay until session.status confirms history is loaded.
+        const sid = (event.properties as any).sessionID;
+        if (sid && !sessionStore.has(sid)) {
+          sessionStore.set(sid, {
+            phase: "pending-restore",
+            firedOnce: new Set(),
+            lastInjectionTokens: new Map(),
+            lastAssistantAgent: "",
+          });
+        }
+      }
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
+        if (pendingHydration.has(sessionID)) await pendingHydration.get(sessionID);
         await dispatchEvent(sessionID, { event: "session.idle" });
+      }
+      if (event.type === "session.status") {
+        // session.status fires ~275ms after restart with history loaded.
+        // Transition pending-restore → restored by hydrating firedOnce from history.
+        // pendingHydration is set synchronously before any await to prevent
+        // concurrent session.status events from double-hydrating.
+        const sid = (event.properties as any).sessionID;
+        const state = sessionStore.get(sid);
+        if (sid && state?.phase === "pending-restore" && !pendingHydration.has(sid)) {
+          const p = hydrateSession(sid).then(async () => {
+            await dispatchEvent(sid, { event: "session.created" });
+          }).finally(() => pendingHydration.delete(sid));
+          pendingHydration.set(sid, p);
+          await p;
+        }
       }
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
         await logEvent(logPath, "todo.updated", { sessionID, todos });
+      }
+      if (event.type === "message.updated") {
+        const { info } = event.properties;
+        if (info.role === "assistant" && "agent" in info) {
+          const sid = info.sessionID;
+          const agentName = (info as { agent: string }).agent;
+          const st = sessionStore.get(sid);
+          if (st && st.phase === "restored") st.lastAssistantAgent = agentName;
+        }
       }
     },
   };

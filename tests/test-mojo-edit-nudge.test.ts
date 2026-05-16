@@ -4,7 +4,7 @@ import { createMock } from "llm-mock-server";
 import { writeFile } from "node:fs/promises";
 import type { MockServer, RequestHistory } from "llm-mock-server";
 import { rm } from "node:fs/promises";
-import { createFixtureRepo, createSession, findFreePort, sendPromptAndWait, startOpencode, writeOpencodeConfig } from "./harness"
+import { createFixtureRepo, createSession, createTempHome, findFreePort, sendPromptAndWait, startOpencode, writeOpencodeConfig } from "./harness"
 
 // ---------------------------------------------------------------------------
 // mojo-edit-nudge: fail action blocks the first edit and delivers nudge text
@@ -13,8 +13,10 @@ import { createFixtureRepo, createSession, findFreePort, sendPromptAndWait, star
 let nudgeMock: MockServer;
 let nudgeHistory: RequestHistory;
 let stopNudgeOpencode: () => void;
+let tempHome: string;
 
 beforeAll(async () => {
+  tempHome = await createTempHome();
   const mockPort = await findFreePort();
   const ocPort = await findFreePort();
 
@@ -63,7 +65,7 @@ beforeAll(async () => {
   await writeFile("/tmp/test.txt", "hello\n");
   await writeOpencodeConfig(dir, `${nudgeMock.url}/v1`);
 
-  stopNudgeOpencode = await startOpencode(dir, ocPort);
+  ({ stop: stopNudgeOpencode } = await startOpencode(dir, ocPort, { HOME: tempHome }));
 
   const sessionID = await createSession(ocPort, dir);
   await sendPromptAndWait(ocPort, sessionID, "Update the test file.", nudgeMock);
