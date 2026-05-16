@@ -193,9 +193,19 @@ update_opencode() {
 
   # Update overlay with the correct hash
   update_overlay "opencode" "$version" "$src_hash" "$node_modules_hash"
-  
+
   # Remove backup
   rm -f "$OVERLAY_FILE.bak"
+
+  # Bump @opencode-ai/plugin and @opencode-ai/sdk in plugins package.json
+  local plugins_pkg="$REPO_ROOT/agents/opencode/plugins/package.json"
+  if [[ -f "$plugins_pkg" ]]; then
+    info "Updating SDK versions in $plugins_pkg..."
+    sed -i "s/\"@opencode-ai\/plugin\": \"[^\"]*\"/\"@opencode-ai\/plugin\": \"$version\"/" "$plugins_pkg"
+    sed -i "s/\"@opencode-ai\/sdk\": \"[^\"]*\"/\"@opencode-ai\/sdk\": \"$version\"/" "$plugins_pkg"
+    bun install --cwd "$REPO_ROOT/agents/opencode/plugins" 2>/dev/null
+    success "Updated SDK versions to $version in $plugins_pkg"
+  fi
 
   echo ""
   success "Successfully updated opencode to version $version"
