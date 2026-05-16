@@ -7,5 +7,8 @@
   },
   "dependencies": {
     "llm-mock-server": "^1.0.8"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
   }
 }

@@ -10,3 +10,4 @@ result
 tools/*/result
 tools/*/flake.lock
 tests/node_modules/
+agents/opencode/plugins/node_modules/

@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "dependencies": {
+    "@opencode-ai/plugin": "1.4.2",
+    "@opencode-ai/sdk": "1.4.2"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}
