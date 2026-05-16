@@ -31,13 +31,13 @@ beforeAll(async () => {
   const dir = await createFixtureRepo();
   await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-  stopOpencode = await startOpencode(dir, ocPort);
+  ({ stop: stopOpencode } = await startOpencode(dir, ocPort));
   sessionID = await createSession(ocPort, dir);
 
   await sendPromptAndWait(ocPort, sessionID, "Hello before restart.", mock);
   countAfterFirstPrompt = mock.history.count();
 
-  stopOpencode = await restartOpencode(stopOpencode, dir, ocPort);
+  ({ stop: stopOpencode } = await restartOpencode(stopOpencode, dir, ocPort));
 
   await verifySession(ocPort, sessionID);
   countAfterRestart = mock.history.count();

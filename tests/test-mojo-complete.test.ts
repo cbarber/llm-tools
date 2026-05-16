@@ -152,7 +152,6 @@ describe("mojo-complete — when-guard fails (no remote)", () => {
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "First prompt.", mock);
@@ -194,7 +193,6 @@ describe("mojo-complete — once:true fires at most once per session", () => {
     const dir = await createFixtureRepoWithRemote();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "First prompt.", mock);
@@ -249,7 +247,6 @@ describe("mojo-complete — reset on git commit allows re-fire", () => {
     const dir = await createFixtureRepoWithRemote();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "First prompt before commit.", mock);

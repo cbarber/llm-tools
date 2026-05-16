@@ -231,7 +231,7 @@ beforeAll(async () => {
   await mkdir(fakePluginsDir, { recursive: true });
   await writeFile(join(fakePluginsDir, "recorder.ts"), RECORDER_PLUGIN_SRC);
 
-  const stop = await startOpencode(dir, ocPort, {
+  const { stop } = await startOpencode(dir, ocPort, {
     HOME: fakeHome,
     HOOK_RECORD_PATH: hookLogPath,
     SKIP_PLUGIN_INSTALL: "true",

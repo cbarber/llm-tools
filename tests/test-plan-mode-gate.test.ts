@@ -171,7 +171,6 @@ describe("temper plugin — plan-mode gate: mojo-commit suppressed", () => {
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPlanPromptAndWait(ocPort, sessionID, "Draft a plan for the work.", mock);
@@ -224,7 +223,6 @@ describe("temper plugin — plan-mode gate: baseline (build mode fires normally)
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "Commit the current changes.", mock);
@@ -290,7 +288,6 @@ describe("temper plugin — plan-mode gate: plan→build transition", () => {
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    const stop = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPlanPromptAndWait(ocPort, sessionID, "Plan the work.", mock);

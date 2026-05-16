@@ -80,7 +80,7 @@ beforeAll(async () => {
   const dir = await createFixtureRepo();
   await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-  stopOpencode = await startOpencode(dir, ocPort);
+  ({ stop: stopOpencode } = await startOpencode(dir, ocPort));
 
   const sessionID = await createSession(ocPort, dir);
   await sendPromptAndWait(

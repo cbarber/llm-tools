@@ -80,13 +80,13 @@ describe("temper plugin — firedOnce hydration on restart (synthetic injection)
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    let stop = await startOpencode(dir, ocPort);
+    let { stop } = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "Hello before restart.", mock);
     requestCountBeforeRestart = taskRequests(mock).length;
 
-    stop = await restartOpencode(stop, dir, ocPort);
+    ({ stop } = await restartOpencode(stop, dir, ocPort));
     await verifySession(ocPort, sessionID);
     await waitForMessages(ocPort, sessionID);
 
@@ -161,13 +161,13 @@ describe("temper plugin — firedOnce hydration on restart (skill tool call)", (
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
 
-    let stop = await startOpencode(dir, ocPort);
+    let { stop } = await startOpencode(dir, ocPort);
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "Load the mojo-init skill.", mock);
     requestCountBeforeRestart = taskRequests(mock).length;
 
-    stop = await restartOpencode(stop, dir, ocPort);
+    ({ stop } = await restartOpencode(stop, dir, ocPort));
     await verifySession(ocPort, sessionID);
     await waitForMessages(ocPort, sessionID);
 

@@ -111,7 +111,6 @@ describe("mojo-commit — worktree gate (inside worktree)", () => {
     ]);
 
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
-    const stop = await startOpencode(dir, ocPort);
 
     const sessionID = await createSession(ocPort, dir);
     await sendPromptAndWait(ocPort, sessionID, "Stage the README inside the repo.", mock);
@@ -165,7 +164,6 @@ describe("mojo-commit — worktree gate (outside worktree)", () => {
 
     const dir = await createFixtureRepo();
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
-    const stop = await startOpencode(dir, ocPort);
 
     const sessionID = await createSession(ocPort, dir);
     await sendPromptAndWait(ocPort, sessionID, "Edit a file outside the repo.", mock);
@@ -240,7 +238,6 @@ describe("mojo-commit — reset after git commit re-arms injection", () => {
     ]);
 
     await writeOpencodeConfig(dir, `${mock.url}/v1`);
-    const stop = await startOpencode(dir, ocPort);
 
     const sessionID = await createSession(ocPort, dir);
     await sendPromptAndWait(ocPort, sessionID, "Stage, commit, then stage again.", mock);
