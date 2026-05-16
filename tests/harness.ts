@@ -236,3 +236,13 @@ export async function verifySession(port: number, sessionID: string): Promise<vo
     throw new Error(`verifySession: returned id "${body.id}" does not match expected "${sessionID}"`);
   }
 }
+
+export async function waitForMessages(port: number, sessionID: string, timeoutMs = 10_000): Promise<void> {
+  await waitFor(async () => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/${sessionID}/message`, { signal: AbortSignal.timeout(2_000) });
+      const msgs = await res.json() as unknown[];
+      return msgs.length > 0;
+    } catch { return false; }
+  }, timeoutMs, `messages to load for session ${sessionID}`);
+}
