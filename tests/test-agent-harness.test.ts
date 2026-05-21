@@ -117,7 +117,8 @@ describe("temper plugin — mojo-init", () => {
     const tasks = taskRequests(history);
     expect(tasks.length).toBeGreaterThanOrEqual(1);
 
-    const mojoInitMessages = tasks[0].request.messages.filter(
+    const messages = tasks[tasks.length - 1].request.messages;
+    const mojoInitMessages = messages.filter(
       (m) => m.role === "user" && m.content.includes("# mojo-init")
     );
     const count = mojoInitMessages.length;
