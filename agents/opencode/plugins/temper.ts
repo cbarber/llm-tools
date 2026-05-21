@@ -5,7 +5,7 @@
  * Injects workflow context at session start and tool execution boundaries.
  */
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createOpencodeClient as createV2Client } from "@opencode-ai/sdk/v2/client";
 
 type OpencodeClient = PluginInput["client"];
@@ -158,22 +158,24 @@ async function injectSkill(
   });
 }
 
-async function logEvent(logPath: string, eventName: string, data: unknown): Promise<void> {
-  try {
-    const entry = `\n${"=".repeat(80)}\n[${new Date().toISOString()}] ${eventName}\n${JSON.stringify(data, null, 2)}\n`;
-    await appendFile(logPath, entry);
-  } catch {
-    // Non-fatal — logging must not break the plugin
-  }
+async function logEvent(client: OpencodeClient, eventName: string, data: { [key: string]: unknown }): Promise<void> {
+  await client.app.log({
+    body: {
+      service: "temper",
+      level: "info",
+      message: eventName,
+      extra: data,
+    },
+  })
 }
 
 const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
   if (_registeredDirs.has(directory)) return {};
   _registeredDirs.add(directory);
-  const logPath = `${directory}/.opencode/event.log`;
   const firedOnce = new Set<string>();
   const throttleMap = new Map<string, number>();
+  await logEvent(client, "loading plugin", { directory, _registeredDirs })
   const THROTTLE_MS = 60_000;
 
   // client.app.skills() is only available on the v2 SDK client.
@@ -191,7 +193,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const skills = maybeSkills.filter(s => !!s);
       return skills;
     } catch (error) {
-      await logEvent(logPath, "skills-load-error", { error: String(error) });
+      await logEvent(client, "skills-load-error", { error: String(error) });
       return [];
     }
   }
@@ -204,7 +206,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
-    await logEvent(logPath, "dispatch", { ctx, skillCount: skills.length });
+    await logEvent(client, "dispatch", { sessionID, ctx });
 
     for (const skill of skills) {
       const trigger = skill.triggers.find((t) => matchesTrigger(t, ctx));
@@ -220,7 +222,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         const onceKey = `${sessionID}:${skill.name}`;
         if (firedOnce.has(onceKey)) {
           firedOnce.delete(onceKey);
-          await logEvent(logPath, "dispatch-reset", { skill: skill.name });
+          await logEvent(client, "dispatch-reset", { skill: skill.name });
         }
         continue;
       }
@@ -228,25 +230,28 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       // inject and fail: honour once and throttle guards.
       const onceKey = `${sessionID}:${skill.name}`;
       if (skill.once && firedOnce.has(onceKey)) {
-        await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
+        await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
         continue;
       }
 
       if (trigger.when) {
         const passed = await evalWhen($, trigger.when, directory);
-        await logEvent(logPath, "dispatch-when", { skill: skill.name, when: trigger.when, passed });
+        await logEvent(client, "dispatch-when", { skill: skill.name, when: trigger.when, passed });
         if (!passed) continue;
       }
 
       const throttleKey = `${sessionID}:${skill.name}:${ctx.event}`;
       const now = Date.now();
       if (now - (throttleMap.get(throttleKey) ?? 0) < THROTTLE_MS) {
-        await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "throttled" });
+        await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "throttled" });
         continue;
       }
       throttleMap.set(throttleKey, now);
 
-      if (skill.once) firedOnce.add(onceKey);
+      if (skill.once) {
+        firedOnce.add(onceKey);
+        await logEvent(client, "add-fired-once", { skill: skill.name, firedOnce: [...firedOnce], onceKey });
+      }
 
       if (action === "fail") {
         // fail is only meaningful on tool.execute.before — throwing there
@@ -254,14 +259,14 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         // tool result the model sees. Guard at runtime; misconfigured triggers
         // on other events are silently ignored.
         if (ctx.event !== "tool.execute.before") {
-          await logEvent(logPath, "dispatch-skip", { skill: skill.name, reason: "fail-requires-tool.execute.before" });
+          await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "fail-requires-tool.execute.before" });
           continue;
         }
         const rendered = await executeBashBlock($, skill.content, directory);
-        await logEvent(logPath, "dispatch-fail", { skill: skill.name });
+        await logEvent(client, "dispatch-fail", { skill: skill.name });
         throw new Error(rendered);
       } else {
-        await logEvent(logPath, "dispatch-inject", { skill: skill.name });
+        await logEvent(client, "dispatch-inject", { sessionID, skill: skill.name });
         await injectSkill(client, $, directory, sessionID, skill.content);
       }
     }
@@ -278,13 +283,13 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     },
 
     "tool.execute.before": async (input, _output) => {
-      await logEvent(logPath, "tool.execute.before", { tool: input.tool });
+      await logEvent(client, "tool.execute.before", { tool: input.tool });
       await dispatchEvent(input.sessionID, { event: "tool.execute.before", tool: input.tool });
     },
 
     "tool.execute.after": async (input, output) => {
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
-      await logEvent(logPath, "tool.execute.after", { tool: input.tool, command });
+      await logEvent(client, "tool.execute.after", { tool: input.tool, command });
       await dispatchEvent(input.sessionID, {
         event: "tool.execute.after",
         tool: input.tool,
@@ -300,7 +305,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
-        await logEvent(logPath, "todo.updated", { sessionID, todos });
+        await logEvent(client, "todo.updated", { sessionID, todos });
       }
     },
   };
