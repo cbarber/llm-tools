@@ -126,7 +126,7 @@ describe("temper plugin — mojo-init", () => {
       console.error(`mojo-init appeared ${count} times. Messages containing it:`);
       for (const m of mojoInitMessages) console.error(` [${m.role}] ${m.content.slice(0, 300)}`);
       console.error("All messages in first task:");
-      for (const m of tasks[0].request.messages) console.error(`  [${m.role}] ${m.content.slice(0, 120).replace(/\n/g, "↵")}`);
+      for (const m of messages) console.error(`  [${m.role}] ${m.content.slice(0, 120).replace(/\n/g, "↵")}`);
     }
     expect(count).toBe(1);
   });
