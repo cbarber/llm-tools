@@ -234,11 +234,21 @@ For each token, attention asks: *which other tokens in the context should influe
 
 **Multi-head attention** runs this 8 times in parallel with different learned projections — each "head" can specialize in different relationships (syntax, semantics, coreference, etc.)
 
-**KV Cache:** the K and V matrices for tokens already processed don't need to be recomputed — they're cached. This is why changing your system prompt mid-session is expensive: it invalidates the cache.
-
 <!--
 The scaled dot-product formula divides by √d_k to prevent vanishing gradients in softmax when dimensions are large. You don't need to remember this — just know "scaled" means they stabilize the math.
+-->
 
+---
+
+# KV Cache
+
+The K and V matrices for tokens already processed don't need to be recomputed — they're cached.
+
+- Each new token only needs to compute its own K and V, then attend over the cached history
+- This is why changing your system prompt mid-session is expensive: it invalidates the cache prefix and forces a full recompute from that point forward
+- Providers (Anthropic, OpenAI) pre-cache the system prompt server-side — this is why the system prompt *feels* separate even though it's the same token stream
+
+<!--
 KV cache is why prefix caching exists — system prompts that don't change can be kept hot. If you keep mutating the head of your context you're burning money and latency.
 -->
 
