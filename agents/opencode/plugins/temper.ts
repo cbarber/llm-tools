@@ -89,7 +89,9 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
 }
 
 async function toSkill(raw: { name: string; description: string; location: string }): Promise<Skill | null> {
-  const data = await readFile(raw.location, { encoding: 'utf8' });
+  const data = await readFile(raw.location, { encoding: 'utf8' }).catch((err) => {
+    throw new Error(`Failed to read ${raw.name}: ${raw.location}`, { cause: err });
+  });
   const { meta, body } = parseFrontmatter(data);
   const triggers = (meta.triggers as Trigger[] | undefined) ?? [];
   if (triggers.length === 0) return null;
