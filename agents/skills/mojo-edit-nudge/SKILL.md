@@ -3,19 +3,12 @@ name: mojo-edit-nudge
 description: Minimal-editing instruction injected at the first edit of each commit cycle
 once: true
 triggers:
-  - event: tool.execute.before
-    tool: "^(edit|write)$"
-    action: fail
-    worktree: true
   - event: tool.execute.after
     tool: bash
     command: "git commit"
-    action: reset
 ---
 
 # mojo-edit-nudge
-
-Your edit was not applied. Internalize these constraints, then retry:
 
 **Change only what is necessary.** Edit the minimum code required to accomplish the task. Do not rename variables, restructure functions, reformat blocks, or add comments unless that is the explicit goal.
 
