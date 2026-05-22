@@ -6,6 +6,7 @@ triggers:
   - event: tool.execute.before
     tool: "^(edit|write)$"
     action: fail
+    worktree: true
   - event: tool.execute.after
     tool: bash
     command: "git commit"
