@@ -8,6 +8,7 @@ ignores:
   - ".opencode/node_modules/**"
   - ".beads/**"
   - "tests/node_modules/**"
+  - "agents/opencode/plugins/node_modules/**"
   - "update-summary.md"
 
 config:
