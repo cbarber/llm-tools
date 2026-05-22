@@ -169,11 +169,20 @@ async function logEvent(client: OpencodeClient, eventName: string, data: { [key:
   })
 }
 
+type SessionPhase = "new" | "pending-restore" | "restored";
+
+type SessionState = {
+  phase: SessionPhase;
+  firedOnce: Set<string>;
+  lastInjectionTokens: Map<string, number>;
+};
+
+const sessionStore = new Map<string, SessionState>();
+
 const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
   if (_registeredDirs.has(directory)) return {};
   _registeredDirs.add(directory);
-  const firedOnce = new Set<string>();
   const throttleMap = new Map<string, number>();
   await logEvent(client, "loading plugin", { directory, _registeredDirs })
   const THROTTLE_MS = 60_000;
@@ -181,6 +190,47 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   // client.app.skills() is only available on the v2 SDK client.
   // The plugin-injected client uses the legacy SDK, so we instantiate v2 directly.
   const v2 = createV2Client({ baseUrl: serverUrl.toString() });
+
+  async function hydrateSession(sessionID: string): Promise<SessionState> {
+    const state = sessionStore.get(sessionID)!;
+
+    try {
+      const response = await v2.session.messages({ sessionID });
+      const messages = response.data ?? [];
+
+      // If no messages yet, don't cache — allow re-hydration on next event
+      // once the server has loaded the session history.
+      if (messages.length === 0) return state;
+
+      const foundInHistory: string[] = [];
+      for (const { parts } of messages) {
+        for (const part of parts) {
+          if (part.type === "text" && part.synthetic) {
+            const m = part.text.match(/^# (\S+)/m);
+            if (m) {
+              state.firedOnce.add(m[1]);
+              foundInHistory.push(m[1]);
+            }
+          } else if (part.type === "tool" && part.tool === "skill") {
+            const input = (part.state as { input?: { name?: string } }).input;
+            const name = input?.name;
+            if (name) {
+              state.firedOnce.add(name);
+              if (!foundInHistory.includes(name)) foundInHistory.push(name);
+            }
+          }
+        }
+      }
+
+      await logEvent(client, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
+    } catch (error) {
+      await logEvent(client, "hydrate-error", { sessionID, error: String(error) });
+    }
+
+    state.phase = "restored";
+    sessionStore.set(sessionID, state);
+    return state;
+  }
 
   async function loadSkills(): Promise<Skill[]> {
     try {
@@ -206,6 +256,12 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     // effect without restarting the plugin process.
     const skills = await loadSkills();
 
+    const state = sessionStore.get(sessionID);
+    if (!state || state.phase === "pending-restore") {
+      await logEvent(client, "dispatch-skip-no-state", { ctx });
+      return;
+    }
+
     await logEvent(client, "dispatch", { sessionID, ctx });
 
     for (const skill of skills) {
@@ -219,17 +275,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       // reset action: clear firedOnce for this skill and stop — no injection,
       // no throttle check, no when guard needed.
       if (action === "reset") {
-        const onceKey = `${sessionID}:${skill.name}`;
-        if (firedOnce.has(onceKey)) {
-          firedOnce.delete(onceKey);
+        if (state.firedOnce.has(skill.name)) {
+          state.firedOnce.delete(skill.name);
           await logEvent(client, "dispatch-reset", { skill: skill.name });
         }
         continue;
       }
 
       // inject and fail: honour once and throttle guards.
-      const onceKey = `${sessionID}:${skill.name}`;
-      if (skill.once && firedOnce.has(onceKey)) {
+      if (skill.once && state.firedOnce.has(skill.name)) {
         await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "once-already-fired" });
         continue;
       }
@@ -249,8 +303,8 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       throttleMap.set(throttleKey, now);
 
       if (skill.once) {
-        firedOnce.add(onceKey);
-        await logEvent(client, "add-fired-once", { skill: skill.name, firedOnce: [...firedOnce], onceKey });
+        state.firedOnce.add(skill.name);
+        await logEvent(client, "add-fired-once", { skill: skill.name, firedOnce: [...state.firedOnce], sessionID });
       }
 
       if (action === "fail") {
@@ -277,9 +331,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (input.sessionID) output.env.OPENCODE_SESSION_ID = input.sessionID;
     },
 
-    "chat.message": async (_input, output) => {
-      const sessionID = output.message.sessionID;
-      await dispatchEvent(sessionID, { event: "session.created" });
+    "chat.message": async (input, _output) => {
+      const { sessionID } = input;
+      if (sessionStore.has(sessionID)) return;
+      // No prior session.updated — fresh process restore where session.updated. First chat.message means restore
+      sessionStore.set(sessionID, {
+        phase: "pending-restore",
+        firedOnce: new Set(),
+        lastInjectionTokens: new Map(),
+      });
     },
 
     "tool.execute.before": async (input, _output) => {
@@ -299,6 +359,23 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     },
 
     event: async ({ event }) => {
+      if (event.type === "session.updated") {
+        const { id: sessionID } = event.properties.info;
+        if (sessionStore.has(sessionID)) return;
+        // First sesion.updated means new
+        sessionStore.set(sessionID, {
+          phase: "new",
+          firedOnce: new Set(),
+          lastInjectionTokens: new Map(),
+        });
+        await dispatchEvent(sessionID, { event: "session.created" });
+      }
+      if (event.type === "session.status") {
+        const { sessionID } = event.properties;
+        if (!sessionStore.has(sessionID)) return;
+        if (sessionStore.get(sessionID)?.phase !== "pending-restore") return;
+        await hydrateSession(sessionID);
+      }
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
         await dispatchEvent(sessionID, { event: "session.idle" });
