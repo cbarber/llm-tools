@@ -3,8 +3,7 @@ name: mojo-init
 description: Initialize session with repo state and available work
 once: true
 triggers:
-  - event: session.created
-    when: "[[ -d .beads ]]"
+  - event: chat.message
 ---
 
 # mojo-init

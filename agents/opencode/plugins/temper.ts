@@ -36,6 +36,7 @@ type Skill = {
 type DispatchContext =
   | { event: "session.created" }
   | { event: "session.idle" }
+  | { event: "chat.message" }
   | { event: "tool.execute.before"; tool: string }
   | {
     event: "tool.execute.after";
@@ -88,7 +89,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
   return { meta, body: match[2] };
 }
 
-async function toSkill(raw: { name: string; description: string; location: string }): Promise<Skill | null> {
+async function toSkill(raw: { name: string; description?: string; location: string }): Promise<Skill | null> {
   const data = await readFile(raw.location, { encoding: 'utf8' }).catch((err) => {
     throw new Error(`Failed to read ${raw.name}: ${raw.location}`, { cause: err });
   });
@@ -97,7 +98,7 @@ async function toSkill(raw: { name: string; description: string; location: strin
   if (triggers.length === 0) return null;
   return {
     name: raw.name,
-    description: raw.description,
+    description: raw.description ?? "",
     once: (meta.once as boolean | undefined) ?? false,
     triggers,
     content: body,
@@ -241,6 +242,9 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const response = await v2.app.skills();
       const raws = response.data ?? [];
       const maybeSkills = await Promise.all(raws.map(async (r) => {
+        if (r.location === "<built-in>") {
+          return null;
+        }
         const skill = await toSkill(r);
         return skill ? skill : null;
       }));
@@ -349,7 +353,10 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "chat.message": async (input, _output) => {
       const { sessionID } = input;
-      if (sessionStore.has(sessionID)) return;
+      if (sessionStore.has(sessionID)) {
+        await dispatchEvent(sessionID, { event: "chat.message" });
+        return;
+      }
       // No prior session.updated — fresh process restore where session.updated. First chat.message means restore
       sessionStore.set(sessionID, {
         phase: "pending-restore",
@@ -379,10 +386,10 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     },
 
     event: async ({ event }) => {
-      if (event.type === "session.updated") {
+      if (event.type === "session.created") {
         const { id: sessionID } = event.properties.info;
         if (sessionStore.has(sessionID)) return;
-        // First sesion.updated means new
+        // First sesion.created means new session
         sessionStore.set(sessionID, {
           phase: "new",
           firedOnce: new Set(),
