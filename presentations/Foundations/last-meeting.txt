@@ -1,0 +1,540 @@
+# Meeting 2026-05-21 19:59
+
+## Transcript
+
+### You
+
+Okay, so a couple things to answer here. It is the non-deterministic portion of this. It isn't actually because of context, but there is something else going on with context where you can lose things and becomes even more unpredictable. I can answer either of those. We can answer both. Okay, let's go into both. I'm gonna make this this size and I'm gonna
+
+find the really cool thing I had it do. So I really like this SVG that it made. I'm intending to share it next time. There is a logist step to this. After everything's been transformed and it's predicting the next token, there's something called a temperature. Because when you're done processing your context into what is my next token, you don't get one word. You get a collection of words.
+
+And they all have their own probabilistic, this is the likely next word in the sequence of text. And as you play with this dial of temperature, which is often passed to an API to the providers of these models or to just model you running locally, you can turn it down to reduce the entropy or turn it up to increase the entropy. is what people say they're tuning when they're trying to make a claw.
+
+or open AI, more creative, right? They'll turn this dial up and they'll only get all kinds of words that get to the point of just pure chaos, of just words and ideas all over the place, or you can bring it down the other way and it becomes much more deterministic, not wholly deterministic. Like this isn't completely accurate that even at a temperature of a point one is still gonna be variations. So then this is the first sort of entry of like, why if you kept saying the same prompt to the same LLM,
+
+something slightly different. It's because this temperature allows for variances there. I'll pause there if you want me to go any deeper or clarify anything, just about the temperature portion that controls what is the next word going to be for any given context.
+
+or he would we are generally colder than someone that's trying to do creative right because of what we are in this is probably a little bit in the middle because this this is like
+
+
+### Remote
+
+out of the box, you know, clods on it, like the main go-to models. And we're using the default temperature that those provide. Is it pretty close to cold? Like we're getting like a pretty deterministic.
+
+
+### You
+
+like a chat window. So it's kind of meander all over the place. People could say, give me a sonnet in the cadence of a pirate, so that that's a little more creative. But when we reach to tools like Claude Code, Open Code, and Klein, or any of the others, they are making API calls. So they get to control this a little bit. Then not through, when you do a subscription, I think it is more tightly controlled through subscriptions, but I'm not 100%.
+
+and on that, but generally speaking, the tools we reach to for programming are colder versus the tools for creative writing or general purpose writing. And this is why you might get nuances between the agents because the agents will have their own system prompt of the entry of this is the goal you're trying to do and some mechanism to talk to the different API, some of them are true.
+
+general purpose, we've talked to many, let you kind of turn these styles like tie, and some of the more constrained like, clogged code that hide a lot of this from you, and just say, this is the way, and try not, we're not gonna let you deviate from it, because we've tested this and we believe it works very well. Come!
+
+
+### Remote
+
+Can you force it to modify that by how you prompt it?
+
+
+### You
+
+Yes, in some ways, right? So now we're getting into like, can you coax the LOM to do things outside of its constraints? Yes, there's jail breaking. There's other all kinds of things you could try to Drive the L away from what the providers decided is expected behavior Temperature is more like an actual thing right here So you won't actually change the probability of these words.
+
+But you could basically sway the context in the way that you might get new and interesting words because of that context, right? Because the whole context is being fed into this, it is a variable into this equation. So the set of words that are available depend on the context is fed into this whole process. Okay.
+
+If no other questions there, we could talk about the other side of this. It's like, why would you get into a really big context so you could kind of lose some of the stuff that's happening in that context? Where is lost in the middle in a great paper? Highly recommended. So I think back in 2025 when we still were on the old JAT GPT 3.5, some people did some research to see.
+
+what kind of happens as context grows and what happens to accuracy and they actually measured it and established this this the coin this term the U-shaped curve that as a context grew LLM had a tendency to prefer and subscribe to following the instructions at the very beginning and at the very end and forget everything at the beginning and this this kind of relates to the way that they were designed. The way they're trained.
+
+is they're given this sort of prefix set of initial rules. If I go back to my cloud clamp over here, all the way, oh, right here. So there is a system prompt that's kind of given at the very beginning by the provider or if you're hosting yourself, I'm like, don't teach a person how to make a bomb. Don't tell people they should kill themselves. Don't be malicious. all those kind of rules that really.
+
+this is how you're intended to behave and then a series of tokens after that of like he here is what the users actually asking you to do. So when they're being trained and given these kind of tokens and had expected and unexpected behavior, there was this tendency to follow what was at the beginning. And also during this training to be successful, paying close attention to the current task at hand also tended to add that sort of preference. So it just from the actual construable.
+
+of these giant neural networks of weights, you end up with this U-curve. why there's general rules around, you can't really go past about 400 initial instructions at the very beginning of your agent's MD, and here's what I'd like you to do, and here's what we're, about our project, and here's the things I would like you to do in this context, and oh, by the way, everything else I was included by your agent. You go past that, that stuff's gonna get lost.
+
+And the bigger your context goes, the wider this use gets. So you start losing more and more of that. Very early on, Gerald and I kind of played around with this. I can't remember. He had a good name for what he was grabbing from. It's like, remind me at the end of every message that I am not a god. We were curious about AI psychosis. We're playing around with that. And we would notice with that at the end of our agents and the instructions and going into longer and longer context, it would just stop doing it.
+
+And so that was sort of like our canary in the coal mine that was suggesting this was going on. It kind of led us to these papers that talk about this very thing we could observe in almost all L.L.N. models. Is that you go past roughly 150, 200 tokens, you've lost just about everything in the middle, and you can get yourself stuck in these kind of loops at the very end here. Like I've gotten an L.L.M. stuck to the point where we were talking through an issue. It said this is the problem. I remind it.
+
+No, this is not the issue. That's not the problem. You're supposed to be doing something else. It'll go back, reread the files, come back to the same conclusion. This is the problem and come back with the same loop. We're stuck at this tail end. And this is what I'll use a refer to, that the context has been poisoned. Like all I have left is this bare minimum of a tail of a context. We've lost everything on the middle. I have my rules at the beginning, but we're just going in circles. So I toss it out at that point. So that kind of rounds up of that, like why you can lose the stuff.
+
+in the middle. So you want to these sessions to basically be short and sweet and turn to things like handoffs, give me a summary of what the next session should do is what I usually lean to because that gives me something I can review, I can correct, and then just use that as the next prompt. I don't like compaction because that's just an LLM version of that with no review and tends to either say the wrong things or prioritize the wrong things or just kind of hallucinate something.
+
+
+### Remote
+
+The other yesterday, we were, Carson asked a question about a method that he works with tools, retends the user kind of like in a semi-automatic fashion, which kind of correlates strongly to how I do it as well. So the question is, when you're constantly stepping in and giving direction to things, Does that make the U curve problem better?
+
+
+### You
+
+It doesn't hurt like so hand holding it right like if you haven't gotten too big Right and this this because like each each time you blow up the context This is this is a percentage of it right because they're talking first fifth 10th 15 20th of the position of the document So as it bloats you lose more and more of this and you gain more and more than you so Injecting this is the thing I want you to do is to try to give it very clear instructions that you could actually maybe get that done if it's you know
+
+Build a whole application you're probably sunk if it's make the small correction or do this small task you're probably gonna be okay And in it this is where like my skill injection based on events comes in is that I I'm trying to combat This recency bias by injecting you just did this thing You you just edited a file Do you need to commit and if you need to commit do you need to amend a previous commit to keep it atomic? Do you need to test? And you're after you do that? Do you need to test?
+
+run your tests, right? So we want these things to kind of be more deterministic to give the guard rails to keep it on task as we approach this sort of worst case scenario of losing things in the middle. No problem. So back to Neil, did that actually answer sort of that question, is there still like something that's a gap there?
+
+
+### Remote
+
+Oh, you know, probably it just takes some some some fiddling around with it. Like the example you just you gave about, tell me I'm not a God would be an interesting one to, you know, like test it out myself and see that in action. I think that one thing I wanted to clarify was the difference between something like a handoff, which is something that's built into AMP, a handoff and compaction is one of them saying like.
+
+
+### You
+
+Yeah, it's just another extension of your context window via prompt. It's do this thing and give me some text back in each scenario. But the asterisk there in an agent where you have a maximum session, an agent being a sum harness with the CLI tool desktop app or
+
+
+### Remote
+
+Hey, read, like they sound like to me like they're both saying read everything we've just gone over in this session and summarize it. Is that right?
+
+
+### You
+
+or maybe web application is wrapping the LMM in a loop where you're providing some text to it. So you'll hit probably compaction behind the scenes if even if you go to like claw and you're just texting it. Eventually it's going to impact, I think clawed's limit. It's like something I'm seeing like a million tokens right now, which even then the U curve will probably just kill you. In tools like Open Code, do I have it open anywhere? This is gonna be tracking if I make this.
+
+screen and we do this and we make this a little bit bigger. It's showing me that I'm at 98.3k 10% of my total contact. At roughly like 80-90%, the agent itself is going to take over this command line tool. It's going to say wait a second, wait a second, wait a second. We're about to hit the top, the limit of the context. We're not going to be able to proceed with the API after that. I have a pre-canned compaction text to eject in here. I'm going to then take that.
+
+that summary and start a brand new session that I'm just gonna continue with the user as their ongoing session. Yes, yes, yes, yes, yes, and that's why compaction can be so harmful. And that's why I'd rather do the manual handoff because then I can actually review it, is this correct? the
+
+
+### Remote
+
+So something I'm missing here is like, if it's up to that point, and it's a you, you know, the you curve, isn't it going to be incorrectly summarizing because it's missing in the middle.
+
+
+### You
+
+boilerplate mundane things. But I don't want it to hallucinate. I don't want it to lose the details. I want to make sure the next thing is doing the correct operation that I actually want.
+
+
+### Remote
+
+I'm sorry, I'm not trying to like take over if anyone else has something pressing, you know, speak over me. But one example I was just doing today was
+
+you know, asking an agent browser to verify like the admin actions on like 10 commits. I said, just kind of read all of them, summarize them and then go exercise them in the admin. And then I wanted to do it for a second set of 10. I'm wondering if like right off the top of your head, you know, ah, you should do it this way. like I thought, hey, I already get
+
+
+### You
+
+I'm talking about my daily driver is clapping. I'm talking about my daily driver is clapping. Depends. Yeah, yeah, yeah. So now we're kind of getting into a little more anecdotal, a little more loosey goosey, right? So I've got my limits that I've run into and I'm talking to about like my daily driver
+
+
+### Remote
+
+with the instructions in this window, I figure it knows exactly what I asked and will handle it just fine in the same window. Or should it be close that one, open a new one, and it'll handle it better if it's like fresh. Does that make sense? Good.
+
+
+### You
+
+on it 4.6. So we'll vary per model, but my rough limit is somewhere between 150 to 200 tokens. The session is done. I don't want to go any further. So when I'm at like 60 or 80, right, and I still have a couple more things I want to do, like we completed one task, I'm like, we can ride this out a little bit. Like I'm thinking like the Seinfeld, where they're trying to take the car as far as it was going. Ride baby ride, right?
+
+But like if I'm getting closer like 120 130 I'm like okay This this is the point where I want to do a handoff or if I'm gonna be doing this Maybe maybe I want to come up with like a reusable prompt or maybe even a skill But a skill is just something that you could reach to in any given session be it new or existing and say this is the thing I want you to do
+
+Go ahead. Yeah. for for different reasons, right? Like hunger isn't quite like I wasn't built to follow the things in the middle. I do try to not remember what you said there
+
+
+### Remote
+
+like if you have a junior engineer, you can't just keep hitting the head all day. Eventually you have to go to bed and wake up the next morning and try again, you know? So hey, I can't be written over and over and over again.
+
+
+### You
+
+I can't say the word correctly. I don't try to treat them like they are actually humans. They're large matrix transformations from a little bit of complex math. Yeah, no problem. Any hot off the presses questions?
+
+
+### Remote
+
+Is there such a thing as being too overzealous with handoffs and new sessions? Because your limits for like the percentage token that your, you know, open code session is handling or whatever. I tend to create a plan for a feature. When it goes to the build phase, I'll ask to restrict it to like one or two steps of the plan depending on the complexity. And then I will do
+
+
+### You
+
+No, you get it, it works for you. You've got some manual steps in there you might be able to optimize by just leaning into subagents, but that's about it, right? Like if you're worried about those steps in your plan being sufficiently complex that even just like...
+
+
+### Remote
+
+a handoff to a new session with the instructions on the handoff indicating to like go to the next step and restrict it to the next step. Is there, is that overzealous or?
+
+
+### You
+
+the review and debugging of them might be sufficiently complex to get close to that upper bound? Sure. Like if you've got it working, I think you're splitting hairs at that point about efficiency. Because what you're getting is that huge surge of not sitting down and having to write, and also that bit of momentum of it's written something, and it's probably not fully correct, but what is it? Is it Gautam's cunning ham's law? The best way to get an amity?
+
+or something on the internet is to post the wrong thing. So you see something slightly off in the code. You've suddenly got this surge of energy on, man, I can make this so much better. So you can clean it up and it's usually not that much. I didn't like the way you structure this. You missed the fact that we have this whole utility library here. You missed this unit test as garbage, and we should really be looking at this edge case instead. And then by the end of it, it feels like yours. you actually have created some.
+
+comprehension around the code is actually made, building your own domain theory about the problem, and you move on to the next. To me, the most important part there is continuing to build that theory of the problem domain and how the application solves it. And I'm getting ahead of myself here, this is getting to what I plan to be, the final workshop of the final frontier, we don't know what is going to happen.
+
+basically in 1985, this was an author nor NAUR that had the theory that the value of software is near zero, essentially it is just a cost center, and that the real value in the development of software is the engineers, the designers, the PMs building the theory around that software about how it works and what needs to be manipulated or to maintain it or make changes in it and that that's going
+
+that has never been tested, I mean, there's been some evidence to maybe support it, but not really prove it or disprove it. But with LLMs, this is finally going to get tested in the next two to three years. And either LLMs will prove it was wrong, and like the theory of the problem doesn't actually matter that much, and you could sufficiently replace it with specs and documentation. Or it's right, and we end up in this giant cloud.
+
+Cobalt-esque mess of LLM-generated code that no one really understands and now we all kind of have to shovel ourselves out of Where's the doorpaper? I think I have it open somewhere. There it is. Oh, it's some some my other I'll include this in like the confluence links or anything But you can tell just by like the fact that it's a picture of a book This is all but also still kinda like holds true.
+
+Today so what one of those like decent writings that still holds up to the test of time that I kind of prescribed to This is probably right and we're probably making a bit of a pit for ourselves Sorry that that was quite a segue from like are you doing too much with with hand holding the LF somebody steps I don't think it's it is like like I said, there's some optimizations like if you don't know
+
+about it, there are sub-agents you can say spin up a sub-agent to run this commit and that has its own context. The LLM, like the first session is basically making a summary of that first step copying that into that session and basically continuing it. Do I have a good example of that? I can say just spin up an example sub-agent that pings Google. Right?
+
+And this one's already at the point where I would, I'm already planning on killing this session so I don't really matter so I can pull X down. This is what it's done. It's made its own session with its own context. It's going to go and do this report back. This probably saved no tokens because just the report of this and the creation of this was probably the totality is. But for like the initial code search, most of these agents go when they want to, when they tell you the reasoning or they're exploring or fumulating or what way
+
+any of the cute things that Claude says. It's running a sub-agent that goes and takes your current prompt and kind of applies it to find things maybe related to the code base. And then it reports back. Here's all the things that are likely related to what you're trying to do. It comes with the, oh, I have everything I need. And then to use
+
+For everyone that has joined, it's never used Discord before. You're apparently muted by default when you installed Discord and the mic button in the bottom left corner beside your avatar is the thing to unmute or mute. And I think it also defaults to push to talk. I can't remember the defaults because it's been so long since I installed Discord. But floor is open to any questions.
+
+Why? Oh, I don't want a Google or like transcribed recording. So people don't feel that pressure of asking a dumb question. I wanted it to be very open and not feel like, you know, I'm I'm gonna feel like an idiot if I ask something. Cause I know that exists, right?
+
+we all got to get the speed of anxiety that we don't want to feel like it idiot or unprepared or or not up to snuff or like impersonate the Why the imposter syndrome? Yeah, I just I Want to be able to collect the stuff so I am running like just a local model. It doesn't have any wave files It's just making a little transcription for me And then I'm just gonna you know distill it down to just the questions answers no names attached to them
+
+That, it's easier to control F than it is to skim through a video. Yes. Or pass it through at an LLM to ask what it thinks.
+
+
+### Remote
+
+Yeah, makes perfect sense. It is. Absolutely, I agree. You can even search it with text. That's the other thing.
+
+So I can ask a question. It's maybe a little abstract, I guess, but it seems like LMS are almost maybe best suited to software development in terms of their usefulness in their
+
+ability to not go off into the weeds because my wife is an attorney and one thing that's been popping up a lot is attorneys getting dinged for using LLM output in the cases they're handling and it seems like the LLMs are uniquely
+
+bad at case law. And there's just a guy here in town who got fined $100,000 because they are making convincing sounding output that is making up cases that don't exist or pull in cases from other states. It just seems like, and they were talking at her firm about investigating in the future, maybe having like a local model trained on organ case
+
+on the type of case law that their firm deals with, but it's kind of like a hypothetical. So the data sets that these models are trained on come intrinsic to the model. So how do we have confidence that its output of code is generally reliable, whereas in the realm of law, it's almost never.
+
+
+### You
+
+the deterministic tooling to make those assertions, right? Like we could have do this thing, and then I'm gonna run a unit test suite against it and see if you conform to it. Even those, like we were talking about that yesterday, the benchmarks that test how good or bad these things are are already being gamed because those get pulled into the training data and then the LOs figure out how to circumvent them because that is the quickest way to reaching the goal. Yeah, but like, how do you...
+
+How do you enforce deterministic behavior on a non-deterministic language like English and law? Like it doesn't always follow a consistent logical pattern that you could like assert with a compiler and have violations of, nope, this law does not compile.
+
+
+### Remote
+
+Okay, so I guess it's almost like if I'm understanding what you're saying, it's how How can we be sure that the code does what we want?
+
+
+### You
+
+Yeah. And I would also wager, if looking at just case law in United States and comparing that with just.
+
+
+### Remote
+
+wanted to, that problem has existed this entire time so we can just benchmark the LOM output against the same tests and CI systems that we would benchmark anything we wrote. Whereas if you're an attorney, the benchmark is you put it in front of a judge and he says, actually, I'm going to refer you to the bar.
+
+
+### You
+
+applications developed in English, the data set's going to pale in comparison of the examples you have of functioning source code that accomplish the goal. It's got to be easily off. I'm going to be conservative and say 10x versus the transcripts from trials just by the rate of people that have been building this thing.
+
+
+### Remote
+
+Yeah, and if you think about, I mean, you know, the LLM just generating a stream of tokens, the possibility that the current, you know, for a given string of tokens, I mean, the next, the number of next, you know, probable tokens is so much lower in a programming language, it's really restricted with just a handful of keywords. So, as opposed to,
+
+you know regular you know, open you know the pros and if you if you have if you digest it all of Shakespeare and then and from then on all the literature that's available that's all English while you know the code that or actually the text that we are dealing with is so highly structured that the possible outputs.
+
+so restricted compared to regular English. But I think that's a big part of it. But I agree. I think voting is a unique application for LLMs. And that's why we are using it to this degree as opposed to anybody that is doing regular text processing.
+
+that is in first year law, just finished her first year law school. And she had to do a report on LLMs and the practice of law. And she talked to me about some people that had come into her school from, believe it was West Law, which was for years was a known data service that everyone used to pay money, big money, to research case law. And they're experimenting with using RAG, which we talked about yesterday too, to layer like organ specific documents or whatever to.
+
+that better, but I don't know if people still trusted or not. I don't know. Well the stakes are so high. Right. Because if you get referred to the bar, I mean like the fines started like 80 grand or whatever. Well it's interesting because she told me West Law which is the big Kahuna for most law firms pay for a West Law subscription. They're talking about like at least experimenting with it. They were we were going into a law school and talking about it.
+
+
+### You
+
+So for your original question, Carson, this might be something your wife might be interested because this group is doing this very thing out on HuggingFace. HuggingFace is like the Docker hub for open source models. So you can go out and get models here and these are people that are interested in fine tuning or actually training models off of data sets.
+
+of case law and trying to improve the state of this. So just hut onion phase, HF for legal, they'll probably be other ones in here because they have a bunch of different communities.
+
+
+### Remote
+
+Right. Right. Right. Yeah, it's a. It's an interesting problem. I also. I think a lot of these people are that have gotten
+
+
+### You
+
+and it in your defense will be meeting as well and all of your states this often Alright, just have a few more.
+
+
+### Remote
+
+things for using this are just kind of copying things into like the chat GPT, you know, like web UI. So, yeah. Yeah. Yeah, no we do. Yeah, it's true. I mean, it's for everyone that tries to use this, I guess the same types of problems arise.
+
+
+### You
+
+guardrails to make it feel human I guess. It compiles, it works on my machine.
+
+
+### Remote
+
+Yeah. Yeah. Well, and then I hadn't really considered him here's a point either that just by virtue of being in a programming language that that restricts greatly. The scope of acceptable or I guess.
+
+
+### You
+
+Yeah. Or just deletes the test. Yeah. I have a whip branch on my tooling to try to detect that it has my
+
+
+### Remote
+
+associated tokens that it's working with. And it also can hook into like the LSB or it can run the tests and stuff. So it can self-correct and you see it doing that often. True, yeah. Yeah.
+
+
+### You
+
+modified and removed the number of functions in a test file. I haven't gotten it working yet. I'm convinced once I get it working to at least vet, it'll come up with some clever way of introducing no-op functions to get around it. Yeah. All right. Where are you next?
+
+
+### Remote
+
+Yeah, I mean, I remember earlier versions of Claude would be doing this.
+
+
+### You
+
+I really liked. I was playing around with prompting to get some interacting SVGs to try to illustrate the advantage of GPU versus CPU for the KQV calculation. I really liked this one that developed with just this sentence of like one, two, three, four, five, six words in a period. This is what a CPU is doing and then a GPU is like, I'm done. Thanks for watching!
+
+Yes, I've been trying to dig into that and it's been a fascinating read. I've been trying to prep for tomorrow by completing it.
+
+
+### Remote
+
+Yeah, that's a good visual form of that paper we just talked about yesterday, the attention paper. Yeah, that's cool.
+
+
+### You
+
+Yes. So for everyone that doesn't know and is just joining, and it was in here yesterday, there was this paper with 2017, attention and all these needs that stopped the AI winter and brought us to the state we are today of being able to actually run Run LMLN's and have the money.
+
+
+### Remote
+
+Are you talking about the paper attention is all you need? Yeah. Yeah. Yeah. That's the one. You know.
+
+
+### You
+
+and do things we want them to do. And I thought this was a decent diagram of that problem. Because I remember David Dufrein was doing a presentation, like once a 2016 of like Star Trek the Next Generation building a new script that doesn't exist. It was fun to watch, but it was this very slow sequential need. And this paper basically turned that on your head of like, no wait, with attention, you could basically calculate everything at once.
+
+
+### Remote
+
+Yeah, and the funny thing is, as Lee, you know, in the paper, they talk about translation as being one of the key use cases. And then Google themselves had this really crappy Google translate, not using this technology For likes.
+
+
+### You
+
+Did it become substantially better after this paper and LLMs took on?
+
+
+### Remote
+
+six, seven years after. So it was interesting. And yeah, because I'm in the translation in Google is as the something I can use, because I'm involved in two or three languages. And yeah, it's amazing how they did not actually apply this themselves.
+
+
+### You
+
+I know I could still go to like Google Translate, but I use it very intermittently. Alright, so this is not even backed by Gemini. That's weird. Yeah.
+
+
+### Remote
+
+No, I mean, Google translate is still some crappy algorithm. Yes, so they just left it there to die, I think, like so many other products. But the Gemini is really fluent in the...
+
+
+### You
+
+Yeah. So I was prompting yesterday for some more visual aids. I really, I really liked
+
+
+### Remote
+
+in other languages that I know. So that's the, I mean, not only translating, but also doing all the LLM stuff in those. So that's, yeah, I just found it really weird that they didn't have this technology in their own products.
+
+
+### You
+
+like this sort of diagram. Because yesterday, I should have been clear. I was kind of using tokens and vectors interchangeably, but they are two separate steps when Connor was asking about it. It's like you get the tokens in. These end up having IDs to them. But are turned into embeddings. And embeddings is where you would get into like rag and potential turning docs into embeddings as well that match with the model that you're using. And then from there, you actually get to this is a vector That's actually great.
+
+
+### Remote
+
+I'm not sure. I follow all the way. So the token is the text that you input translated into an integer or not an integer, you know, it can be float and we talked yesterday about like the level of precision you have.
+
+
+### You
+
+All right, so the embedding is a series of vectors, right, and dimensional space. And the reason that is, and the part of the heart of is when you have a sentence that is, she deposits money at the bank, right? Bank is closer to everything in finance clusters. So when you are determining the vector of this, you're looking with attention at the other tokens around it.
+
+
+### Remote
+
+those tokens and you can do like a rag look up for more context. Uh-huh.
+
+
+### You
+
+when you have, they can't beside the river bank, you're more closer to nature, water. Like this is a projection, right? There's maybe 4,000 dimensions here of how these things could all be potentially clustered with each other. But this is sort of like that key piece of it when we're taking the tokens, which are parts of words, or maybe single words, the words around the matter when determining the actual vectors to pass.
+
+through the L.F. because this bank, although the same word, is something different from this bank. Yes.
+
+
+### Remote
+
+And so this is the embedding in the cluster. So like determining the context of a word that might have multiple different meanings or associations, this is happening prior to
+
+passing through the layers of the network. Okay. Yeah, but I mean, you can use these embeddings in really, you know, interesting ways. I was playing with taking lyrics by different people. And to see how they would cluster the embeddings of those lyrics. And so I would actually...
+
+be able to see that a certain author was as close to another one, like Bob Dylan was as closer to Jack Berry than, say, Bjork. Yeah, it actually works. And these embeddings are actually the key to all of this, of course.
+
+And they are not that. I mean, all these companies have like embedding endpoints where you can see get. You can give them a stream of tokens that you get back, like embeddings. That's the necessary for if you want to build a drag, for example. But the embedding algorithm is essentially, you know.
+
+is highly dependent on the model and the version of model and everything. So it has to be for the same model.
+
+
+### You
+
+It doesn't really help with the vector database. So the embeddings, these are vectors and that's why we've been reaching towards vector databases to look for them because they have the algorithms in there to take a similar embedding and try to match them. search and retrieve things that are similar, rank them in different ways. So you have this database of a bunch of embeddings that you've created by passing those to the the model with the API that it mirrors just.
+
+speaking to, you store them in your database, and then you could retrieve the ones that are more likely related to a user prompt or a user query, or just something that you want to do. And you can feed them as the prompt that you go. They actually go to the LLM to get some answers. And this is the premise of what we did at IR for all their tax code information. Mm-hmm.
+
+And like there are databases that are just designed for that. You know, client server, they're ones they're designed to run locally, kind of like SQLite. There's ones that you could add extensions to Postgres SQL to add, like this similar kind of look ups but in a simpler form.
+
+
+### Remote
+
+labor, you know, and interacting, I mean, so you can get like the top five closest embeddings to a given amending or if you like.
+
+Yeah, and the one in Postgres, I love that one because you can combine those things with anything else in a relational database as opposed to having a vector-only database and then have to do some kind of merging of other things in a different data store. So it is. And it's pretty, pretty, you know, great.
+
+
+### You
+
+for being just an extension. An afterthought. Well, so I find for good visual aids, I didn't really care for the key value, KV cache. It's just going to add this and just cash for things.
+
+
+### Remote
+
+and yes. Yeah, you could say that. But it's pretty good. I love it.
+
+
+### You
+
+before it. I thought it was better to kind of illustrate that this matrix that's being calculated in like the grid values are the V to try to figure out like the attention. And so when you first start passing these in the K, Q, and V are what can be cash when you're talking with like Claude or, or like it's anthropic or OpenAI or the others that basically allow you to cash certain portion of this so that you don't have to read
+
+process the entire context, this is the portion that they're cashing in that scenario. It makes, I think, generally a bite for bite match. So if you start with a new system prompt or agents on the end of the beginning, you've essentially invalidated your cache and now you're reprocessing all of the existing tokens and that becomes more costly. I thought this was decent in that. What else did I have here? This one I didn't really care for. I thought it was just a lot. too much going on.
+
+I've been trying to have it make better SVGs to illustrate this and hasn't always been landing. I was surprised at how complicated it could make SVGs.
+
+
+### Remote
+
+So, speaking of SVGs. So if you're giving it a prompt and you say I want to look at a chart that represents these things, and then because there has to be a
+
+And it's able to determine that this is or not determined, but it's a likely chart based on what it is you want to see. How, how does this translate to like. Image generation, like the, you know, the Dali and all of the image generation. Is it. All of the image generation. Is it.
+
+
+### You
+
+So, Dolly and the other ones that are image generation have been trained in that approach. So they aren't text completion, right? They're image generation. I don't know enough about that process, but I could
+
+
+### Remote
+
+like diffusion stuff? I guess yeah and how is that different from you know say giving you a block of code or writing an integration test.
+
+
+### You
+
+and speak to the SVG is being treated as text and kind of watch the evolution of that training improving over time with this, you know, draw a pelican on a duck. Oh, sorry, draw a pelican on a bike where it gets progressively better and better as the models evolved because they were giving it more and more examples and training around what the expected output is.
+
+So SVG is just treated as tokens of text. Image generation is something else.
+
+
+### Remote
+
+Right. Okay. It's like from what I remember I'm going to butcher this explanation because that class I took that I mentioned last year talked about how diffusion works to. And I'm going to see if I can do it some justice. I still remember it. It's basically like taking analogy of let's say your room.
+
+is because my office is a mess right now. And you have this notion of, like let's say you take a picture of that and you tell a robot or something, like make it, make it like neat or something, whatever. Well, I mean, if you just take a picture of the whole room, that's overwhelming, right? There could be a million things in there and maybe there's cables on the, I mean, it's just the overall task is pretty complicated. There's a lot to that. That's a hard problem. But if you just say, no, no, no.
+
+just take that one piece of paper that is by that chair. Just do that. Okay, good. You're a little bit closer to what you want. Okay, now take that cable over here and move it. So you just extend that out end times. And that's kind of what the diffusion model does to build images. Like only the difference is instead of a messy room, it starts with an array
+
+like maybe just random ones and zeros. And then it tries to converge to whatever notion it has of its perfection, right? Like the clean office. I don't know if that helps. But... I'll have to find my explaining to your mom paper that they made me write on that one too, and I'll send it to you. Okay. Yeah, thank you. But it's basically the idea like one small step.
+
+Like it's total garbage right now, but you have this ideal and you've been trained on what penguins look like Like okay. Well, that's not a penguin. Yeah, okay Just do this one little thing and then you just keep iterating and computers that really fast So you make like, you know a gillion iterations and oh my gosh starts to click a penguin I All right, I will I need to find it because it was it was a really funny
+
+look tonight, I'll look for my one on the test with 92. It was a fun class because they made you always do that. Explain this like you're talking to your mom. Okay. So that's, that's pretty interesting. I guess it's a. I imagine these image generation models must be. easier to benchmark than the
+
+the models that are outputting text, I guess, because you have a, I guess it's more concrete we're looking for, right? Kind of, but like, remember in high school when they made you like graph surfaces that were really complicated and they had like, like a lot of valleys and stuff, and you know, you talk about gradient descent, like if your algorithm gets stuck in a place on your feature surface where
+
+
+### You
+
+that I when you said that these things might be easier I remember I came across a paper
+
+
+### Remote
+
+it's going downhill, it could start looking like a very strange penguin, for example, like just depending on, you know, how it's been trained. But then you would just say, no, I don't like that. And kind of like you're talking about with your coding and I do what you do too. It's like, no, no, no, throw that away. I don't like that. And you just move the place on the feature surface and say, do go again. Okay. Yeah. All right.
+
+
+### You
+
+that was feeding in the generated images of elephants into the model to retrain it And after enough successive retrainings of the elephant eventually became sort of like amorphous and white. I like that there's this worry of what as the data that the LMs generate begins to fill the entire space that could be consumed as training data. It's going to start to dilute.
+
+
+### Remote
+
+I think I've read something about this, right? You want to let that there's a desire not to train the L. L. M. On things that they've been that in L. M. has generated. Right, because if there's like subtle.
+
+or biases and how it draws the pelican on the bike, and then it's trained on those itself, that it's losing track of, I guess, the touchpoint of more acceptable non-LLM outputs, or I guess just pictures data, and that it loses the baseline of what it is. Yeah, I mean, this is also true for text. So...
+
+So people have been worried about, I mean, if most of the text now on the internet has been generated by an LLM and then consumed in training of LLMs, what's going to happen? So people talk about model collapse that way because it's not getting any human text anymore, it's just getting LLM generated text to train on. That is a real concern, of course.
+
+
+### You
+
+and then collapse instead of peak. It's not like Sonic 4.6 will just disappear one day when there's not enough training data. It's just gonna be stuck.
+
+
+### Remote
+
+Yeah. Yes. Yeah, but I mean, if, but I think what's people, you know, what people are talking about is that, you know, if you, if you. Train on.
+
+try to get the latest text on the internet into your models. And if that test is all generated by other models, then you mostly might enter in a cycle where it's just generating nonsense. And then the model has collapsed, I would say. So the hallucination is part of the training data. So there's no.
+
+Yeah, and I mean, it's nonsensical. I mean, so, you know, because I mean, there's not much logic to the text itself, you know, necessarily. And not to speak of, I mean, like all these elements do not, you know, they don't understand like numbers really well. And because they are just, you know, numeric tokens. And they see all these sequences.
+
+of these numeric tokens without any meaning or semantic value to them. I see this all the time when I'm working with Claude on a migration of Java project. It's just guessing version numbers of packages to use. It just spits out something like 530, but that version has never existed. It's just it.
+
+But it's just a sequence of numbers. And so that's what people are afraid of. I mean, if you get this text, I mean, it's all well formed, you know, grammatically, but it's, you know, semantically nonsense. So I have a couple family members who are
+
+in teaching. And one thing they've talked about that I was always very skeptical of is at the time that the consumer-facing models became really widespread. These companies popped up with tools for AI detection, so you feed your sixth grade students essays in and it gives a probability that they're LLM-generated. And I always...
+
+was very skeptical of how that would work because there's a couple kind of stylistic choices of which, you know, I'm sure we're all familiar of, you know, M dashes and it's not this it's that patterns or like the new GPT chat GPT model likes one word sentences to denote emphasis but is there is there any validity to these products.
+
+that supposedly can tell when something has been LLM generated or not? I can tell you that in migrating at Georgia Tech, we gave up on the tools that Georgia Tech is paying for to attack that because it's worthless. I mean, don't tell the students that, right? Because, you know, Katie bar the door, but now we've given up the only way we catch people and nail them and report them right among them.
+
+up as if they do something stupid, like leave part of their prompt, which they do in the turndame paper. Yeah. Top five computer science university in the country, and you have students turning, it's frightening, actually. Oh, but it's an arms race, and the teachers can't win anymore. So, I mean, that's why a lot of, you know,
+
+educational institutions, RST, you know, shying away from homework and have people asleep do the work in class. Yeah. For this, you know, that's that's the only, you know, viable way of preventing this. If that is the, you know, the main, the main point that you can ask, I mean, hey, I mean if we do the same thing.
+
+when people could look at things in Wikipedia or the world I had before that in general, I don't think so. I don't know. Well, my friend, his school moved to this thing where when you write an essay, I think it's a Google product, I might not be sure, but it does, when the teacher looks
+
+goes to grade it. They're not grading. They're not looking at a submitted word document. You submit it via this portal and it shows the time lapse of the document being populated. So if, you know, the whole thing just gets picked and sent in in a big chunk, like, that's the time. We're starting to do that next semester at Georgia Tech. Yeah, there's a, I forget
+
+What is the PDF postscript generated app that everyone's used for like 20 years to generate stuff? People write technical papers, I can't think of the name anyway, it's a variant on that, but it has time stamps. Yes, yes. Yeah, I'm talking about the late tech or lab tech. Yeah, there's a there's a version of that tool that's very popular that we're starting to use at Georgia Tech next and starting in August.
+
+that has time stamps just for that reason. Then you better not copy something from your own papers. Well, we have systems that already detect that and we give people latitude as long as you've noted in your, you know, whatever. Yeah. No, I mean, you know, that's one approach too. Yeah. Then you just have to write a piece of code that Leslie gradually just takes, you know.
+
+and one letter at the time. And pushes it into the keyboard. I mean, you know, everything can be fixed. Yeah. Yeah. I hope it does. Yes. It is an arm trace. I guess. You can always cheat. And so it's a question of how much effort is putting into it. Yeah.
+
+this is cool I gotta go my friends this is awesome yeah thanks for doing that yeah thanks Greg see you guys thank you Greg this was great good day there they all go that was good
+
+

@@ -1,0 +1,32 @@
+* The mullet
+* Tinker with models or swap between them
+  * 
+* Why do you opt for sequence unmonitored atomic commits with a review at the end over manual review of each step
+  * Seeing the end result to toss / revise
+  * Efficiency gain parrelization
+* Running beefy LLM via a rig via usb/firewire
+  * Opt for machine over network/vpn
+* How do model weights and training work? Can you train your own model?
+* Is the system prompt different from the rest of the context?
+* Why did the AI winter end
+  * https://medium.com/@ankitdey450/attention-is-all-you-need-the-idea-that-made-modern-ai-possible-day-4-30-beginner-ai-series-e16450936d1b
+* 
+
+Explore what system / user / agents mean to "prompt" / "context".
+
+* Visualizing N dimension quantization. Maybe a link from Gerald?
+
+https://arxiv.org/abs/1706.03762
+https://cs.stanford.edu/~nfliu/papers/lost-in-the-middle.arxiv2023.pdf
+
+https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization
+
+https://docs.ollama.com/modelfile
+
+https://medium.com/@ankitdey450/attention-is-all-you-need-the-idea-that-made-modern-ai-possible-day-4-30-beginner-ai-series-e16450936d1b
+
+https://arxiv.org/pdf/1706.03762
+
+https://developers.openai.com/api/reference/python/resources/conversations/subresources/items/methods/create?utm_source=chatgpt.com#(resource)%20responses%20%3E%20(model)%20easy_input_message%20%3E%20(schema)
+
+voxtype meeting export --speakers 9ff48bd0-8a1f-4e51-983b-329a99b6f338 | less

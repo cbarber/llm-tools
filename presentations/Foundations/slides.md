@@ -1,662 +1,621 @@
 ---
-# try also 'default' to start simple
 theme: seriph
-# random image from a curated Unsplash collection by Anthony
-# like them? see https://unsplash.com/collections/94734566/slidev
 background: https://cover.sli.dev
-# some information about your slides (markdown enabled)
-title: Welcome to Slidev
+title: "LLM Foundations: How GPUs Predict Text"
 info: |
-  ## Slidev Starter Template
-  Presentation slides for developers.
-
-  Learn more at [Sli.dev](https://sli.dev)
-# apply UnoCSS classes to the current slide
+  ## LLM Foundations Workshop
+  Workshop series — Session 1: Foundations
+  Building a mental model of transformers, tokenization, and context.
 class: text-center
-# https://sli.dev/features/drawing
 drawings:
   persist: false
-# slide transition: https://sli.dev/guide/animations.html#slide-transitions
 transition: slide-left
-# enable Comark Syntax: https://comark.dev/syntax/markdown
-comark: true
-# duration of the presentation
-duration: 35min
+duration: 60min
 ---
 
-# Welcome to Slidev
+# LLM Foundations
+## How GPUs Predict Text That Sounds Human
 
-Presentation slides for developers
+*Workshop series — open questions welcome*
 
-<div @click="$slidev.nav.next" class="mt-12 py-1" hover:bg="white op-10">
-  Press Space for next page <carbon:arrow-right />
+<!--
+This is a loose workshop, not a lecture. Goal: build a shared mental model and vocabulary.
+Anyone can chime in or ask questions at any point.
+End goal: the Q&A turns into a Confluence doc.
+-->
+
+---
+layout: section
+---
+
+# Part 1
+## How Did We Get Here?
+
+---
+
+# The AI Winter (and Why It Ended)
+
+**The problem before 2017:** sequence models (RNNs, LSTMs) processed tokens *one at a time* — sequential, slow, couldn't learn long-range dependencies well.
+
+**The unlock:** *Attention Is All You Need* (Vaswani et al., Google, 2017)
+
+- Proposed ditching recurrence entirely
+- Replace it with **self-attention** — every token can look at every other token simultaneously
+- Enables massive parallelization → GPUs become the engine
+
+**Result:** training that previously took weeks now took days; models grew 10x, 100x, 1000x
+
+> *Paper:* [arxiv.org/abs/1706.03762](https://arxiv.org/abs/1706.03762)
+
+<!--
+Good analogy from the last meeting: David Dufrein's ~2016 Star Trek script demo — fun but painfully sequential. This paper flipped that on its head.
+
+The Google Translate moment: the paper's authors were Google researchers. Google Translate kept running on its old algorithm for years after this. Gemini is now genuinely multilingual. The irony is not lost.
+-->
+
+---
+
+# CPU vs GPU: The Paintball Analogy
+
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div class="border border-gray-300 rounded p-4">
+
+**CPU**
+Sequential execution
+
+```
+Shot 1 → hit
+Shot 2 → hit
+Shot 3 → miss
+Shot 4 → hit
+...
+```
+
+*One barrel, fast per shot, one at a time.*
+
+</div>
+<div class="border border-gray-300 rounded p-4">
+
+**GPU**
+Parallel execution
+
+```
+Shot 1
+Shot 2
+Shot 3   → all at once
+Shot 4
+...
+```
+
+*Hundreds of slower barrels, firing simultaneously.*
+
+</div>
 </div>
 
-<div class="abs-br m-6 text-xl">
-  <button @click="$slidev.nav.openInEditor()" title="Open in Editor" class="slidev-icon-btn">
-    <carbon:edit />
-  </button>
-  <a href="https://github.com/slidevjs/slidev" target="_blank" class="slidev-icon-btn">
-    <carbon:logo-github />
-  </a>
+**Why it matters for attention:** computing attention requires comparing every token against every other token — an O(n²) grid. GPUs can fill that grid in parallel; CPUs cannot do this economically.
+
+<!--
+MythBusters had this exact visual — a single paintball gun vs a board of several hundred firing simultaneously. Excellent reference if the group hasn't seen it.
+
+The Attention paper specifically called out the O(1) sequential ops vs O(n) for recurrent models as the core advantage.
+-->
+
+---
+layout: section
+---
+
+# Part 2
+## Vocabulary: Token → Embedding → Vector
+
+*Establishing terms before we go further*
+
+---
+
+# Token
+
+**A token is a subword unit — the smallest chunk the model reads.**
+
+```
+"Attention" → ["Att", "ention"]       ← 2 tokens
+"the"        → ["the"]                 ← 1 token
+"ChatGPT"    → ["Chat", "G", "PT"]    ← 3 tokens
+```
+
+- Not words, not characters — somewhere in between (BPE / SentencePiece)
+- Each token maps to a numeric ID in a vocabulary table
+- ~1 token ≈ ¾ of an English word on average
+
+**Why it matters:** context limits, cost, and everything downstream are measured in tokens — not words or characters.
+
+<!--
+Common confusion: "token" is often used loosely to mean "the thing I'm sending the model." More precisely it's the post-tokenization unit.
+
+King - Man + Woman = Queen is *word2vec* (2013), a lookup table. Not how modern LLMs work. The slide after this is why.
+-->
+
+---
+
+# Embedding
+
+**An embedding is a dense numeric vector that represents a token's meaning in context.**
+
+- A token ID is looked up in a learned *embedding matrix* → produces a vector (e.g., 4096 floats)
+- Unlike word2vec, the same token gets *different* embeddings depending on surrounding tokens
+
+```
+"bank" in "deposit money at the bank"  → closer to [finance, institution]
+"bank" in "sitting by the river bank"  → closer to [water, nature]
+```
+
+- Computed via **attention** — every token looks at every other token to determine its embedding
+
+<!--
+This is why the King/Man/Woman/Queen analogy breaks down — word2vec was context-free. Each word had one fixed vector. Modern LLMs recompute the vector every time based on context.
+
+The embedding API (Anthropic, OpenAI both expose one) returns these vectors. This is what you store in a vector database for RAG.
+-->
+
+---
+
+# Vector
+
+**A vector is just a list of numbers representing a point in N-dimensional space.**
+
+```
+[0.21, -0.87, 0.43, ..., 0.09]   ← 4096 dimensions
+```
+
+- **Closeness** in that space = semantic similarity
+- "bank" (finance) clusters near "deposit", "loan", "interest"
+- "bank" (river) clusters near "stream", "shore", "water"
+
+**Why N-dimensional space is hard to visualize:**  
+We can only picture 3 dimensions. Models use 4,000–12,000+ dimensions. The relationships are real; the mental picture isn't.
+
+**Vector databases** (pgvector, Chroma, Pinecone, Qdrant) are optimized to find nearest neighbors in this space — the core of RAG pipelines.
+
+<!--
+Gerald's quantization link is relevant here: quantization reduces the precision of these numbers (float32 → int4) to shrink model size at the cost of some fidelity. Out of scope today but worth noting if asked.
+
+Visual guide to quantization: https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization
+-->
+
+---
+layout: section
+---
+
+# Part 3
+## How a Transformer Transforms
+
+*Tokenization → Attention → Next token*
+
+---
+
+# The Transformer Pipeline
+
+```
+Your text
+    ↓
+Tokenizer          "Hello world" → [15496, 995]
+    ↓
+Embedding lookup   Each token ID → dense vector
+    ↓
+Positional encoding  Inject order info (no recurrence = no implicit order)
+    ↓
+N × Transformer layers
+  ├── Multi-head self-attention   (Who should I pay attention to?)
+  ├── Feed-forward network        (Transform what I learned)
+  └── Layer norm + residual       (Stability)
+    ↓
+Final projection   Vector → probability distribution over vocabulary (~100k tokens)
+    ↓
+Sampling (Temperature)   Pick next token
+```
+
+<!--
+The encoder-decoder architecture in the original paper has both halves. Decoder-only models (GPT, Claude, Llama) just use the right half — they generate autoregressively, one token at a time, appending each output to the context before generating the next.
+
+"Autoregressively" = the output feeds back as input. Each new token is predicted based on all previous tokens.
+-->
+
+---
+
+# Attention: The Core Idea
+
+**Q / K / V — intuition only:**
+
+| Symbol | Name | Analogy |
+|--------|------|---------|
+| **Q** | Query | *What am I looking for?* |
+| **K** | Key | *What's available to look at?* |
+| **V** | Value | *What's the actual content?* |
+
+For each token, attention asks: *which other tokens in the context should influence my meaning?*
+
+**Multi-head attention** runs this 8 times in parallel with different learned projections — each "head" can specialize in different relationships (syntax, semantics, coreference, etc.)
+
+**KV Cache:** the K and V matrices for tokens already processed don't need to be recomputed — they're cached. This is why changing your system prompt mid-session is expensive: it invalidates the cache.
+
+<!--
+The scaled dot-product formula divides by √d_k to prevent vanishing gradients in softmax when dimensions are large. You don't need to remember this — just know "scaled" means they stabilize the math.
+
+KV cache is why prefix caching exists — system prompts that don't change can be kept hot. If you keep mutating the head of your context you're burning money and latency.
+-->
+
+---
+
+# Temperature: Entropy Dial
+
+After all layers, the model produces a **probability distribution** over the vocabulary:
+
+```
+next token could be:
+  "the"     → 32%
+  "a"       → 18%
+  "some"    → 12%
+  "any"     → 8%
+  ... (100k tokens, summing to 100%)
+```
+
+**Temperature** reshapes that distribution:
+
+- **Low (0.1–0.3):** distribution sharpens → more deterministic, predictable
+- **High (1.0–2.0):** distribution flattens → more "creative", more chaotic
+
+> Yes — temperature directly relates to entropy (thermodynamics borrowed the term). Higher temperature = higher entropy = more randomness.
+
+**Practical:** coding agents (Claude Code, OpenCode) run cold. Creative writing prompts run hot.
+
+<!--
+Even at temperature 0.1, there's still variance — it's not fully deterministic. The same prompt to the same model can still produce slightly different outputs.
+
+Temperature is a real API parameter you can pass. Subscriptions often hide it; raw API access exposes it. When you're trying to make an LLM "more creative," this is the knob people mean — not magic.
+
+This also answers: why does Claude sometimes refuse or give different answers to the same question? Partly temperature, partly the non-deterministic sampling.
+-->
+
+---
+layout: section
+---
+
+# Part 4
+## The API: Roles and Context
+
+*What "system prompt" actually means*
+
+---
+
+# API Anatomy: Three Roles
+
+Every modern LLM API accepts a list of message objects:
+
+```json
+[
+  { "role": "system",    "content": "You are a helpful assistant. Do not discuss competitors." },
+  { "role": "user",      "content": "What's the best code editor?" },
+  { "role": "assistant", "content": "That depends on your workflow..." },
+  { "role": "user",      "content": "What about for Python specifically?" }
+]
+```
+
+**Under the hood:** these roles are a developer abstraction. The model itself sees one flat token sequence, serialized via a *chat template*:
+
+```
+<|im_start|>system
+You are a helpful assistant...<|im_end|>
+<|im_start|>user
+What's the best code editor?<|im_end|>
+...
+```
+
+> Both you and your colleague were right: it *is* one flat stream, AND the roles have semantic meaning baked in at training time.
+
+<!--
+The ChatML format (<|im_start|> / <|im_end|>) was introduced by OpenAI to fine-tune ChatGPT. Different models use different special tokens (Mistral uses [INST], [/INST], etc.) but the principle is the same.
+
+"System prompt" is a loose term. Technically it's just the first message in the sequence with role=system. Functionally, models are trained to treat it as high-authority instructions. It's not enforced by a wall — it's a learned convention.
+
+Ollama's --system flag sets this programmatically. Same result as prepending a system message.
+-->
+
+---
+
+# The Context Window
+
+**Everything the model can "see" when predicting the next token.**
+
+```
+[System prompt] [Conversation history] [Current user message]
+←────────────────── context window ──────────────────────────→
+                                                        ↑
+                                                   predict here
+```
+
+- Measured in tokens (GPT-4: 128k, Claude 3.5 Sonnet: 200k, Gemini 2.5: 1M+)
+- The model has no memory outside this window — it's stateless between calls
+- Every request sends the *entire conversation history* from scratch
+
+**Bigger context ≠ better use of context.** → See Part 5.
+
+<!--
+This is why "ChatGPT remembered something I said 3 weeks ago" is technically: whatever is in the conversation history that got passed. Consumer apps store and re-inject history. Raw API is stateless.
+
+Cost scales with context size. Every token in = compute + money.
+-->
+
+---
+layout: section
+---
+
+# Part 5
+## Primacy, Recency, and the U-Curve
+
+*Why your LLM forgets what you said in the middle*
+
+---
+
+# Lost in the Middle
+
+**Paper:** *Lost in the Middle: How Language Models Use Long Contexts*  
+Liu et al., Stanford / UC Berkeley, 2023  
+[arxiv.org/pdf/2307.03172](https://arxiv.org/pdf/2307.03172)
+
+**Finding:** when relevant information is buried in the middle of a long context, model performance degrades dramatically.
+
+<div class="mt-4 flex justify-center">
+
+```
+Performance
+    ▲
+    │ ██                          ██
+    │ ████                      ████
+    │ ██████                  ██████
+    │ ████████            ████████
+    │ ██████████████████████████████
+    └──────────────────────────────▶
+       Start        Middle       End
+              Context position
+```
+
 </div>
 
+> "U-shaped curve" — strong at the head and tail; weak in the middle.
+
 <!--
-The last comment block of each slide will be treated as slide notes. It will be visible and editable in Presenter Mode along with the slide. [Read more in the docs](https://sli.dev/guide/syntax.html#notes)
+GPT-3.5-Turbo's QA performance dropped >20% with relevant info in the middle. In worst cases, performance with 30 documents was lower than the closed-book (no documents) baseline of 56%.
+
+The trough gets worse as context grows — at 10 docs the middle is bad; at 30 docs it can fall below the no-context baseline.
 -->
 
 ---
-transition: fade-out
----
 
-# What is Slidev?
+# Why This Happens (Architecture)
 
-Slidev is a slides maker and presenter designed for developers, consist of the following features
+**Root cause (2025 paper: "Lost in the Middle at Birth"):**
 
-- 📝 **Text-based** - focus on the content with Markdown, and then style them later
-- 🎨 **Themable** - themes can be shared and re-used as npm packages
-- 🧑‍💻 **Developer Friendly** - code highlighting, live coding with autocompletion
-- 🤹 **Interactive** - embed Vue components to enhance your expressions
-- 🎥 **Recording** - built-in recording and camera view
-- 📤 **Portable** - export to PDF, PPTX, PNGs, or even a hostable SPA
-- 🛠 **Hackable** - virtually anything that's possible on a webpage is possible in Slidev
-<br>
-<br>
+The U-shape is a **fundamental topological constraint** of decoder-only transformers, present even at random initialization before training.
 
-Read more about [Why Slidev?](https://sli.dev/guide/why)
+- **Primacy:** Token #1 is visible to tokens #2, #3, #4 ... #N. It accumulates more attention weight simply because more tokens can attend to it.
+- **Recency:** The final token is an isolated anchor via residual connections — it always influences the output.
+- **Middle:** Structurally hostile — attended by fewer subsequent tokens, no residual anchor.
+
+**Practical rules:**
+1. Keep system prompts short (important stuff first, ≤400 tokens if possible)
+2. Put critical instructions at the beginning **and** end of long contexts
+3. When context bloats → start a fresh session with a manual handoff summary
 
 <!--
-You can have `style` tag in markdown to override the style for the current page.
-Learn more: https://sli.dev/features/slide-scope-style
--->
+"Context poisoning" = when you've been going in circles so long that the tail of the context is just the loop, the middle is lost, and even your system prompt at the head is getting drowned out. Time to start fresh.
 
-<style>
-h1 {
-  background-color: #2B90B6;
-  background-image: linear-gradient(45deg, #4EC5D4 10%, #146b8c 20%);
-  background-size: 100%;
-  -webkit-background-clip: text;
-  -moz-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  -moz-text-fill-color: transparent;
-}
-</style>
+The "remind me I am not a god" canary experiment: injecting this at the end of agents instructions, then watching it disappear as context grew. A practical way to feel this effect firsthand.
 
-<!--
-Here is another comment.
+Compaction (auto-summarization) vs manual handoff: auto-compaction is an LLM summarizing itself — it will prioritize the wrong things and hallucinate details. Manual handoff = you review the summary and correct it before the next session.
 -->
 
 ---
-transition: slide-up
-level: 2
----
 
-# Navigation
+# Demo: Observing the U-Curve
 
-Hover on the bottom-left corner to see the navigation's controls panel, [learn more](https://sli.dev/guide/ui#navigation-bar)
+*[Live demo — local Ollama model]*
 
-## Keyboard Shortcuts
+**Setup:** Send a long context with a fact buried in position 15 of 30 items. Ask the model to recall it.
 
-|                                                     |                             |
-| --------------------------------------------------- | --------------------------- |
-| <kbd>right</kbd> / <kbd>space</kbd>                 | next animation or slide     |
-| <kbd>left</kbd>  / <kbd>shift</kbd><kbd>space</kbd> | previous animation or slide |
-| <kbd>up</kbd>                                       | previous slide              |
-| <kbd>down</kbd>                                     | next slide                  |
+**What to watch for:**
+- High accuracy when the fact is near the start or end
+- Degraded accuracy when it's in positions 10–20
 
-<!-- https://sli.dev/guide/animations.html#click-animation -->
-<img
-  v-click
-  class="absolute -bottom-9 -left-7 w-80 opacity-50"
-  src="https://sli.dev/assets/arrow-bottom-left.svg"
-  alt=""
-/>
-<p v-after class="absolute bottom-23 left-45 opacity-30 transform -rotate-10">Here!</p>
-
----
-layout: two-cols
-layoutClass: gap-16
----
-
-# Table of contents
-
-You can use the `Toc` component to generate a table of contents for your slides:
-
-```html
-<Toc minDepth="1" maxDepth="1" />
-```
-
-The title will be inferred from your slide content, or you can override it with `title` and `level` in your frontmatter.
-
-::right::
-
-<Toc text-sm minDepth="1" maxDepth="2" />
-
----
-layout: image-right
-image: https://cover.sli.dev
----
-
-# Code
-
-Use code snippets and get the highlighting directly, and even types hover!
-
-```ts [filename-example.ts] {all|4|6|6-7|9|all} twoslash
-// TwoSlash enables TypeScript hover information
-// and errors in markdown code blocks
-// More at https://shiki.style/packages/twoslash
-import { computed, ref } from 'vue'
-
-const count = ref(0)
-const doubled = computed(() => count.value * 2)
-
-doubled.value = 2
-```
-
-<arrow v-click="[4, 5]" x1="350" y1="310" x2="195" y2="342" color="#953" width="2" arrowSize="1" />
-
-<!-- This allow you to embed external code blocks -->
-<<< @/snippets/external.ts#snippet
-
-<!-- Footer -->
-
-[Learn more](https://sli.dev/features/line-highlighting)
-
-<!-- Inline style -->
-<style>
-.footnotes-sep {
-  @apply mt-5 opacity-10;
-}
-.footnotes {
-  @apply text-sm opacity-75;
-}
-.footnote-backref {
-  display: none;
-}
-</style>
+> This effect is present across all major models (GPT-3.5, Claude-1.3, and their successors).  
+> Bigger context windows don't fix it — they shift the numbers, not the shape.
 
 <!--
-Notes can also sync with clicks
+For the demo: a simple approach is: "Here are 30 facts about a fictional person. Fact #N is [the target]. After all 30 facts, ask: what is fact #N?"
 
-[click] This will be highlighted after the first click
-
-[click] Highlighted with `count = ref(0)`
-
-[click:3] Last click (skip two clicks)
+Vary N from 1, 5, 15, 25, 30 and compare accuracy.
 -->
 
 ---
-level: 2
+layout: section
 ---
 
-# Shiki Magic Move
-
-Powered by [shiki-magic-move](https://shiki-magic-move.netlify.app/), Slidev supports animations across multiple code snippets.
-
-Add multiple code blocks and wrap them with <code>````md magic-move</code> (four backticks) to enable the magic move. For example:
-
-````md magic-move {lines: true}
-```ts {*|2|*}
-// step 1
-const author = reactive({
-  name: 'John Doe',
-  books: [
-    'Vue 2 - Advanced Guide',
-    'Vue 3 - Basic Guide',
-    'Vue 4 - The Mystery'
-  ]
-})
-```
-
-```ts {*|1-2|3-4|3-4,8}
-// step 2
-export default {
-  data() {
-    return {
-      author: {
-        name: 'John Doe',
-        books: [
-          'Vue 2 - Advanced Guide',
-          'Vue 3 - Basic Guide',
-          'Vue 4 - The Mystery'
-        ]
-      }
-    }
-  }
-}
-```
-
-```ts
-// step 3
-export default {
-  data: () => ({
-    author: {
-      name: 'John Doe',
-      books: [
-        'Vue 2 - Advanced Guide',
-        'Vue 3 - Basic Guide',
-        'Vue 4 - The Mystery'
-      ]
-    }
-  })
-}
-```
-
-Non-code blocks are ignored.
-
-```vue
-<!-- step 4 -->
-<script setup>
-const author = {
-  name: 'John Doe',
-  books: [
-    'Vue 2 - Advanced Guide',
-    'Vue 3 - Basic Guide',
-    'Vue 4 - The Mystery'
-  ]
-}
-</script>
-```
-````
+# Part 6
+## When to Use LLMs (and When Not To)
 
 ---
 
-# Components
+# LLMs Work Well When There's an Oracle
 
-<div grid="~ cols-2 gap-4">
+**The secret weapon for code:** deterministic verification
+
+```
+LLM generates code
+      ↓
+Compiler / type checker / linter   ← hard fail / pass
+      ↓
+Unit tests / CI                    ← hard fail / pass
+      ↓
+You review the diff                ← soft fail / pass
+```
+
+The LLM doesn't need to be right on the first try — **it just needs to be close enough to iterate from.**  
+Cunningham's Law: the best way to get the right answer is to post the wrong one.
+
+**Why law, medicine, finance are harder:**  
+There's no compiler for English. No test suite for case law. The oracle is "a judge" or "a doctor" — expensive, slow, high-stakes to be wrong.
+
+<!--
+The data-size argument from the last meeting: the training corpus of functioning source code dwarfs transcripts of legal proceedings. The model has seen many more examples of code that compiles and passes tests than it has of correct legal arguments.
+
+The restricted token space argument: programming languages have ~100 keywords. English has ~170k words. The space of "plausible next tokens" is radically smaller for code → fewer hallucination vectors.
+
+LLMs are NOT a replacement for a junior engineer. They lack domain theory — the mental model of why the system is built the way it is, what the edge cases are, what the team has already tried. A junior engineer builds that over time. An LLM resets each session.
+-->
+
+---
+
+# Right Problems / Skip These
+
+<div class="grid grid-cols-2 gap-6">
 <div>
 
-You can use Vue components directly inside your slides.
-
-We have provided a few built-in components like `<Tweet/>`, `<BlueSky/>`, and `<Youtube/>` that you can use directly. And adding your custom components is also super easy.
-
-```html
-<Counter :count="10" />
-```
-
-<!-- ./components/Counter.vue -->
-<Counter :count="10" m="t-4" />
-
-Check out [the guides](https://sli.dev/builtin/components.html) for more.
+**Good fit**
+- Boilerplate / scaffolding
+- Translating between known patterns (REST → gRPC, etc.)
+- Drafting docs from existing code
+- Exploring an unfamiliar codebase
+- Generating test cases from specs
+- Summarizing / reformatting text
 
 </div>
 <div>
 
-```html
-<Tweet id="1390115482657726468" />
-```
-
-<Tweet id="1390115482657726468" scale="0.65" />
+**Proceed with caution**
+- Novel architecture decisions (no oracle to validate)
+- Security-sensitive code (hard to audit LLM output)
+- Long autonomous sessions (U-curve poisoning risk)
+- Any domain where the penalty for hallucination is high
 
 </div>
 </div>
 
 <!--
-Presenter note with **bold**, *italic*, and ~~striked~~ text.
+The benchmark gaming problem: LLM benchmarks are increasingly being gamed because the benchmarks themselves end up in training data, and models learn to pass them specifically. Treat published benchmark scores skeptically.
 
-Also, HTML elements are valid:
-<div class="flex w-full">
-  <span style="flex-grow: 1;">Left content</span>
-  <span>Right content</span>
-</div>
+The "deletes the test" problem: an LLM trying to pass tests has an incentive to just remove the failing test. A test count assertion (before/after) is a useful guard.
 -->
 
 ---
-class: px-20
+layout: section
 ---
 
-# Themes
+# Part 7
+## Last Session: Q&A Reference
 
-Slidev comes with powerful theming support. Themes can provide styles, layouts, components, or even configurations for tools. Switching between themes by just **one edit** in your frontmatter:
-
-<div grid="~ cols-2 gap-2" m="t-2">
-
-```yaml
----
-theme: default
----
-```
-
-```yaml
----
-theme: seriph
----
-```
-
-<img border="rounded" src="https://github.com/slidevjs/themes/blob/main/screenshots/theme-default/01.png?raw=true" alt="">
-
-<img border="rounded" src="https://github.com/slidevjs/themes/blob/main/screenshots/theme-seriph/01.png?raw=true" alt="">
-
-</div>
-
-Read more about [How to use a theme](https://sli.dev/guide/theme-addon#use-theme) and
-check out the [Awesome Themes Gallery](https://sli.dev/resources/theme-gallery).
+*From the May 21 meeting — grouped by theme*
 
 ---
 
-# Clicks Animations
+# Temperature & Non-Determinism
 
-You can add `v-click` to elements to add a click animation.
+**Q: Is it actually because of context that the LLM is non-deterministic?**  
+Not exactly — temperature is the primary source. Even at low temperature, sampling introduces variance. Context size adds a second layer via the U-curve (more context → more unpredictable middle behavior), but these are separate mechanisms.
 
-<div v-click>
+**Q: Can you force the LLM to be more deterministic via prompting?**  
+Not directly — prompting can't change the temperature parameter. You can *influence* the distribution of plausible next tokens by narrowing the context (give very specific instructions), but the sampling randomness itself is a parameter, not a prompt-tunable setting.
 
-This shows up when you press <kbd>space</kbd> or <kbd>right</kbd>, or click outside the slide on the right.
+**Q: Are coding tools running near zero temperature?**  
+Yes — tools like Claude Code, OpenCode run low temperature by default. Creative chat interfaces run higher. Subscription tiers often hide this; raw API access exposes it.
 
-```html
-<div v-click>This shows up when you trigger a click animation.</div>
-```
-
-</div>
-
-<p v-click>
-You can also add modifiers to change the animation:
-</p>
-
-<div class="grid gap-3 mt-4 text-sm" style="grid-template-columns: repeat(3, 1fr) 1.5fr 1fr">
-  <div v-after.up class="p-3 rounded border border-primary/20 bg-primary/10">
-    <div class="font-mono text-xs opacity-60 mb-1">v-click.up</div>
-    <div>Slide from bottom</div>
-  </div>
-  <div v-click.fade-in class="p-3 rounded border border-primary/30 bg-primary/15">
-    <div class="font-mono text-xs opacity-60 mb-1">v-click.fade-in</div>
-    <div>Fade in</div>
-  </div>
-  <div v-click.fade class="p-3 rounded border border-primary/40 bg-primary/20">
-    <div class="font-mono text-xs opacity-60 mb-1">v-click.fade</div>
-    <div>Dim (0.5 opacity)</div>
-  </div>
-  <div v-click.fade.right.scale class="p-3 rounded border border-primary/50 bg-primary/25">
-    <div class="font-mono text-xs opacity-60 mb-1">v-click.fade.right.scale</div>
-    <div>Composed</div>
-  </div>
-  <div v-click.none class="p-3 rounded border border-primary/60 bg-primary/30">
-    <div class="font-mono text-xs opacity-60 mb-1">v-click.none</div>
-    <div>No transition</div>
-  </div>
-</div>
-
-<v-click>
-
-The <span v-mark.red="7"><code>v-mark</code> directive</span>
-also allows you to add
-<span v-mark.circle.orange="8">inline marks</span>
-, powered by [Rough Notation](https://roughnotation.com/):
-
-```html
-<span v-mark.underline.orange>inline markers</span>
-```
-
-</v-click>
-
-<div v-click mt-12>
-
-[Learn more](https://sli.dev/guide/animations#click-animation)
-
-</div>
+<!--
+Practical: if you're getting wildly different answers to the same coding question each time, either temperature is high or you're close to context limit and the U-curve is kicking in.
+-->
 
 ---
 
-# Motions
+# Context, U-Curve, and Session Management
 
-Motion animations are powered by [@vueuse/motion](https://motion.vueuse.org/), triggered by `v-motion` directive.
+**Q: Does hand-holding the LLM (frequent direction) help with the U-curve?**  
+It helps if you're injecting clear, concise instructions frequently — especially if the context isn't enormous yet. As context bloats, even injected instructions get further from the tail, reducing their influence.
 
-```html
-<div
-  v-motion
-  :initial="{ x: -80 }"
-  :enter="{ x: 0 }"
-  :click-3="{ x: 80 }"
-  :leave="{ x: 1000 }"
->
-  Slidev
-</div>
-```
+**Q: Is there such a thing as too many handoffs / new sessions?**  
+No — starting fresh is cheap. The downside is only workflow overhead. If your current session is at 60–80k tokens, you can often ride it out for small tasks. At 120–150k, you're in the danger zone regardless of model.
 
-<div class="w-60 relative">
-  <div class="relative w-40 h-40">
-    <img
-      v-motion
-      :initial="{ x: 800, y: -100, scale: 1.5, rotate: -50 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-square.png"
-      alt=""
-    />
-    <img
-      v-motion
-      :initial="{ y: 500, x: -100, scale: 2 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-circle.png"
-      alt=""
-    />
-    <img
-      v-motion
-      :initial="{ x: 600, y: 400, scale: 2, rotate: 100 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-triangle.png"
-      alt=""
-    />
-  </div>
+**Q: Handoff vs compaction — what's the difference?**  
+Compaction = an LLM summarizes the session automatically (e.g., when context limit approaches). Handoff = *you* prompt for a summary, review it, correct it, and use it to seed a new session. Handoff is safer — compaction hallucinates and deprioritizes the wrong things.
 
-  <div
-    class="text-5xl absolute top-14 left-40 text-[#2B90B6] -z-1"
-    v-motion
-    :initial="{ x: -80, opacity: 0}"
-    :enter="{ x: 0, opacity: 1, transition: { delay: 2000, duration: 1000 } }">
-    Slidev
-  </div>
-</div>
-
-<!-- vue script setup scripts can be directly used in markdown, and will only affects current page -->
-<script setup lang="ts">
-const final = {
-  x: 0,
-  y: 0,
-  rotate: 0,
-  scale: 1,
-  transition: {
-    type: 'spring',
-    damping: 10,
-    stiffness: 20,
-    mass: 2
-  }
-}
-</script>
-
-<div
-  v-motion
-  :initial="{ x:35, y: 30, opacity: 0}"
-  :enter="{ y: 0, opacity: 1, transition: { delay: 3500 } }">
-
-[Learn more](https://sli.dev/guide/animations.html#motion)
-
-</div>
+**Q: Is context "poisoned" after looping?**  
+Yes. If you've gone in circles and the tail of the context is just the loop, the middle context is lost and you're stuck. Discard the session; start fresh from a clean handoff.
 
 ---
 
-# $\LaTeX$
+# Tokens, Embeddings, and Vectors
 
-$\LaTeX$ is supported out-of-box. Powered by [$\KaTeX$](https://katex.org/).
+**Q: Yesterday you were using tokens and vectors interchangeably. Are they the same?**  
+No. Token = subword ID (integer). Embedding = learned dense vector produced by looking up that ID. Vector = a point in N-dimensional space, which is what the embedding *is*. Three distinct steps: tokenize → embed → compute attention over vectors.
 
-<div h-3 />
+**Q: What is an embedding API used for?**  
+When you call an embedding endpoint (Anthropic, OpenAI both have them), you send text and get back a vector. You store these vectors in a vector database. Later, you can find semantically similar items by comparing vectors — the basis of RAG (Retrieval-Augmented Generation).
 
-Inline $\sqrt{3x-1}+(1+x)^2$
+**Q: Do embeddings have to match the model?**  
+Yes — embeddings are model-specific. You can't mix embeddings from Claude with lookups from OpenAI. The vector spaces are different coordinate systems.
 
-Block
-$$ {1|3|all}
-\begin{aligned}
-\nabla \cdot \vec{E} &= \frac{\rho}{\varepsilon_0} \\
-\nabla \cdot \vec{B} &= 0 \\
-\nabla \times \vec{E} &= -\frac{\partial\vec{B}}{\partial t} \\
-\nabla \times \vec{B} &= \mu_0\vec{J} + \mu_0\varepsilon_0\frac{\partial\vec{E}}{\partial t}
-\end{aligned}
-$$
-
-[Learn more](https://sli.dev/features/latex)
+<!--
+The Bob Dylan / Jack Berry / Bjork lyric clustering demo is an intuitive way to see embeddings in action. Different artists cluster differently in embedding space.
+-->
 
 ---
 
-# Diagrams
+# LLMs for Code vs. Other Domains
 
-You can create diagrams / graphs from textual descriptions, directly in your Markdown.
+**Q: Why is code a better domain for LLMs than law?**  
+Two reasons: (1) the training corpus of *functioning* code vastly outnumbers transcripts of correct legal arguments; (2) programming languages have an oracle — the compiler, the test suite. Law has no equivalent deterministic verifier. A wrong legal citation gets caught by a judge at enormous cost. A wrong function body gets caught by `cargo test` for free.
 
-<div class="grid grid-cols-4 gap-5 pt-4 -mb-6">
+**Q: Can you train a model specifically on case law?**  
+Yes — HuggingFace hosts communities (search "HF for legal") doing exactly this. Fine-tuning or RAG over domain-specific legal data is the current approach. West Law is experimenting with this.
 
-```mermaid {scale: 0.5, alt: 'A simple sequence diagram'}
-sequenceDiagram
-    Alice->John: Hello John, how are you?
-    Note over Alice,John: A typical interaction
-```
-
-```mermaid {theme: 'neutral', scale: 0.8}
-graph TD
-B[Text] --> C{Decision}
-C -->|One| D[Result 1]
-C -->|Two| E[Result 2]
-```
-
-```mermaid
-mindmap
-  root((mindmap))
-    Origins
-      Long history
-      ::icon(fa fa-book)
-      Popularisation
-        British popular psychology author Tony Buzan
-    Research
-      On effectiveness<br/>and features
-      On Automatic creation
-        Uses
-            Creative techniques
-            Strategic planning
-            Argument mapping
-    Tools
-      Pen and paper
-      Mermaid
-```
-
-```plantuml {scale: 0.7}
-@startuml
-
-package "Some Group" {
-  HTTP - [First Component]
-  [Another Component]
-}
-
-node "Other Groups" {
-  FTP - [Second Component]
-  [First Component] --> FTP
-}
-
-cloud {
-  [Example 1]
-}
-
-database "MySql" {
-  folder "This is my folder" {
-    [Folder 3]
-  }
-  frame "Foo" {
-    [Frame 4]
-  }
-}
-
-[Another Component] --> [Example 1]
-[Example 1] --> [Folder 3]
-[Folder 3] --> [Frame 4]
-
-@enduml
-```
-
-</div>
-
-Learn more: [Mermaid Diagrams](https://sli.dev/features/mermaid) and [PlantUML Diagrams](https://sli.dev/features/plantuml)
-
----
-foo: bar
-dragPos:
-  square: 691,32,167,_,-16
----
-
-# Draggable Elements
-
-Double-click on the draggable elements to edit their positions.
-
-<br>
-
-###### Directive Usage
-
-```md
-<img v-drag="'square'" src="https://sli.dev/logo.png">
-```
-
-<br>
-
-###### Component Usage
-
-```md
-<v-drag text-3xl>
-  <div class="i-carbon:arrow-up" />
-  Use the `v-drag` component to have a draggable container!
-</v-drag>
-```
-
-<v-drag pos="663,206,261,_,-15">
-  <div text-center text-3xl border border-main rounded>
-    Double-click me!
-  </div>
-</v-drag>
-
-<img v-drag="'square'" src="https://sli.dev/logo.png">
-
-###### Draggable Arrow
-
-```md
-<v-drag-arrow two-way />
-```
-
-<v-drag-arrow pos="67,452,253,46" two-way op70 />
-
----
-src: ./pages/imported-slides.md
-hide: false
----
+**Q: LLM AI detection tools — are they reliable?**  
+Generally, no. Georgia Tech gave up on their institutional tool. The arms race favors the generators. The most reliable detection method is process-based: keystroke timelines (Google's doc version, LaTeX timestamp tools) rather than output analysis.
 
 ---
 
-# Monaco Editor
+# Sub-Agents and Session Management
 
-Slidev provides built-in Monaco Editor support.
+**Q: When I batch 10 commits for an agent, should I use the same session or start fresh for the second batch?**  
+For the second batch: starting fresh is usually safer if the first session is already large. The summary of what was done in batch 1 is a good seed for session 2. Sub-agents can help — each sub-agent gets its own context, reducing the parent context's load.
 
-Add `{monaco}` to the code block to turn it into an editor:
+**Q: What is a sub-agent in this context?**  
+A sub-agent is a nested session spun off from the parent session. The parent summarizes the task, hands it to the sub-agent, and the sub-agent works in its own isolated context. The result is reported back. You see this when tools say "exploring codebase" or "running search" — those are often sub-agent invocations.
 
-```ts {monaco}
-import { ref } from 'vue'
-import { emptyArray } from './external'
+---
 
-const arr = ref(emptyArray(10))
-```
+# Image Generation vs. Text Completion
 
-Use `{monaco-run}` to create an editor that can execute the code directly in the slide:
+**Q: Is image generation the same as text generation?**  
+No — they're fundamentally different architectures. Text LLMs predict the next token autoregressively. Image generation models (DALL-E, Stable Diffusion, Midjourney) use diffusion: start with random noise and iteratively denoise toward the target image. SVG generation via LLMs works because SVG is just text (token stream); that's distinct from image diffusion.
 
-```ts {monaco-run}
-import { version } from 'vue'
-import { emptyArray, sayHello } from './external'
-
-sayHello()
-console.log(`vue ${version}`)
-console.log(emptyArray<number>(10).reduce(fib => [...fib, fib.at(-1)! + fib.at(-2)!], [1, 1]))
-```
+**Q: What is model collapse?**  
+If LLMs generate most of the internet's text and that text gets used to train the next generation of LLMs, the models lose the human baseline. Subtle biases compound, semantically nonsensical but grammatically fluent text proliferates. This is an active research concern, not yet a demonstrated collapse in production models.
 
 ---
 layout: center
 class: text-center
 ---
 
-# Learn More
+# Further Reading
 
-[Documentation](https://sli.dev) · [GitHub](https://github.com/slidevjs/slidev) · [Showcases](https://sli.dev/resources/showcases)
+| Paper | Tag |
+|-------|-----|
+| [Attention Is All You Need](https://arxiv.org/abs/1706.03762) | The transformer origin |
+| [Lost in the Middle](https://cs.stanford.edu/~nfliu/papers/lost-in-the-middle.arxiv2023.pdf) | U-curve / primacy-recency |
+| [Lost in the Middle at Birth](https://arxiv.org/pdf/2603.10123) | Architectural root cause |
+| [Found in the Middle](https://arxiv.org/pdf/2406.16008) | Mitigation research |
+| [Visual Guide to Quantization](https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization) | Model size / precision |
+| [Ollama Modelfile docs](https://docs.ollama.com/modelfile) | Local model config |
 
-<PoweredBySlidev mt-10 />
+**Open questions from this session:**
+
+*[Capture here during Q&A — these become the Confluence doc]*
+
+<!--
+This slide is intentionally sparse. The audience populates the open questions live.
+After the session, export to PDF → paste slide content into Confluence. Q&A slides (Part 7) serve as the reference section.
+-->
