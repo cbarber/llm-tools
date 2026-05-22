@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Craig Barber <craigb@mojotech.com>
+Date: Fri, 22 May 2026 19:42:37 +0000
+Subject: [PATCH] feat(tui): add --dangerously-skip-permissions to TUI command
+
+The flag existed on `opencode run` but not the default TUI command,
+so passing it at launch silently had no effect.
+
+Authored-By: opencode (anthropic/claude-sonnet-4-6)
+---
+ .../src/cli/cmd/tui/context/args.tsx |  1 +
+ .../src/cli/cmd/tui/context/sync.tsx |  7 +++++++
+ .../src/cli/cmd/tui/thread.ts        |  6 ++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/context/args.tsx b/packages/opencode/src/cli/cmd/tui/context/args.tsx
+index 8a229ff..316570f 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/args.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/args.tsx
+@@ -7,6 +7,7 @@ export interface Args {
+   continue?: boolean
+   sessionID?: string
+   fork?: boolean
++  dangerouslySkipPermissions?: boolean
+ }
+ 
+ export const { use: useArgs, provider: ArgsProvider } = createSimpleContext({
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sync.tsx b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+index 9f8a384..18e19d4 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sync.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+@@ -152,6 +152,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+ 
+         case "permission.asked": {
+           const request = event.properties
++          if (args.dangerouslySkipPermissions) {
++            void sdk.client.permission.reply({
++              requestID: request.id,
++              reply: "once",
++            })
++            break
++          }
+           const requests = store.permission[request.sessionID]
+           if (!requests) {
+             setStore("permission", request.sessionID, [request])
+diff --git a/packages/opencode/src/cli/cmd/tui/thread.ts b/packages/opencode/src/cli/cmd/tui/thread.ts
+index 7230dae..10ed631 100644
+--- a/packages/opencode/src/cli/cmd/tui/thread.ts
++++ b/packages/opencode/src/cli/cmd/tui/thread.ts
+@@ -111,6 +111,11 @@ export const TuiThreadCommand = cmd({
+       .option("agent", {
+         type: "string",
+         describe: "agent to use",
++      })
++      .option("dangerously-skip-permissions", {
++        type: "boolean",
++        describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
++        default: false,
+       }),
+   handler: async (args) => {
+     // Keep ENABLE_PROCESSED_INPUT cleared even if other code flips it.
+@@ -247,6 +252,7 @@ export const TuiThreadCommand = cmd({
+             model: args.model,
+             prompt,
+             fork: args.fork,
++            dangerouslySkipPermissions: args["dangerously-skip-permissions"],
+           },
+         })
+       } finally {
+-- 
+2.53.0

@@ -43,6 +43,8 @@ in
           # /export and /copy read from the 100-message TUI store instead of
           # fetching full history; pre-compaction messages are silently dropped.
           ./patches/opencode-export-full-transcript.patch
+          # TUI command was missing --dangerously-skip-permissions; only run had it.
+          ./patches/opencode-tui-dangerously-skip-permissions.patch
         ];
         node_modules = old.node_modules.overrideAttrs (oldNm: {
           inherit version src;
