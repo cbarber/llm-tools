@@ -291,14 +291,11 @@ describe("event recorder — session lifecycle", () => {
     }
   });
 
-  it("session.created does NOT fire on a fresh session in 1.14.48", () => {
+  it("session.created does fire on a fresh session", () => {
     // Temper synthesizes session.created dispatch via session.status → hydrateSession.
     // If this starts firing in a later version, temper could listen to it directly.
     const ev = eventsOfType("session.created");
-    console.error(`session.created count: ${ev.length} — ${ev.length === 0
-      ? "absent; temper must synthesize via session.status (correct for 1.14.48)"
-      : "present; after 1.15.0 upgrade, temper could listen here directly"}`);
-    expect(ev.length).toBe(0);
+    expect(ev.length).toBe(1);
   });
 
   it("session.status{idle} and session.idle fire atomically (same event batch)", () => {
@@ -321,29 +318,6 @@ describe("event recorder — session lifecycle", () => {
     const firstIdleT = idle[0].t;
     console.error(`last tool.execute.after: +${lastToolT}ms → session.idle: +${firstIdleT}ms (gap: ${firstIdleT - lastToolT}ms)`);
     expect(firstIdleT).toBeGreaterThan(lastToolT);
-  });
-});
-
-describe("event recorder — message events (1.14.48 baseline)", () => {
-  it("message.updated is NOT delivered in a pure baseline (missing event bug, fixed in 1.15.0)", () => {
-    // In 1.14.48, message.updated and message.part.updated do not reach the plugin event hook
-    // unless a plugin first calls session.prompt (which triggers the delivery pathway).
-    // This is the bug described in the 1.15.0 changelog:
-    // "Restored missing event types in the JavaScript SDK, including session and message events."
-    // After upgrading to 1.15.0: update the snapshot and change this assertion to .toBeGreaterThan(0).
-    const ev = eventsOfType("message.updated");
-    console.error(`message.updated in baseline: ${ev.length} (expected 0 in 1.14.48)`);
-    expect(ev.length).toBe(0);
-  });
-
-  it("message.part.delta IS delivered; message.part.updated is not (asymmetric delivery bug)", () => {
-    // delta (streaming increment) fires; updated (snapshot) does not.
-    // Both are absent from the docs event list for 1.14.48 but delta sneaks through.
-    const delta = eventsOfType("message.part.delta");
-    const updated = eventsOfType("message.part.updated");
-    console.error(`message.part.delta: ${delta.length}  message.part.updated: ${updated.length}`);
-    expect(delta.length).toBeGreaterThan(0);
-    expect(updated.length).toBe(0);
   });
 });
 

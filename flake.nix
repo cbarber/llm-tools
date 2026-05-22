@@ -31,6 +31,7 @@
         };
 
         devShells = {
+          inherit pkgs tools;
           claude-code = self.packages.${system}.claude-code;
           opencode = self.packages.${system}.opencode;
           default = pkgs.mkShell {
