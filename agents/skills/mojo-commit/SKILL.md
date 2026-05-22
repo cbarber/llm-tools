@@ -4,9 +4,14 @@ description: Atomic commit workflow with conventional commit format
 triggers:
   - event: tool.execute.after
     tool: "^(edit|write)$"
+    worktree: true
   - event: tool.execute.after
     tool: bash
     command: "git add"
+  - event: tool.execute.after
+    tool: bash
+    command: "git commit"
+    action: reset
 ---
 
 # mojo-commit
