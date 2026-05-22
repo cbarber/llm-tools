@@ -4,7 +4,7 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  sandboxed-opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" "$@"; }
+  sandboxed-opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"; }
   export -f sandboxed-opencode
 fi
 
