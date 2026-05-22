@@ -409,10 +409,7 @@ The U-shape is a **fundamental topological constraint** of decoder-only transfor
 - **Recency:** The final token is an isolated anchor via residual connections — it always influences the output.
 - **Middle:** Structurally hostile — attended by fewer subsequent tokens, no residual anchor.
 
-**Practical rules:**
-1. Keep system prompts short (important stuff first, ≤400 tokens if possible)
-2. Put critical instructions at the beginning **and** end of long contexts
-3. When context bloats → start a fresh session with a manual handoff summary
+**Practical rules:** keep system prompts short; put critical instructions at the beginning **and** end; when context bloats, start fresh with a manual handoff summary.
 
 <!--
 "Context poisoning" = when you've been going in circles so long that the tail of the context is just the loop, the middle is lost, and even your system prompt at the head is getting drowned out. Time to start fresh.
@@ -553,7 +550,7 @@ No — starting fresh is cheap. The downside is only workflow overhead. If your 
 Compaction = an LLM summarizes the session automatically (e.g., when context limit approaches). Handoff = *you* prompt for a summary, review it, correct it, and use it to seed a new session. Handoff is safer — compaction hallucinates and deprioritizes the wrong things.
 
 **Q: Is context "poisoned" after looping?**  
-Yes. If you've gone in circles and the tail of the context is just the loop, the middle context is lost and you're stuck. Discard the session; start fresh from a clean handoff.
+Yes — discard the session and start fresh from a clean handoff.
 
 ---
 
