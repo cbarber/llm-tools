@@ -21,6 +21,7 @@ if [[ -z "${OPENCODE_PORT:-}" ]]; then
     ss -tln 2>/dev/null | grep -q ":${OPENCODE_PORT} " || break
   done
 fi
+export OPENCODE_ENABLE_EXA=1
 export OPENCODE_PORT
 export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
 echo "OpenCode API: $OPENCODE_API"
