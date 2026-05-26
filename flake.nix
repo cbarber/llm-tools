@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    backlog-md.url = "github:MrLesk/Backlog.md";
   };
 
   outputs =
@@ -11,6 +12,7 @@
       self,
       nixpkgs,
       flake-utils,
+      backlog-md,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -22,6 +24,7 @@
         };
         tools = import ./tools {
           inherit pkgs;
+          backlog = backlog-md.packages.${system}.backlog-md;
         };
       in
       {
@@ -50,6 +53,7 @@
                 pre-commit
                 bats
                 opencode
+                tools.backlog
               ]
               ++ lib.optionals stdenv.isLinux [ bubblewrap ];
           };

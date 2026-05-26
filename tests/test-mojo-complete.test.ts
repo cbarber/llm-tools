@@ -61,7 +61,6 @@ async function createFixtureRepoWithRemote(): Promise<string> {
   // Set origin/HEAD so "git log origin/HEAD..HEAD" resolves correctly
   await git("remote", "set-head", "origin", "main");
 
-  await mkdir(join(dir, ".beads"));
   await mkdir(join(dir, ".opencode"));
 
   // Add an unpushed commit so the mojo-complete when-guard passes

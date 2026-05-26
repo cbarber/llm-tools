@@ -21,12 +21,11 @@ triggers:
 
 1. File issues for remaining work
 2. Run quality gates (tests, linters, builds)
-3. Update beads (close/update issues)
+3. Update backlog (close/update tasks)
 4. Push to remote:
 
    ```bash
    git pull --rebase
-   bd sync
    git push --force-with-lease
    git status  # MUST show "up to date with origin"
    ```

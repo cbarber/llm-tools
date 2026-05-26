@@ -201,15 +201,15 @@ doctor() {
     # ── 3. Required tools in PATH ──────────────────────────────────────────
     echo "Tools"
     local tool ver
-    for tool in git bd bun temper gh; do
+    for tool in git backlog bun temper gh; do
         if command -v "$tool" >/dev/null 2>&1; then
             case "$tool" in
-                git)    ver=$(git --version 2>/dev/null | awk '{print $3}') ;;
-                bd)     ver=$(bd --version 2>/dev/null | head -1 || echo "?") ;;
-                bun)    ver=$(bun --version 2>/dev/null || echo "?") ;;
-                temper) ver=$(temper --version 2>/dev/null || echo "present") ;;
-                gh)     ver=$(gh --version 2>/dev/null | head -1 | awk '{print $3}') ;;
-                *)      ver="present" ;;
+                git)     ver=$(git --version 2>/dev/null | awk '{print $3}') ;;
+                backlog) ver=$(backlog --version 2>/dev/null | head -1 || echo "?") ;;
+                bun)     ver=$(bun --version 2>/dev/null || echo "?") ;;
+                temper)  ver=$(temper --version 2>/dev/null || echo "present") ;;
+                gh)      ver=$(gh --version 2>/dev/null | head -1 | awk '{print $3}') ;;
+                *)       ver="present" ;;
             esac
             check_ok "${tool}: ${ver}"
         else
@@ -226,7 +226,7 @@ doctor() {
         check_warn "IN_AGENT_SANDBOX: not set (running outside sandbox)"
     fi
 
-    for var in OPENCODE_SESSION_ID BD_BRANCH; do
+    for var in OPENCODE_SESSION_ID; do
         if [[ -n "${!var:-}" ]]; then
             check_ok "${var}: ${!var}"
         else
@@ -278,27 +278,14 @@ doctor() {
     fi
     echo ""
 
-    # ── 6. Beads state ─────────────────────────────────────────────────────
-    echo "Beads"
-    if command -v bd >/dev/null 2>&1; then
-        local stats
-        if stats=$(bd stats --json 2>/dev/null); then
-            local open blocked
-            if command -v jq >/dev/null 2>&1; then
-                open=$(echo "$stats"    | jq -r '.summary.open_issues'    2>/dev/null || echo "?")
-                blocked=$(echo "$stats" | jq -r '.summary.blocked_issues' 2>/dev/null || echo "?")
-            else
-                open=$(echo "$stats"    | grep -o '"open_issues": *[0-9]*'    | grep -o '[0-9]*$' || echo "?")
-                blocked=$(echo "$stats" | grep -o '"blocked_issues": *[0-9]*' | grep -o '[0-9]*$' || echo "?")
-            fi
-            check_ok "issues: ${open} open, ${blocked} blocked"
-        else
-            check_warn "bd stats failed (no beads repo?)"
-        fi
-    else
-        check_warn "bd not in PATH — skipping beads checks"
+    # ── 6. Backlog ─────────────────────────────────────────────────────────
+    if [[ -d backlog ]] && command -v backlog >/dev/null 2>&1; then
+        echo "Backlog"
+        local open_count
+        open_count=$(backlog task list --status open --plain 2>/dev/null | grep -c "^" || echo "?")
+        check_ok "open tasks: ${open_count}"
+        echo ""
     fi
-    echo ""
 
     # ── Summary ────────────────────────────────────────────────────────────
     echo "====================================="

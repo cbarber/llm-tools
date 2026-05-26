@@ -4,8 +4,6 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 export AGENT_ENV_CONFIG_DIR="${HOME}/.config/claude"
-# bd setup claude configures beads hooks for Claude Code's hook format.
-export BEADS_POST_INIT="bd setup claude --quiet 2>/dev/null || true"
 source "${TOOLS_DIR}/setup-shared-shell.sh"
 
 # Claude Code supports browser auth as fallback when no API key is set.

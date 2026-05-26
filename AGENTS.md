@@ -11,7 +11,7 @@ This repository provides experimental environments for LLM agent tools, MCPs (Mo
 Running inside `nix develop .#opencode` or `nix develop .#claude-code` provides:
 
 - Sandboxed filesystem access (`IN_AGENT_SANDBOX` is set)
-- Pre-configured MCP, beads, and PR tooling
+- Pre-configured MCP and PR tooling
 
 Outside the nix shell, only this file is available.
 

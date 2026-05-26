@@ -34,12 +34,6 @@ git status --short --branch
 
 forge pr status
 
-if command -v bd >/dev/null 2>&1 && [[ -d .beads ]]; then
-  echo ""
-  echo "📋 Available work:"
-  bd ready --limit=5
-fi
-
 forge pr next-action
 ```
 
