@@ -98,8 +98,8 @@ forge doctor
 ```
 
 Reports: git state, token file presence, live `gh auth status`, required tools in PATH,
-sandbox mount lists (`NIXSMITH_SANDBOX_RO`/`NIXSMITH_SANDBOX_RW`), filesystem probes,
-and beads stats — all with `OK`/`WARN`/`FAIL` prefixes.
+sandbox mount lists (`NIXSMITH_SANDBOX_RO`/`NIXSMITH_SANDBOX_RW`), and filesystem
+probes — all with `OK`/`WARN`/`FAIL` prefixes.
 
 ### Creating a PR from Agent Work
 
@@ -112,11 +112,7 @@ git push -u origin agent/llm-tools-xyz
 # Create PR
 forge pr create \
   --title "Fix validation logic" \
-  --body "Addresses feedback from previous review. See beads issue llm-tools-xyz"
-
-# If tests failing
-forge pr create --draft \
-  --title "WIP: Fix validation logic" \
+  --body "Addresses feedback from previous review.: Fix validation logic" \
   --body "Tests failing on line 42. Need guidance on edge case handling."
 ```
 
@@ -131,7 +127,6 @@ forge pr create --draft \
 **PR Body:**
 
 - Focus on WHY (motivation, rationale, context)
-- Link to beads issue if applicable
 - If draft: clearly state what's blocking completion
 - Avoid itemizing implementation details
 

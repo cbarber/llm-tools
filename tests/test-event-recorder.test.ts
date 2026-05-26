@@ -95,7 +95,7 @@ type RecordedEvent = {
 // Recorder plugin source
 //
 // Written to fakeHome/.config/opencode/plugins/recorder.ts so it is the
-// only plugin that loads (no temper, no beads, no skills).
+// only plugin that loads (no temper, no skills).
 //
 // Named hooks are listed explicitly because they are on SEPARATE delivery
 // channels from the event hook — they never appear via event.type in the

@@ -24,7 +24,6 @@ pkgs.mkShell {
     export AGENTS_SKILLS_DIR="${../../agents/skills}"
     export TOOLS_DIR="${../../tools}"
     ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
-    export BD_BRANCH="''${BD_BRANCH:-beads-sync}"
 
     source ${./setup-shell.sh}
   '';

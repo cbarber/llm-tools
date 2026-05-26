@@ -53,8 +53,6 @@ export async function createFixtureRepo(): Promise<string> {
   await writeFile(join(dir, "AGENTS.md"), "# AGENTS\n");
   await git("add", ".");
   await git("commit", "-m", "init");
-  // .beads dir triggers mojo-init's `when: "[[ -d .beads ]]"` guard
-  await mkdir(join(dir, ".beads"));
   await mkdir(join(dir, ".opencode"));
   return dir;
 }

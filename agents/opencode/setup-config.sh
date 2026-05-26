@@ -42,7 +42,7 @@ else
 {
   "$schema": "https://opncd.ai/config.json",
   "share": "disabled",
-  "plugin": ["opencode-beads@0.3.0"]
+  "plugin": []
 }
 EOF
       echo "Created ${GLOBAL_CONFIG}"
@@ -53,7 +53,7 @@ EOF
 {
   "$schema": "https://opncd.ai/config.json",
   "share": "disabled",
-  "plugin": ["opencode-beads@0.3.0"]
+  "plugin": []
 }
 EOF
       echo "Created ${PROJECT_CONFIG}"

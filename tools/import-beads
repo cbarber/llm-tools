@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# import-beads — import open beads issues into Backlog.md
+#
+# Usage: bash tools/import-beads [--beads-file PATH] [--dry-run]
+#
+# Requires: backlog in PATH, jq in PATH
+# Requires: backlog/ directory (run `backlog init` first)
+
+set -euo pipefail
+
+BEADS_FILE=".beads/issues.jsonl"
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --beads-file) BEADS_FILE="$2"; shift 2 ;;
+    --dry-run)    DRY_RUN=true; shift ;;
+    -h|--help)
+      echo "Usage: bash tools/import-beads [--beads-file PATH] [--dry-run]"
+      echo ""
+      echo "Options:"
+      echo "  --beads-file PATH   path to beads issues.jsonl (default: .beads/issues.jsonl)"
+      echo "  --dry-run           print commands without executing"
+      exit 0
+      ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+
+if ! command -v backlog >/dev/null 2>&1; then
+  echo "Error: backlog not found in PATH. Enter the nix shell first." >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Error: jq not found in PATH." >&2
+  exit 1
+fi
+
+if [[ ! -f "$BEADS_FILE" ]]; then
+  echo "Error: beads file not found: $BEADS_FILE" >&2
+  exit 1
+fi
+
+if [[ ! -d backlog ]]; then
+  echo "Error: backlog/ directory not found. Run 'backlog init' first." >&2
+  exit 1
+fi
+
+# Map beads priority (1-4 int) to backlog priority string
+map_priority() {
+  case "$1" in
+    1) echo "high" ;;
+    2) echo "medium" ;;
+    3) echo "low" ;;
+    4) echo "low" ;;
+    *) echo "medium" ;;
+  esac
+}
+
+imported=0
+skipped=0
+
+while IFS= read -r line; do
+  status=$(echo "$line" | jq -r '.status')
+  [[ "$status" != "open" ]] && continue
+
+  title=$(echo "$line"    | jq -r '.title')
+  id=$(echo "$line"       | jq -r '.id')
+  priority=$(echo "$line" | jq -r '.priority')
+  issue_type=$(echo "$line" | jq -r '.issue_type // "task"')
+  description=$(echo "$line" | jq -r '.description // ""')
+
+  backlog_priority=$(map_priority "$priority")
+
+  args=(task create "$title"
+    --priority "$backlog_priority"
+    --labels "$issue_type"
+    --plain
+  )
+
+  if [[ -n "$description" ]]; then
+    args+=(--description "$description")
+  fi
+
+  if $DRY_RUN; then
+    echo "[dry-run] backlog ${args[*]}"
+    echo "          # beads id: $id"
+  else
+    backlog "${args[@]}"
+    echo "Imported: $id — $title"
+  fi
+
+  (( imported++ )) || true
+done < "$BEADS_FILE"
+
+echo ""
+echo "Done. Imported: $imported  Skipped (non-open): $skipped"
