@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.15.13";
-    srcHash = "sha256-+zHwO5ZY8D2s1gZzxoYI7c8yWmQSduPwv4MoFruhhPA=";
-    nodeModulesHash = "sha256-8REAw2oz8QHvQqI5TOdBUkDIv4o6OTUFJEEWj2wFJGA=";
+    version = "1.16.2";
+    srcHash = "sha256-IpTD4YCgGNtYlZ6EoyY+YLD81rIFR0D2A4W3uhWSSfo=";
+    nodeModulesHash = "sha256-xerItd70K9wtHLYMzbpqpjO9y/xgzhmaYS1PPhdojnk=";
   };
 
   # ============================================================================
