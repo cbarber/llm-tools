@@ -105,7 +105,7 @@ export async function startOpencode(
       ["serve", "--port", String(port)],
       {
         cwd: dir,
-        env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", HOME: tempHome },
+        env: { ...process.env, OPENCODE_PORT: String(port), AUTO_LAUNCH: "false", ANTHROPIC_API_KEY: "", HOME: tempHome, XDG_CONFIG_HOME: join(tempHome, ".config") },
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
