@@ -1,6 +1,6 @@
-From 7e8011b34ad3cd43305370bbfcb0c1943970c773 Mon Sep 17 00:00:00 2001
+From d2b9bf7ee8dba5430952e9a4a646cd129c320177 Mon Sep 17 00:00:00 2001
 From: Craig Barber <craigb@mojotech.com>
-Date: Sat, 28 Mar 2026 23:43:34 +0000
+Date: Thu, 11 Jun 2026 01:42:06 +0000
 Subject: [PATCH] fix(tui): fetch full message history for export and copy
 
 The TUI message store caps at 100 entries for rendering performance;
@@ -10,26 +10,25 @@ server via a testable helper with no limit.
 
 Authored-By: OpenCode (anthropic/claude-sonnet-4-6)
 ---
- .../src/cli/cmd/tui/routes/session/index.tsx  | 34 +++++++------------
- .../src/cli/cmd/tui/util/transcript.test.ts   | 28 +++++++++++++++
- .../src/cli/cmd/tui/util/transcript.ts        | 14 ++++++++
- 3 files changed, 56 insertions(+), 20 deletions(-)
- create mode 100644 packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
+ packages/tui/src/routes/session/index.tsx | 38 +++++++++--------------
+ packages/tui/src/util/transcript.ts       | 14 +++++++++
+ packages/tui/test/util/transcript.test.ts | 27 +++++++++++++++-
+ 3 files changed, 55 insertions(+), 24 deletions(-)
 
-diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-index fb62de9ac..4f1dec334 100644
---- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-+++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-@@ -78,7 +78,7 @@
+diff --git a/packages/tui/src/routes/session/index.tsx b/packages/tui/src/routes/session/index.tsx
+index 7736eb7..16fab24 100644
+--- a/packages/tui/src/routes/session/index.tsx
++++ b/packages/tui/src/routes/session/index.tsx
+@@ -68,7 +68,7 @@ import { PermissionPrompt } from "./permission"
  import { QuestionPrompt } from "./question"
  import { DialogExportOptions } from "../../ui/dialog-export-options"
  import * as Model from "../../util/model"
 -import { formatTranscript } from "../../util/transcript"
 +import { fetchTranscriptMessages, formatTranscript } from "../../util/transcript"
- import { UI } from "@/cli/ui.ts"
- import { useTuiConfig } from "../../context/tui-config"
- import { getScrollAcceleration } from "../../util/scroll"
-@@ -844,17 +844,13 @@
+ import { sessionEpilogue } from "../../util/presentation"
+ import { setPreLayoutSiblingMargin } from "../../util/layout"
+ import { useTuiConfig } from "../../config"
+@@ -921,17 +921,13 @@ export function Session() {
          try {
            const sessionData = session()
            if (!sessionData) return
@@ -51,10 +50,10 @@ index fb62de9ac..4f1dec334 100644
 +            assistantMetadata: showAssistantMetadata(),
 +            providers: sync.data.provider,
 +          })
-           await Clipboard.copy(transcript)
+           await clipboard.write?.(transcript)
            toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
-         } catch (error) {
-@@ -875,7 +871,7 @@
+         } catch {
+@@ -951,7 +947,7 @@ export function Session() {
          try {
            const sessionData = session()
            if (!sessionData) return
@@ -63,7 +62,7 @@ index fb62de9ac..4f1dec334 100644
  
            const defaultFilename = `session-${sessionData.id.slice(0, 8)}.md`
  
-@@ -890,16 +886,12 @@
+@@ -966,16 +962,12 @@ export function Session() {
  
            if (options === null) return
  
@@ -86,46 +85,12 @@ index fb62de9ac..4f1dec334 100644
  
            if (options.openWithoutSaving) {
              // Just open in editor without saving
-diff --git a/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts b/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
-new file mode 100644
-index 000000000..ad9c88b60
---- /dev/null
-+++ b/packages/opencode/src/cli/cmd/tui/util/transcript.test.ts
-@@ -0,0 +1,28 @@
-+import { expect, test } from "bun:test"
-+import type { Part, UserMessage } from "@opencode-ai/sdk/v2"
-+import { fetchTranscriptMessages } from "./transcript"
-+
-+function makeMsg(id: string): { info: UserMessage; parts: Part[] } {
-+  return {
-+    info: { id, role: "user", sessionID: "ses_test", time: { created: 0 } } as UserMessage,
-+    parts: [{ type: "text", text: `content of ${id}`, synthetic: false }] as Part[],
-+  }
-+}
-+
-+test("returns all messages the server provides, including pre-compaction ones", async () => {
-+  const serverMessages = Array.from({ length: 150 }, (_, i) => makeMsg(`msg_${i}`))
-+  const client = {
-+    session: {
-+      // Mirrors server behaviour: honours limit when provided, returns all when absent.
-+      messages: async (args: { sessionID: string; limit?: number }) => ({
-+        data: args.limit ? serverMessages.slice(0, args.limit) : serverMessages,
-+      }),
-+    },
-+  }
-+
-+  const result = await fetchTranscriptMessages(client as any, "ses_test")
-+
-+  expect(result).toHaveLength(150)
-+  expect(result[0].info.id).toBe("msg_0")
-+  expect(result[149].info.id).toBe("msg_149")
-+})
-diff --git a/packages/opencode/src/cli/cmd/tui/util/transcript.ts b/packages/opencode/src/cli/cmd/tui/util/transcript.ts
-index 420c9dde1..35ff47989 100644
---- a/packages/opencode/src/cli/cmd/tui/util/transcript.ts
-+++ b/packages/opencode/src/cli/cmd/tui/util/transcript.ts
-@@ -2,6 +2,20 @@
- import { Locale } from "@/util/locale"
+diff --git a/packages/tui/src/util/transcript.ts b/packages/tui/src/util/transcript.ts
+index d727c19..8099c9d 100644
+--- a/packages/tui/src/util/transcript.ts
++++ b/packages/tui/src/util/transcript.ts
+@@ -2,6 +2,20 @@ import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai
+ import { Locale } from "./locale"
  import * as Model from "./model"
  
 +type Client = {
@@ -145,3 +110,46 @@ index 420c9dde1..35ff47989 100644
  export type TranscriptOptions = {
    thinking: boolean
    toolDetails: boolean
+diff --git a/packages/tui/test/util/transcript.test.ts b/packages/tui/test/util/transcript.test.ts
+index 02d6ef0..56f12ac 100644
+--- a/packages/tui/test/util/transcript.test.ts
++++ b/packages/tui/test/util/transcript.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, test } from "bun:test"
+-import { formatAssistantHeader, formatMessage, formatPart, formatTranscript } from "../../src/util/transcript"
++import { fetchTranscriptMessages, formatAssistantHeader, formatMessage, formatPart, formatTranscript } from "../../src/util/transcript"
+ import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai/sdk/v2"
+ 
+ const providers: Provider[] = [
+@@ -419,3 +419,28 @@ describe("transcript", () => {
+     })
+   })
+ })
++
++function makeMsg(id: string): { info: UserMessage; parts: Part[] } {
++  return {
++    info: { id, role: "user", sessionID: "ses_test", time: { created: 0 } } as UserMessage,
++    parts: [{ type: "text", text: `content of ${id}`, synthetic: false }] as Part[],
++  }
++}
++
++test("fetchTranscriptMessages returns all messages the server provides, including pre-compaction ones", async () => {
++  const serverMessages = Array.from({ length: 150 }, (_, i) => makeMsg(`msg_${i}`))
++  const client = {
++    session: {
++      // Mirrors server behaviour: honours limit when provided, returns all when absent.
++      messages: async (args: { sessionID: string; limit?: number }) => ({
++        data: args.limit ? serverMessages.slice(0, args.limit) : serverMessages,
++      }),
++    },
++  }
++
++  const result = await fetchTranscriptMessages(client as any, "ses_test")
++
++  expect(result).toHaveLength(150)
++  expect(result[0].info.id).toBe("msg_0")
++  expect(result[149].info.id).toBe("msg_149")
++})
+-- 
+2.53.0
+

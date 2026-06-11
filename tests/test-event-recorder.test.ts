@@ -346,13 +346,13 @@ describe("event recorder — separate hook channels", () => {
     expect(viaEvent.length).toBe(0);
   });
 
-  it("session.updated fires BEFORE chat.message (temper state-machine ordering assumption)", () => {
-    const firstSessionUpdated = eventsOfType("session.updated")[0];
+  it("session.created fires BEFORE chat.message (temper new-session detection depends on this)", () => {
+    const sessionCreated = eventsOfType("session.created")[0];
     const firstChatMsg = newSessionEvents.find((e) => e.source === "hook.chat.message");
-    expect(firstSessionUpdated).toBeDefined();
+    expect(sessionCreated).toBeDefined();
     expect(firstChatMsg).toBeDefined();
-    console.error(`session.updated: +${firstSessionUpdated!.t}ms  chat.message: +${firstChatMsg!.t}ms`);
-    expect(firstSessionUpdated!.t).toBeLessThan(firstChatMsg!.t);
+    console.error(`session.created: +${sessionCreated!.t}ms  chat.message: +${firstChatMsg!.t}ms`);
+    expect(sessionCreated!.t).toBeLessThan(firstChatMsg!.t);
   });
 });
 
@@ -371,7 +371,7 @@ describe("event recorder — restore snapshot", () => {
     const beforePrompt = restoredSessionEvents.filter((e) => e.t < (firstChat?.t ?? 0));
     process.stderr.write(`\nRestore events before first prompt: ${beforePrompt.length}\n`);
     for (const e of beforePrompt) process.stderr.write(`  +${e.t}ms  ${e.type}\n`);
-    expect(beforePrompt).toMatchSnapshot();
+    expect(beforePrompt.map(({ t: _t, ...rest }) => rest)).toMatchSnapshot();
   });
 
   it("session.updated fires — or does not — before chat.message on restore", () => {

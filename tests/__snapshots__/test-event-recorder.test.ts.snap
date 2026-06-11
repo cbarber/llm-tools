@@ -3,7 +3,52 @@
 exports[`event recorder — snapshot baseline event type sequence matches snapshot 1`] = `
 [
   "[hook.event] session.created",
-  "[hook.event] session.updated",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] reference.updated",
+  "[hook.event] plugin.added",
   "[hook.event] session.next.agent.switched",
   "[hook.event] session.next.model.switched",
   "[hook.chat.message] chat.message",
@@ -14,13 +59,13 @@ exports[`event recorder — snapshot baseline event type sequence matches snapsh
   "[hook.event] message.updated",
   "[hook.event] session.updated",
   "[hook.event] session.updated",
+  "[hook.event] session.diff",
+  "[hook.event] message.updated",
   "[hook.event] session.status",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.updated",
   "[hook.tool.before] tool.execute.before",
   "[hook.event] message.part.updated",
-  "[hook.event] session.diff",
-  "[hook.event] message.updated",
   "[hook.shell.env] shell.env",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.updated",
@@ -32,13 +77,14 @@ exports[`event recorder — snapshot baseline event type sequence matches snapsh
   "[hook.event] message.updated",
   "[hook.event] session.status",
   "[hook.event] message.updated",
+  "[hook.event] session.updated",
+  "[hook.event] session.diff",
   "[hook.event] session.status",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.delta",
   "[hook.event] message.part.updated",
-  "[hook.event] session.updated",
-  "[hook.event] session.diff",
+  "[hook.event] message.updated",
   "[hook.event] message.part.updated",
   "[hook.event] message.updated",
   "[hook.event] message.part.updated",
@@ -46,7 +92,6 @@ exports[`event recorder — snapshot baseline event type sequence matches snapsh
   "[hook.event] session.status",
   "[hook.event] session.status",
   "[hook.event] session.idle",
-  "[hook.event] message.updated",
   "[hook.event] session.updated",
   "[hook.event] session.diff",
   "[hook.event] message.updated",
@@ -59,13 +104,15 @@ exports[`event recorder — snapshot baseline event type counts match snapshot (
   "[hook.event] message.part.delta": 1,
   "[hook.event] message.part.updated": 14,
   "[hook.event] message.updated": 10,
+  "[hook.event] plugin.added": 45,
+  "[hook.event] reference.updated": 1,
   "[hook.event] session.created": 1,
   "[hook.event] session.diff": 3,
   "[hook.event] session.idle": 1,
   "[hook.event] session.next.agent.switched": 1,
   "[hook.event] session.next.model.switched": 1,
   "[hook.event] session.status": 6,
-  "[hook.event] session.updated": 6,
+  "[hook.event] session.updated": 5,
   "[hook.shell.env] shell.env": 1,
   "[hook.tool.after] tool.execute.after": 1,
   "[hook.tool.before] tool.execute.before": 1,
@@ -74,20 +121,66 @@ exports[`event recorder — snapshot baseline event type counts match snapshot (
 
 exports[`event recorder — restore snapshot event type sequence matches snapshot 1`] = `
 [
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] plugin.added",
+  "[hook.event] reference.updated",
+  "[hook.event] plugin.added",
   "[hook.chat.message] chat.message",
   "[hook.event] message.updated",
   "[hook.event] message.part.updated",
   "[hook.event] session.updated",
   "[hook.event] session.status",
   "[hook.event] message.updated",
-  "[hook.event] session.status",
   "[hook.event] session.updated",
+  "[hook.event] session.diff",
+  "[hook.event] message.updated",
+  "[hook.event] session.status",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.updated",
   "[hook.event] message.part.delta",
   "[hook.event] message.part.updated",
-  "[hook.event] session.diff",
-  "[hook.event] message.updated",
   "[hook.event] message.part.updated",
   "[hook.event] message.updated",
   "[hook.event] message.part.updated",
@@ -101,11 +194,334 @@ exports[`event recorder — restore snapshot event type sequence matches snapsho
 ]
 `;
 
-exports[`event recorder — restore snapshot events before first post-restore prompt (spontaneous restore events) 1`] = `[]`;
+exports[`event recorder — restore snapshot events before first post-restore prompt (spontaneous restore events) 1`] = `
+[
+  {
+    "properties": {
+      "id": "env",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "account",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "agent",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "command",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "skill",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "alibaba",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "amazon-bedrock",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "anthropic",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "azure-cognitive-services",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "azure",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "cerebras",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "cloudflare-ai-gateway",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "cloudflare-workers-ai",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "cohere",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "deepinfra",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "gateway",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "github-copilot",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "gitlab",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "google",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "google-vertex-anthropic",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "google-vertex",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "groq",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "kilo",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "llmgateway",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "mistral",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "nvidia",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "opencode",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "snowflake-cortex",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "openai-compatible",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "openai",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "openrouter",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "perplexity",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "sap-ai-core",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "togetherai",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "vercel",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "venice",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "xai",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "zenmux",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "dynamic-provider",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "models-dev",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "config-provider",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "config-agent",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "config-command",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {
+      "id": "config-skill",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+  {
+    "properties": {},
+    "source": "hook.event",
+    "type": "reference.updated",
+  },
+  {
+    "properties": {
+      "id": "core/config-reference",
+    },
+    "source": "hook.event",
+    "type": "plugin.added",
+  },
+]
+`;
 
 exports[`event recorder — restore snapshot session.updated fires — or does not — before chat.message on restore 1`] = `
 {
-  "firstEventType": "chat.message",
+  "firstEventType": "plugin.added",
   "sessionUpdatedBeforeChat": false,
 }
 `;
