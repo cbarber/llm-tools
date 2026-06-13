@@ -307,6 +307,7 @@ Commands:
   doctor                       Sandbox health check (git, auth, tools, mounts)
 
   pr create --title TITLE --body BODY [--draft]
+  pr edit [NUMBER] [--title TITLE] [--body BODY]
   pr view [NUMBER] [--json]
   pr ci [NUMBER] [--timeout SECONDS]
   pr logs [NUMBER]
@@ -361,6 +362,27 @@ has_unreviewed_llm_commits() {
     return 1
 }
 
+append_opencode_session_marker() {
+    local body="$1"
+
+    if [[ -z "${OPENCODE_SESSION_ID:-}" ]]; then
+        printf '%s' "$body"
+        return
+    fi
+
+    local marker="session(opencode): ${OPENCODE_SESSION_ID}"
+    if printf '%s' "$body" | grep -Fq "$marker"; then
+        printf '%s' "$body"
+        return
+    fi
+
+    if [[ -n "$body" ]]; then
+        printf '%s\n\n%s' "$body" "$marker"
+    else
+        printf '%s' "$marker"
+    fi
+}
+
 # PR commands
 pr_create() {
     local title="" body="" draft=false
@@ -406,6 +428,8 @@ pr_create() {
         echo ""
     fi
 
+    body=$(append_opencode_session_marker "$body")
+
     local pr_url=""
     case "$FORGE_TYPE" in
         github)
@@ -429,6 +453,46 @@ pr_create() {
     if [[ "$FORGE_TYPE" == "github" ]] && has_unreviewed_llm_commits; then
         gh pr edit --add-label "needs-human-review" 2>/dev/null || true
     fi
+}
+
+pr_edit() {
+    local number="${1:-}"
+    [[ -n "$number" ]] && shift
+
+    if [[ -z "$number" ]]; then
+        number=$(auto_detect_pr) || exit 1
+    fi
+
+    local title="" body="" body_set=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --body) body="$2"; body_set=true; shift 2 ;;
+            --title=*|--body=*)
+                echo "Error: Use space-separated arguments (e.g., --title 'text', not --title='text')" >&2
+                exit 1
+                ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    case "$FORGE_TYPE" in
+        github)
+            if [[ "$body_set" != true ]]; then
+                body=$(gh pr view "$number" --json body --jq '.body // ""')
+            fi
+            body=$(append_opencode_session_marker "$body")
+
+            local args=("$number" --body "$body")
+            [[ -n "$title" ]] && args+=(--title "$title")
+            gh pr edit "${args[@]}"
+            ;;
+        gitea)
+            echo "Error: PR edit not implemented for Gitea" >&2
+            exit 1
+            ;;
+    esac
 }
 
 pr_view() {
@@ -949,6 +1013,7 @@ case "${1:-}" in
     pr)
         case "${2:-}" in
             create) shift 2; pr_create "$@" ;;
+            edit) shift 2; pr_edit "$@" ;;
             view) shift 2; pr_view "$@" ;;
             ci) shift 2; pr_ci "$@" ;;
             logs) shift 2; pr_logs "$@" ;;

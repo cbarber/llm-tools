@@ -15,7 +15,26 @@ git() {
     fi
 
     shift
-    command git commit "$@"
+
+    if [[ -n "${OPENCODE_SESSION_ID:-}" ]]; then
+      local has_message=false
+      local arg
+      for arg in "$@"; do
+        if [[ "$arg" == "-m" ]] || [[ "$arg" == "--message" ]]; then
+          has_message=true
+          break
+        fi
+      done
+
+      if [[ "$has_message" == "true" ]]; then
+        command git commit "$@" -m "" -m "session(opencode): ${OPENCODE_SESSION_ID}"
+      else
+        command git commit "$@"
+      fi
+    else
+      command git commit "$@"
+    fi
+
     return
   fi
 
