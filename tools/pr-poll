@@ -6,7 +6,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-STATE_FILE="${REPO_DIR}/.pr-poll-state.json"
+
+REPO_HASH=$(echo "$REPO_DIR" | sed 's#/#-#g' | sed 's#^-##')
+STATE_DIR="${HOME}/.local/share/nixsmith/pr-poll/${REPO_HASH}"
+mkdir -p "$STATE_DIR"
+
+STATE_FILE="${STATE_DIR}/state.json"
+PID_FILE="${STATE_DIR}/daemon.pid"
+LOG_FILE="${STATE_DIR}/daemon.log"
 INTERVAL=${PR_POLL_INTERVAL:-30}
 DAEMON_MODE=false
 
@@ -49,9 +56,9 @@ Usage:
   pr-poll --daemon           # Run continuously (every 30s)
   pr-poll --interval 60      # Custom interval in seconds
 
-State file: ${REPO_DIR}/.pr-poll-state.json
-
-Add .pr-poll-state.json to .gitignore
+State file: ${STATE_DIR}/state.json
+PID file: ${STATE_DIR}/daemon.pid
+Log file: ${STATE_DIR}/daemon.log
 EOF
             exit 0
             ;;
@@ -459,8 +466,25 @@ poll_once() {
 
 # Run daemon or single check
 if [[ "$DAEMON_MODE" == "true" ]]; then
+    if [[ -f "$PID_FILE" ]]; then
+        old_pid=$(cat "$PID_FILE")
+        if kill -0 "$old_pid" 2>/dev/null; then
+            echo "Daemon already running (PID: $old_pid)" >&2
+            exit 0
+        fi
+
+        echo "Removing stale PID file (PID $old_pid not running)" >&2
+        rm -f "$PID_FILE"
+    fi
+
+    echo $$ > "$PID_FILE"
+    trap "rm -f '$PID_FILE'" EXIT
+
     echo "Starting PR poll daemon (interval: ${INTERVAL}s, repo: $REPO_DIR)" >&2
+    echo "PID: $$" >&2
+    echo "PID file: $PID_FILE" >&2
     echo "State file: $STATE_FILE" >&2
+    echo "Log file: $LOG_FILE" >&2
     echo "OPENCODE_API: ${OPENCODE_API:-NOT SET}" >&2
     echo "Press Ctrl+C to stop" >&2
     
