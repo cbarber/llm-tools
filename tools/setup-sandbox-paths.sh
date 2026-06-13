@@ -159,6 +159,64 @@ if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]] && [[ -f "$HOME/.ssh/config.age
   export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
 fi
 
+# ---------------------------------------------------------------------------
+# secrets.json — path- and repo-matched env vars injected into the sandbox
+# ---------------------------------------------------------------------------
+# File: ~/.config/nixsmith/secrets.json (mode 600)
+# Format:
+#   {
+#     "repos": { "github:<owner>": { "VAR": "value" } },
+#     "paths": { "/path/prefix": { "VAR": "value" } }
+#   }
+# repos match (derived from git remote owner) wins over paths match.
+# Longest paths prefix wins. Vars are passed to bwrap via --setenv and
+# never touch the outer shell.
+
+NIXSMITH_SECRETS_FILE="${HOME}/.config/nixsmith/secrets.json"
+NIXSMITH_SECRETS_ENV=""
+
+if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
+  # Migration warning: flat top-level keys (old format has no "paths"/"repos")
+  if jq -e 'has("paths") or has("repos")' "$NIXSMITH_SECRETS_FILE" >/dev/null 2>&1; then
+    _secrets_valid=true
+  else
+    echo "WARNING: ${NIXSMITH_SECRETS_FILE} uses the old flat format." \
+         "Wrap keys under \"paths\" or \"repos\". No secrets injected." >&2
+    _secrets_valid=false
+  fi
+
+  if [[ "$_secrets_valid" == "true" ]]; then
+    # repos match: derive github:<owner> from remote, check repos object
+    _github_owner=$(extract_github_owner 2>/dev/null || true)
+    if [[ -n "$_github_owner" ]]; then
+      _repo_key="github:${_github_owner}"
+      _repo_match=$(jq -r --arg k "$_repo_key" '.repos[$k] // empty | to_entries[] | "\(.key)=\(.value)"' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
+      if [[ -n "$_repo_match" ]]; then
+        NIXSMITH_SECRETS_ENV="$_repo_match"$'\n'
+      fi
+    fi
+
+    # paths match: longest prefix of pwd wins; only used when no repos match
+    if [[ -z "$NIXSMITH_SECRETS_ENV" ]]; then
+      _current_pwd="$(pwd)"
+      while IFS= read -r _prefix; do
+        if [[ "$_current_pwd" == "$_prefix"* ]]; then
+          while IFS= read -r _pair; do
+            NIXSMITH_SECRETS_ENV="${NIXSMITH_SECRETS_ENV}${_pair}"$'\n'
+          done < <(jq -r --arg p "$_prefix" '.paths[$p] | to_entries[] | "\(.key)=\(.value)"' "$NIXSMITH_SECRETS_FILE" 2>/dev/null)
+          break
+        fi
+      done < <(jq -r '(.paths // {}) | keys[] | [., length] | @tsv' "$NIXSMITH_SECRETS_FILE" 2>/dev/null | sort -t$'\t' -k2 -rn | cut -f1)
+      unset _current_pwd _prefix _pair
+    fi
+
+    unset _repo_key _repo_match _github_owner
+  fi
+  unset _secrets_valid
+fi
+
+export NIXSMITH_SECRETS_ENV
+
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   SANDBOX_MOUNTS_RW+=("$HOME")
 fi
