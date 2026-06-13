@@ -252,7 +252,59 @@ doctor() {
     fi
     echo ""
 
-    # ── 5. Filesystem probes ───────────────────────────────────────────────
+    # ── 5. secrets.json ────────────────────────────────────────────────────
+    echo "Secrets"
+    local secrets_file="${HOME}/.config/nixsmith/secrets.json"
+    if [[ ! -f "$secrets_file" ]]; then
+        check_warn "secrets.json: not found (${secrets_file})"
+    else
+        local secrets_perms
+        secrets_perms=$(stat -c '%a' "$secrets_file" 2>/dev/null || stat -f '%A' "$secrets_file" 2>/dev/null || echo "unknown")
+        if [[ "$secrets_perms" != "600" ]]; then
+            check_fail "secrets.json: permissions are ${secrets_perms}, must be 600 — run: chmod 600 ${secrets_file}"
+        else
+            check_ok "secrets.json: ${secrets_file} (600)"
+        fi
+
+        if command -v jq >/dev/null 2>&1; then
+            if ! jq -e 'has("paths") or has("repos")' "$secrets_file" >/dev/null 2>&1; then
+                check_fail "secrets.json: old flat format — wrap keys under \"paths\" or \"repos\""
+            else
+                # repos match
+                local gh_owner repo_key repo_var_count
+                gh_owner=$(extract_github_owner 2>/dev/null || true)
+                if [[ -n "$gh_owner" ]]; then
+                    repo_key="github:${gh_owner}"
+                    repo_var_count=$(jq -r --arg k "$repo_key" '.repos[$k] // {} | keys | length' "$secrets_file" 2>/dev/null || echo "0")
+                    if [[ "$repo_var_count" -gt 0 ]]; then
+                        check_ok "secrets.json: repos matched '${repo_key}' (${repo_var_count} var(s))"
+                    else
+                        check_warn "secrets.json: no repos entry for '${repo_key}'"
+                    fi
+                fi
+
+                # paths match
+                local current_pwd matched_prefixes=()
+                current_pwd="$(pwd)"
+                while IFS= read -r _prefix; do
+                    [[ "$current_pwd" == "$_prefix"* ]] && matched_prefixes+=("$_prefix")
+                done < <(jq -r '(.paths // {}) | keys[]' "$secrets_file" 2>/dev/null)
+
+                if [[ ${#matched_prefixes[@]} -eq 0 ]]; then
+                    check_warn "secrets.json: no paths entry matches $(pwd)"
+                elif [[ ${#matched_prefixes[@]} -eq 1 ]]; then
+                    local var_count
+                    var_count=$(jq -r --arg p "${matched_prefixes[0]}" '.paths[$p] | keys | length' "$secrets_file" 2>/dev/null || echo "?")
+                    check_ok "secrets.json: paths matched '${matched_prefixes[0]}' (${var_count} var(s))"
+                else
+                    check_warn "secrets.json: ${#matched_prefixes[@]} paths entries match $(pwd) — only longest is used: ${matched_prefixes[*]}"
+                fi
+            fi
+        fi
+    fi
+    echo ""
+
+    # ── 6. Filesystem probes ───────────────────────────────────────────────
     echo "Filesystem"
     local probe
     probe="$(pwd)/.nixsmith-doctor-probe"

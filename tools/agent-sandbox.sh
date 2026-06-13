@@ -260,6 +260,20 @@ BWRAP_ARGS=(
   --setenv NIXSMITH_SANDBOX_RW "${NIXSMITH_SANDBOX_RW:-}"
 )
 
+# Inject path-matched secrets from secrets.json as individual --setenv args.
+# NIXSMITH_SECRETS_ENV is newline-separated KEY=VALUE pairs set by setup-sandbox-paths.sh.
+if [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]]; then
+  while IFS= read -r _secret_pair; do
+    [[ -z "$_secret_pair" ]] && continue
+    _secret_key="${_secret_pair%%=*}"
+    _secret_val="${_secret_pair#*=}"
+    BWRAP_ARGS+=(--setenv "$_secret_key" "$_secret_val")
+    unset _secret_val
+    unset _secret_key
+  done <<< "$NIXSMITH_SECRETS_ENV"
+  unset _secret_pair
+fi
+
 add_mount_ro "/nix"
 add_mount_rw "$(pwd)"
 add_mount_rw "/tmp"
@@ -373,4 +387,5 @@ elif [[ -n "${git_dir_abs:-}" ]] && [[ -f "$git_dir_abs/config" ]]; then
   debug_sandbox "Overlaid git config read-only: $git_dir_abs/config"
 fi
 
-exec "$BWRAP" "${BWRAP_ARGS[@]}" "$@"
+exec {args_fd}< <(printf '%s\0' "${BWRAP_ARGS[@]}")
+exec "$BWRAP" --args "$args_fd" "$@"

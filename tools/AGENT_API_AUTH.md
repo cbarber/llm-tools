@@ -198,6 +198,72 @@ forge doctor          # Start here — shows token file path and live auth statu
 - Check file modes: `chmod 600 ~/.config/nixsmith/github-token-<owner>`
 - Check directory mode: `chmod 700 ~/.config/nixsmith`
 
+## LLM API Keys
+
+LLM provider credentials are injected into the sandbox via
+`~/.config/nixsmith/secrets.json`. They are never sourced into the outer shell.
+
+**File:** `~/.config/nixsmith/secrets.json` (mode `600`)
+
+**Format:**
+
+```json
+{
+  "repos": {
+    "github:acmecorp": {
+      "ANTHROPIC_API_KEY": "sk-ant-work-...",
+      "GH_TOKEN": "ghp_..."
+    }
+  },
+  "paths": {
+    "/home/alice/src/work-project": {
+      "ANTHROPIC_API_KEY": "sk-ant-work-..."
+    },
+    "/home/alice/src": {
+      "ANTHROPIC_API_KEY": "sk-ant-personal-..."
+    }
+  }
+}
+```
+
+**Matching:** `repos` match (derived from the git remote owner) wins over
+`paths`. Under `paths`, the longest prefix of `pwd` wins.
+
+**Injection:** at sandbox launch, matched vars are passed to bwrap as individual
+`--setenv` arguments and are never assigned to outer shell variables.
+
+**Supported variables** (non-exhaustive):
+
+| Provider | Variable |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Google Vertex | `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT` |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEARER_TOKEN_BEDROCK` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_RESOURCE_NAME` |
+| GitHub | `GITHUB_TOKEN` |
+| GitLab | `GITLAB_TOKEN` |
+| Groq | `GROQ_API_KEY` |
+| Mistral | `MISTRAL_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| NVIDIA | `NVIDIA_API_KEY` |
+| DigitalOcean | `DIGITALOCEAN_ACCESS_TOKEN` |
+
+Any key in the matched object is injected — the list above is guidance, not a
+restriction.
+
+**Setup:**
+
+```bash
+mkdir -p ~/.config/nixsmith
+# create/edit the file
+chmod 600 ~/.config/nixsmith/secrets.json
+```
+
+Run `forge doctor` to verify the file is found, permissions are correct, and a
+pattern matches the current project.
+
 ## Reviewing LLM Commits
 
 During `git rebase -i`, stamp each reviewed commit with a `Reviewed-By` trailer
