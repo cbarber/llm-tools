@@ -232,6 +232,23 @@ chmod 600 ~/.config/nixsmith/secrets.json
 Run `forge doctor` to verify the file is found, permissions are correct, and a
 pattern matches the current project.
 
+### Outer shell isolation
+
+After sourcing `.env` files, `setup-shared-shell.sh` unsets all known AI
+provider credentials from the outer shell. This prevents credentials set in
+`.env` or the environment from leaking into the sandbox via shell inheritance.
+Credentials reach the sandbox exclusively through secrets.json `--setenv`
+injection.
+
+The blocklist covers: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`,
+`OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
+`AWS_BEARER_TOKEN_BEDROCK`, `AZURE_OPENAI_API_KEY`, `AZURE_RESOURCE_NAME`,
+`GITLAB_TOKEN`, `CLOUDFLARE_API_TOKEN`, `NVIDIA_API_KEY`,
+`DIGITALOCEAN_ACCESS_TOKEN`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`,
+`OPENROUTER_API_KEY`.
+
 ## Reviewing LLM Commits
 
 During `git rebase -i`, stamp each reviewed commit with a `Reviewed-By` trailer
