@@ -32,12 +32,15 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
   }
 
   # Export GH_TOKEN for the current shell session so forge and gh CLI work
-  # without the sandbox credential helper. Resolved from the per-owner token
-  # file; silently skipped when not a GitHub repo or token doesn't exist yet.
-  _gh_token_file=$(nixsmith_github_token_file 2>/dev/null || true)
-  if [[ -n "$_gh_token_file" ]] && [[ -f "$_gh_token_file" ]]; then
-    export GH_TOKEN
-    GH_TOKEN=$(cat "$_gh_token_file")
+  # without the sandbox credential helper. Resolved from secrets.json
+  _gh_owner=$(extract_github_owner 2>/dev/null || true)
+  _secrets_file="${HOME}/.config/nixsmith/secrets.json"
+  if [[ -n "$_gh_owner" ]] && [[ -f "$_secrets_file" ]] && command -v jq >/dev/null 2>&1; then
+    if jq -e 'has("repos")' "$_secrets_file" >/dev/null 2>&1; then
+      _gh_token=$(jq -r --arg k "github:${_gh_owner}" '.repos[$k].GH_TOKEN // empty' "$_secrets_file" 2>/dev/null || true)
+      [[ -n "$_gh_token" ]] && export GH_TOKEN="$_gh_token"
+      unset _gh_token
+    fi
   fi
-  unset _gh_token_file
+  unset _gh_owner _secrets_file
 fi

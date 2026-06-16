@@ -16,20 +16,10 @@ the repo was cloned or what URL rewrites exist in the host gitconfig.
 
 ## GitHub Token
 
-GitHub fine-grained PATs are scoped to a single organization. Tokens are stored
-**per owner** (org or username) so the agent can work across multiple GitHub organizations
-without conflicting credentials.
-
-**Token file naming:** `~/.config/nixsmith/github-token-<owner>`
-
-- `<owner>` is the GitHub org or username, always **lowercased**
-- GitHub names are case-insensitive; lowercasing avoids case-collision on Linux filesystems
-- Examples: `github-token-acmecorp`, `github-token-cbarber`
+GitHub fine-grained PATs are stored in `secrets.json` under the `repos` key,
+keyed by `github:<owner>` (org or username, always lowercased).
 
 **Token name on GitHub:** `nixsmith - <hostname> - <owner>`
-
-Naming the PAT with the owner makes it unambiguous when managing multiple tokens in the
-GitHub settings UI.
 
 **Requirements:**
 
@@ -43,31 +33,12 @@ GitHub settings UI.
 **Caveat:** Pushing changes to `.github/workflows/` requires the `Workflows`
 permission. Add it only if the agent needs to modify CI configuration.
 
-**Security note:** The token is read from disk at each git operation by
-`git-credential-nixsmith` via the `GITHUB_TOKEN_FILE` env var set at sandbox launch.
-It is never written into the session gitconfig or any temp file. However, a compromised
-agent process with sandbox access to `~/.config/nixsmith/` could read the token directly
-— scope it to only the repositories and permissions the agent actually needs.
+**Setup:** run `tools/setup-agent-api-tokens.sh` — it opens the GitHub token
+creation page, verifies the token, and writes it into `secrets.json`.
 
-### Migration from single-token setup
-
-If you have an existing `~/.config/nixsmith/github-token` file, shell entry will be
-blocked with a migration command. Run it and re-enter the shell:
-
-```bash
-mv ~/.config/nixsmith/github-token \
-   ~/.config/nixsmith/github-token-<owner>
-```
-
-Replace `<owner>` with your GitHub username or org name (lowercase).
-
-### Manual setup
-
-```bash
-mkdir -p ~/.config/nixsmith
-echo "TOKEN" > ~/.config/nixsmith/github-token-<owner>
-chmod 600 ~/.config/nixsmith/github-token-<owner>
-```
+The token is injected into the sandbox as `GH_TOKEN` via `--setenv` and used
+by `git-credential-nixsmith` for HTTPS git operations. It is never written into
+the session gitconfig or any temp file.
 
 ## Gitea Token
 
@@ -183,8 +154,6 @@ forge issue show <number> [--json]
 forge doctor          # Start here — shows token file path and live auth status
 ```
 
-- Verify token file exists and is readable (mode 600)
-- Test manually: `GH_TOKEN=$(cat ~/.config/nixsmith/github-token-<owner>) gh auth status`
 - Test Gitea: `XDG_CONFIG_HOME=~/.config/nixsmith tea repos list`
 
 **Token verification fails:**
@@ -195,7 +164,6 @@ forge doctor          # Start here — shows token file path and live auth statu
 
 **Permission errors:**
 
-- Check file modes: `chmod 600 ~/.config/nixsmith/github-token-<owner>`
 - Check directory mode: `chmod 700 ~/.config/nixsmith`
 
 ## LLM API Keys

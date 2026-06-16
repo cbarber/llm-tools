@@ -69,7 +69,7 @@ async function createFixtureRepoWithRemote(): Promise<string> {
   await git("commit", "-m", "unpushed work");
 
   // Repoint origin to a github.com-shaped URL so setup-agent-api-tokens.sh
-  // can extract owner "test" and find the harness token file github-token-test.
+  // can extract owner "test" and find the harness secrets file.
   // The actual remote is unreachable; refs are already fetched locally.
   await git("remote", "set-url", "origin", "https://github.com/test/test");
 
