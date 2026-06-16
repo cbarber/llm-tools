@@ -32,17 +32,42 @@ detect_forge() {
 
 # Authenticate GitHub
 authenticate_github() {
-    local token_file
-    token_file=$(nixsmith_github_token_file 2>/dev/null || true)
+    # Already set in the environment (e.g. by setup-shared-shell.sh from secrets.json)
+    if [[ -n "${GH_TOKEN:-}" ]]; then
+        export GH_TOKEN
+        return 0
+    fi
 
-    if [[ -n "$token_file" ]] && [[ -f "$token_file" ]]; then
-        GH_TOKEN=$(cat "$token_file")
-        export GH_TOKEN
-    elif [[ -f "${NIXSMITH_CONFIG}/github-token" ]]; then
-        # Legacy single-token fallback — only reached if migration has not run.
-        GH_TOKEN=$(cat "${NIXSMITH_CONFIG}/github-token")
-        export GH_TOKEN
-    elif gh auth status &>/dev/null 2>&1; then
+    # secrets.json repos entry
+    local secrets_file="${NIXSMITH_CONFIG}/secrets.json"
+    local gh_owner
+    gh_owner=$(extract_github_owner 2>/dev/null || true)
+    if [[ -f "$secrets_file" ]] && command -v jq >/dev/null 2>&1; then
+        if [[ -n "$gh_owner" ]] && jq -e 'has("repos")' "$secrets_file" >/dev/null 2>&1; then
+            local token
+            token=$(jq -r --arg k "github:${gh_owner}" '.repos[$k].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
+            if [[ -n "$token" ]]; then
+                GH_TOKEN="$token"
+                export GH_TOKEN
+                return 0
+            fi
+        fi
+
+        # paths match fallback — check current pwd against paths entries
+        if jq -e 'has("paths")' "$secrets_file" >/dev/null 2>&1; then
+            local current_pwd _prefix
+            current_pwd="$(pwd)"
+            while IFS= read -r _prefix; do
+                if [[ "$current_pwd" == "$_prefix"* ]]; then
+                    token=$(jq -r --arg p "$_prefix" '.paths[$p].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
+                    [[ -n "$token" ]] && { GH_TOKEN="$token"; export GH_TOKEN; return 0; }
+                    break
+                fi
+            done < <(jq -r '(.paths // {}) | keys[] | [., length] | @tsv' "$secrets_file" 2>/dev/null | sort -t$'\t' -k2 -rn | cut -f1)
+        fi
+    fi
+
+    if gh auth status &>/dev/null 2>&1; then
         echo "⚠️  Warning: Using dev's gh auth. Set up agent tokens: tools/setup-agent-api-tokens.sh" >&2
     else
         echo "Error: No GitHub authentication." >&2
@@ -172,24 +197,30 @@ doctor() {
 
     # ── 2. GitHub auth ─────────────────────────────────────────────────────
     echo "GitHub auth"
-    local gh_owner token_file
+    local gh_owner
     gh_owner=$(extract_github_owner 2>/dev/null || true)
 
     if [[ -z "$gh_owner" ]]; then
         check_warn "owner: not a GitHub remote (skipping auth checks)"
     else
         check_ok "owner: ${gh_owner}"
-        token_file="${HOME}/.config/nixsmith/github-token-${gh_owner}"
 
-        if [[ -f "$token_file" ]] && [[ -r "$token_file" ]]; then
-            check_ok "token file: ${token_file}"
-        else
-            check_fail "token file: ${token_file} (missing or unreadable)"
+        # Resolve token: secrets.json repos entry preferred, file fallback
+        local secrets_file="${HOME}/.config/nixsmith/secrets.json"
+        local repo_key="github:${gh_owner}"
+        local gh_token=""
+
+        if [[ -f "$secrets_file" ]] && command -v jq >/dev/null 2>&1 && \
+           jq -e 'has("repos")' "$secrets_file" >/dev/null 2>&1; then
+            gh_token=$(jq -r --arg k "$repo_key" '.repos[$k].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
+            if [[ -n "$gh_token" ]]; then
+                check_ok "token: secrets.json repos.${repo_key}.GH_TOKEN"
+            fi
         fi
 
         # Live network check — always performed
         local auth_out auth_user
-        if auth_out=$(GH_TOKEN=$(cat "$token_file" 2>/dev/null || true) gh auth status 2>&1); then
+        if auth_out=$(GH_TOKEN="$gh_token" gh auth status 2>&1); then
             auth_user=$(echo "$auth_out" | grep -oE 'Logged in to github\.com account [^ ]+' | awk '{print $NF}' || true)
             check_ok "gh auth status: ok${auth_user:+ (${auth_user})}"
         else
@@ -312,15 +343,6 @@ doctor() {
         check_ok "project dir writable: $(pwd)"
     else
         check_fail "project dir not writable: $(pwd)"
-    fi
-
-    if [[ -n "${gh_owner:-}" ]]; then
-        local tf="${HOME}/.config/nixsmith/github-token-${gh_owner}"
-        if [[ -r "$tf" ]]; then
-            check_ok "token file readable: ${tf}"
-        else
-            check_fail "token file not readable: ${tf}"
-        fi
     fi
 
     if [[ -d "${HOME}/.agents/skills" ]]; then

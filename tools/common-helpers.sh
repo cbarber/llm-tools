@@ -2,9 +2,7 @@
 # Common helper functions for agent environments
 
 # Extract the GitHub owner (org or username) from the current git remote.
-# Outputs the owner lowercased, which is the canonical key for per-org token
-# file names (github-token-<owner>). GitHub names are case-insensitive;
-# lowercasing avoids case-collision on case-sensitive Linux filesystems.
+# Outputs the owner lowercased, which is the canonical key for per-org secrets
 # Prints nothing and returns 1 if no GitHub remote is found.
 extract_github_owner() {
   local remote_url
@@ -14,19 +12,6 @@ extract_github_owner() {
     return 0
   fi
   return 1
-}
-
-# Resolve the nixsmith GitHub token file path for the current repo's owner.
-# Outputs the absolute path to ~/.config/nixsmith/github-token-<owner>.
-# Prints nothing and returns 1 if no GitHub remote is found.
-nixsmith_github_token_file() {
-  local owner
-  owner=$(extract_github_owner) || return 1
-  echo "${HOME}/.config/nixsmith/github-token-${owner}"
-}
-
-nixsmith_legacy_github_token_file() {
-  echo "${HOME}/.config/nixsmith/github-token"
 }
 
 # Add agent-specific paths to BWRAP_EXTRA_PATHS

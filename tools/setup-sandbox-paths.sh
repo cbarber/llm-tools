@@ -6,7 +6,7 @@
 # their platform-specific mechanism (bwrap on Linux, sandbox-exec on macOS).
 #
 # Also generates the session gitconfig (GIT_CONFIG_GLOBAL) pointing to the
-# git-credential-nixsmith helper, which reads GITHUB_TOKEN_FILE env var.
+# git-credential-nixsmith helper, which reads GH_TOKEN env var.
 #
 # Required by caller before sourcing:
 #   AGENT_GITCONFIG_PATH  — where to write the generated gitconfig file
@@ -58,23 +58,28 @@ gitconfig_target=""
 [[ -n "$xdg_gitconfig_target" ]] && append_gitconfig_mounts "$xdg_gitconfig_target"
 [[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
 
-# Resolve the per-org token file for the current repo's GitHub owner.
-# Falls back to the deprecated single-token path so that old installs that
-# have not yet migrated still get a credential helper injected (the migration
-# warning/block is in setup-agent-api-tokens.sh; here we stay permissive so
-# the sandbox can still open while the user reads the warning).
-_github_token_file=$(nixsmith_github_token_file 2>/dev/null || true)
-if [[ -n "$_github_token_file" ]]; then
-  GITHUB_TOKEN_FILE="${_github_token_file}"
-  # Fall back to legacy path only for gitconfig injection — the credential
-  # helper will fail at runtime if the file is missing, which is the right UX.
-  [[ ! -f "$GITHUB_TOKEN_FILE" ]] && GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
-else
-  GITHUB_TOKEN_FILE="$HOME/.config/nixsmith/github-token"
-fi
-export GITHUB_TOKEN_FILE
+# Resolve the GitHub token for the current repo's owner.
+# Primary source: secrets.json repos entry (GH_TOKEN value).
+#
+# When the token comes from secrets.json it flows through NIXSMITH_SECRETS_ENV
+# as GH_TOKEN; git-credential-nixsmith uses the GH_TOKEN env var.
 
-if [[ -f "$GITHUB_TOKEN_FILE" ]]; then
+_nixsmith_secrets_file="${HOME}/.config/nixsmith/secrets.json"
+_github_owner=$(extract_github_owner 2>/dev/null || true)
+_gh_token_in_secrets=false
+
+if [[ -n "$_github_owner" ]] && [[ -f "$_nixsmith_secrets_file" ]] && command -v jq >/dev/null 2>&1; then
+  if jq -e 'has("repos")' "$_nixsmith_secrets_file" >/dev/null 2>&1; then
+    _gh_secret=$(jq -r --arg k "github:${_github_owner}" '.repos[$k].GH_TOKEN // empty' "$_nixsmith_secrets_file" 2>/dev/null || true)
+    [[ -n "$_gh_secret" ]] && _gh_token_in_secrets=true
+    unset _gh_secret
+  fi
+fi
+
+# Inject synthetic gitconfig when either a token file or secrets.json GH_TOKEN
+# is available. The credential helper uses GH_TOKEN env var injected via 
+# --setenv by agent-sandbox.sh.
+if [[ "$_gh_token_in_secrets" == "true" ]]; then
   {
     cat <<EOF
 [url "https://github.com/"]
@@ -90,6 +95,7 @@ EOF
   } > "$AGENT_GITCONFIG_PATH"
   export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG_PATH"
 fi
+unset _github_owner _nixsmith_secrets_file _gh_token_in_secrets
 
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
   [[ -d "$HOME/.ssh" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh")

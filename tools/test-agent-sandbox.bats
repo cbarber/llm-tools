@@ -146,7 +146,6 @@ setup_file() {
   ln -s "$real_gitconfig" "$test_home/.gitconfig"
 
   mkdir -p "$test_home/.config/nixsmith"
-  echo "dummy" > "$test_home/.config/nixsmith/github-token"
 
   # Mount the temp dirs explicitly so macOS sandbox-exec profile allows access.
   # HOME override alone is insufficient on macOS because the profile bakes in

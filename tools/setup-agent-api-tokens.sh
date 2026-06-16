@@ -78,16 +78,64 @@ extract_gitea_url() {
   fi
 }
 
-# Early-exit logic for GitHub: per-owner token takes priority.
-# If the legacy single-token file exists but no per-owner file does, block
-# shell entry with a clear migration instruction.
-if [[ "$remote_url" =~ github\.com ]]; then
-  per_owner_file=$(nixsmith_github_token_file 2>/dev/null || true)
-  legacy_file=$(nixsmith_legacy_github_token_file 2>/dev/null || true)
-  debug "GitHub per owner token file: '$per_owner_file'"
+# Early-exit logic for GitHub: secrets.json repos entry takes priority,
+# then per-owner token file, then legacy single-token file (migration required).
+SECRETS_FILE="${NIXSMITH_CONFIG}/secrets.json"
 
+if [[ "$remote_url" =~ github\.com ]]; then
+  owner=$(extract_github_owner 2>/dev/null || true)
+  repo_key="github:${owner}"
+  debug "GitHub owner: '$owner'"
+  debug "GitHub repo key: '$repo_key'"
+
+  # Check secrets.json repos entry
+  if [[ -f "$SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    if jq -e 'has("repos")' "$SECRETS_FILE" >/dev/null 2>&1; then
+      secrets_token=$(jq -r --arg k "$repo_key" '.repos[$k].GH_TOKEN // empty' "$SECRETS_FILE" 2>/dev/null || true)
+      if [[ -n "$secrets_token" ]]; then
+        debug "secrets.json repos entry exists — exiting early"
+        echo "✓ Agent API tokens verified - ${SECRETS_FILE} (repos.${repo_key})"
+        export GH_TOKEN="$secrets_token"
+        exit 0
+      fi
+    fi
+  fi
+
+  # Check per-owner file; offer migration to secrets.json
   if [[ -f "$per_owner_file" ]]; then
-    debug "Per-owner token exists — exiting early"
+    debug "Per-owner token file exists"
+    if [[ -t 0 ]]; then
+      echo ""
+      echo "════════════════════════════════════════════════════════════"
+      echo "  Migrate GitHub token to secrets.json?"
+      echo "════════════════════════════════════════════════════════════"
+      echo ""
+      echo "  Token file: ${per_owner_file}"
+      echo "  Destination: ${SECRETS_FILE} (repos.${repo_key}.GH_TOKEN)"
+      echo ""
+      echo "  Migrating stores the token alongside other project secrets"
+      echo "  and removes the standalone file."
+      echo ""
+      read -r -p "  Migrate now? [y/N]: " migrate_choice </dev/tty
+      if [[ "${migrate_choice,,}" == "y" ]]; then
+        file_token=$(cat "$per_owner_file")
+        mkdir -p "${NIXSMITH_CONFIG}"
+        chmod 700 "${NIXSMITH_CONFIG}"
+        if [[ ! -f "$SECRETS_FILE" ]]; then
+          printf '{"repos":{"%s":{"GH_TOKEN":"%s"}},"paths":{}}\n' "$repo_key" "$file_token" | jq . > "$SECRETS_FILE"
+        else
+          tmp=$(mktemp)
+          jq --arg k "$repo_key" --arg t "$file_token" \
+            '.repos //= {} | .repos[$k] //= {} | .repos[$k].GH_TOKEN = $t' \
+            "$SECRETS_FILE" | jq . > "$tmp" && mv "$tmp" "$SECRETS_FILE"
+        fi
+        chmod 600 "$SECRETS_FILE"
+        rm -f "$per_owner_file"
+        echo "  ✓ Migrated to ${SECRETS_FILE}"
+        export GH_TOKEN="$file_token"
+        exit 0
+      fi
+    fi
     echo "✓ Agent API tokens verified - ${per_owner_file}"
     export GH_TOKEN
     GH_TOKEN=$(cat "$per_owner_file")
@@ -141,15 +189,15 @@ setup_github() {
     return 1
   fi
 
+  local repo_key="github:${owner}"
   local token_name="nixsmith - ${HOSTNAME} - ${owner}"
-  local token_file=$(nixsmith_github_token_file 2>/dev/null || true)
 
   echo "GitHub API Token Setup"
   echo "======================"
   echo ""
   echo "Owner:      ${owner}"
   echo "Token name: ${token_name}"
-  echo "Token file: ${token_file}"
+  echo "Destination: ${SECRETS_FILE} (repos.${repo_key}.GH_TOKEN)"
   echo ""
   echo "Opening GitHub token creation page..."
   echo ""
@@ -206,16 +254,24 @@ setup_github() {
     return 1
   fi
 
-  # Store token
+  # Store token in secrets.json
   mkdir -p "${NIXSMITH_CONFIG}"
   chmod 700 "${NIXSMITH_CONFIG}"
-  echo "$token" > "${token_file}"
-  chmod 600 "${token_file}"
+  if [[ ! -f "$SECRETS_FILE" ]]; then
+    printf '{"repos":{"%s":{"GH_TOKEN":"%s"}},"paths":{}}\n' "$repo_key" "$token" | jq . > "$SECRETS_FILE"
+  else
+    local tmp
+    tmp=$(mktemp)
+    jq --arg k "$repo_key" --arg t "$token" \
+      '.repos //= {} | .repos[$k] //= {} | .repos[$k].GH_TOKEN = $t' \
+      "$SECRETS_FILE" | jq . > "$tmp" && mv "$tmp" "$SECRETS_FILE"
+  fi
+  chmod 600 "$SECRETS_FILE"
 
   # Export for immediate use
   export GH_TOKEN="$token"
 
-  echo "✓ GitHub token configured (${token_file})"
+  echo "✓ GitHub token configured (${SECRETS_FILE})"
   echo ""
 }
 
