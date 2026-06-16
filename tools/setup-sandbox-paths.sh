@@ -100,11 +100,7 @@ unset _github_owner _nixsmith_secrets_file _gh_token_in_secrets
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
   [[ -d "$HOME/.ssh" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh")
 else
-  [[ -f "$HOME/.ssh/known_hosts" ]]     && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/known_hosts")
-  [[ -f "$HOME/.ssh/config.agent" ]]    && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/config.agent")
-  [[ -f "$HOME/.ssh/agent-github" ]]    && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-github" "$HOME/.ssh/agent-github.pub")
-  [[ -f "$HOME/.ssh/agent-gitlab" ]]    && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitlab" "$HOME/.ssh/agent-gitlab.pub")
-  [[ -f "$HOME/.ssh/agent-gitea" ]]     && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/agent-gitea" "$HOME/.ssh/agent-gitea.pub")
+  [[ -f "$HOME/.ssh/known_hosts" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/known_hosts")
 fi
 
 # shellcheck disable=SC2066
@@ -159,10 +155,6 @@ fi
 if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
   IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
   for path in "${EXTRA_PATHS[@]}"; do add_mount_rw "$path"; done
-fi
-
-if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]] && [[ -f "$HOME/.ssh/config.agent" ]]; then
-  export GIT_SSH_COMMAND="ssh -F $HOME/.ssh/config.agent"
 fi
 
 # ---------------------------------------------------------------------------

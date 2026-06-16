@@ -41,10 +41,6 @@ done
 unset _blocklist_var
 
 if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; then
-  "${TOOLS_DIR}/setup-agent-keys.sh" || {
-    echo "Error: SSH key setup failed" >&2
-    exit 1
-  }
   "${TOOLS_DIR}/setup-agent-api-tokens.sh" || {
     echo "Error: API token setup failed" >&2
     exit 1
