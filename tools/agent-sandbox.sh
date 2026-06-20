@@ -377,6 +377,14 @@ build_mounts() {
 build_mounts ro "${SANDBOX_MOUNTS_RO[@]}"
 build_mounts rw "${SANDBOX_MOUNTS_RW[@]}"
 
+# ---------------------------------------------------------------------------
+# OpenCode: blank out auth.json via OPENCODE_AUTH_CONTENT
+# ---------------------------------------------------------------------------
+# OPENCODE_AUTH_CONTENT overrides auth.json entirely when set. Blank it out
+# so stored credentials never reach the sandbox — provider env vars injected
+# via --args (ANTHROPIC_API_KEY etc.) are the sole credential source.
+BWRAP_ARGS+=(--setenv OPENCODE_AUTH_CONTENT "{}")
+
 # RO overlay after RW mounts so it takes precedence — agents must not override identity
 if [[ -n "${common_git_dir_abs:-}" ]] && [[ -f "$common_git_dir_abs/config" ]]; then
   BWRAP_ARGS+=(--ro-bind "$common_git_dir_abs/config" "$common_git_dir_abs/config")

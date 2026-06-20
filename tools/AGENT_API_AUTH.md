@@ -232,6 +232,13 @@ chmod 600 ~/.config/nixsmith/secrets.json
 Run `forge doctor` to verify the file is found, permissions are correct, and a
 pattern matches the current project.
 
+### Agent credential file isolation
+
+OpenCode stores credentials in `~/.local/share/opencode/auth.json`, which
+is mounted into the sandbox for legitimate reasons (session history, MCP
+OAuth tokens). To prevent stored credentials leaking across projects,
+`OPENCODE_AUTH_CONTENT` is set to an empty JSON object.
+
 ### Outer shell isolation
 
 After sourcing `.env` files, `setup-shared-shell.sh` unsets all known AI
