@@ -1,0 +1,42 @@
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index f705f209aa9a..1833fd21832c 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -1622,7 +1622,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+     const args = matchingInvocation?.args
+ 
+     const cwd = Instance.directory
+-    const shellEnv = await Plugin.trigger("shell.env", { cwd }, { env: {} })
++    const shellEnv = await Plugin.trigger("shell.env", { cwd, sessionID: input.sessionID, callID: part.callID }, { env: {} })
+     const proc = spawn(shell, args, {
+       cwd,
+       detached: process.platform !== "win32",
+diff --git a/packages/opencode/src/tool/bash.ts b/packages/opencode/src/tool/bash.ts
+index 67559b78c085..2b692db6ee91 100644
+--- a/packages/opencode/src/tool/bash.ts
++++ b/packages/opencode/src/tool/bash.ts
+@@ -163,7 +163,7 @@ export const BashTool = Tool.define("bash", async () => {
+         })
+       }
+ 
+-      const shellEnv = await Plugin.trigger("shell.env", { cwd }, { env: {} })
++      const shellEnv = await Plugin.trigger("shell.env", { cwd, sessionID: ctx.sessionID, callID: ctx.callID }, { env: {} })
+       const proc = spawn(params.command, {
+         shell,
+         cwd,
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index bd4ba530498d..76370d1d5a7f 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -185,7 +185,10 @@ export interface Hooks {
+     input: { tool: string; sessionID: string; callID: string },
+     output: { args: any },
+   ) => Promise<void>
+-  "shell.env"?: (input: { cwd: string }, output: { env: Record<string, string> }) => Promise<void>
++  "shell.env"?: (
++    input: { cwd: string; sessionID?: string; callID?: string },
++    output: { env: Record<string, string> },
++  ) => Promise<void>
+   "tool.execute.after"?: (
+     input: { tool: string; sessionID: string; callID: string; args: any },
+     output: {
