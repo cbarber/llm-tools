@@ -28,25 +28,20 @@ echo "OpenCode API: $OPENCODE_API"
 
 ${SETUP_CONFIG_SCRIPT}
 
-if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
-  PR_POLL_PID_FILE="$(git rev-parse --show-toplevel)/.pr-poll.pid"
+if [[ "${PR_POLL_DAEMON:-true}" == "true" ]] && [[ -n "${OPENCODE_SESSION_ID:-}" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  REPO_HASH=$(echo "$REPO_ROOT" | sed 's#/#-#g' | sed 's#^-##')
+  STATE_DIR="${HOME}/.local/share/nixsmith/pr-poll/${REPO_HASH}"
+  mkdir -p "$STATE_DIR"
 
-  cleanup_pr_poll() {
-    [[ -f "$PR_POLL_PID_FILE" ]] || return
-    local pid
-    pid=$(cat "$PR_POLL_PID_FILE")
-    kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null && echo "Stopped PR polling daemon (PID $pid)"
-    rm -f "$PR_POLL_PID_FILE"
-  }
-  trap cleanup_pr_poll EXIT
+  PID_FILE="${STATE_DIR}/daemon.pid"
+  LOG_FILE="${STATE_DIR}/daemon.log"
 
-  REPO_ROOT="$(git rev-parse --show-toplevel)"
-  PR_POLL_LOG="$REPO_ROOT/.pr-poll.log"
-  "$REPO_ROOT/tools/pr-poll" --daemon >"$PR_POLL_LOG" 2>&1 &
-  echo $! >"$PR_POLL_PID_FILE"
-  echo "Started PR polling daemon (PID $!, interval: 30s)"
-  echo "Logs: $PR_POLL_LOG"
-  echo "Disable with: PR_POLL_DAEMON=false"
+  if [[ ! -f "$PID_FILE" ]] || ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    nohup bash "${TOOLS_DIR}/pr-poll" --daemon >>"$LOG_FILE" 2>&1 &
+    echo "Started PR polling daemon (session: ${OPENCODE_SESSION_ID})"
+    echo "Logs: $LOG_FILE"
+  fi
 fi
 
 # Don't exec — background pr-poll daemon must survive the launch.
