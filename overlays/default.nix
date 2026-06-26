@@ -40,6 +40,7 @@ in
           hash = opencode.srcHash;
         };
         patches = (old.patches or [ ]) ++ [
+          ./patches/add-sessionid-to-shell-env.patch
           # /export and /copy read from the 100-message TUI store instead of
           # fetching full history; pre-compaction messages are silently dropped.
           ./patches/opencode-export-full-transcript.patch
