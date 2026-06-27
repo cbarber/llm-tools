@@ -12,9 +12,9 @@ let
   # OPENCODE
   # ============================================================================
   opencode = {
-    version = "1.17.3";
-    srcHash = "sha256-Pqj49q8bTwnTQxnlJbqnot7Pvo2K/WbtdEjEsq5P7qo=";
-    nodeModulesHash = "sha256-1S6w8M4Mil+g8K3b2P6cZg8rNRrt2OxCIuJxcMaDbRE=";
+    version = "1.17.11";
+    srcHash = "sha256-ZgmRHoI3rxsSM10sA4cZu/FxqwmgawQvlW3eykXQsqQ=";
+    nodeModulesHash = "sha256-PhFDNxeJHTQdT8mAJz7hVKnsUL3Ez6NSgnUSMz3LUqY=";
   };
 
   # ============================================================================
@@ -48,6 +48,15 @@ in
         ];
         node_modules = old.node_modules.overrideAttrs (oldNm: {
           inherit version src;
+          # ghostty-web is a git-sourced dependency whose pinned commit in the
+          # bun.lock diverges from what bun resolves at v1.17.11 tag time.
+          # Update the lockfile before bun install --frozen-lockfile runs.
+          postPatch = (oldNm.postPatch or "") + ''
+            substituteInPlace bun.lock \
+              --replace-fail \
+              '"ghostty-web": ["ghostty-web@github:anomalyco/ghostty-web#20bd361", {}, "anomalyco-ghostty-web-20bd361", "sha512-dW0nwaiBBcun9y5WJSvm3HxDLe5o9V0xLCndQvWonRVubU8CS1PHxZpLffyPt1YujPWC13ez03aWxcuKBPYYGQ=="]' \
+              '"ghostty-web": ["ghostty-web@github:anomalyco/ghostty-web#513463a", {}, "anomalyco-ghostty-web-513463a", "sha512-GZR8LSmgGzViWnBJrqRI8MpAZRCJxhcr1Hi9Tyeh7YRooHZQjK9J97FQRD3tbBaM2wjq05gzGY2UEsG+JtZeBw=="]'
+          '';
           # 1.14.x expanded the workspace; override buildPhase to include all
           # required --filter targets. This supersedes the nixpkgs-inherited
           # buildPhase which only filtered ./packages/opencode --production.
