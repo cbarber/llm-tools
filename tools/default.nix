@@ -8,6 +8,7 @@ let
   git-absorb = pkgs.git-absorb;
 
   fence = pkgs.callPackage ./fence { };
+  iron-proxy = pkgs.callPackage ./iron-proxy { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.stdenv.mkDerivation {
@@ -43,6 +44,7 @@ in
     spr
     git-absorb
     fence
+    iron-proxy
     temper
     forge
     git-agent-sequence-editor
@@ -58,6 +60,7 @@ in
     spr
     git-absorb
     fence
+    iron-proxy
     temper
     forge
     git-agent-sequence-editor

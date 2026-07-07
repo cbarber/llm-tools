@@ -50,6 +50,17 @@ if [[ -z "$FENCE_BIN" ]]; then
 fi
 _dbg "fence binary: $FENCE_BIN"
 
+# ── Locate iron-proxy ─────────────────────────────────────────────────────────
+_dbg "locating iron-proxy binary"
+
+IRON_PROXY_BIN=""
+if [[ -n "${IRON_PROXY_PATH:-}" ]] && [[ -x "$IRON_PROXY_PATH" ]]; then
+  IRON_PROXY_BIN="$IRON_PROXY_PATH"
+elif command -v iron-proxy &>/dev/null; then
+  IRON_PROXY_BIN="$(command -v iron-proxy)"
+fi
+_dbg "iron-proxy binary: ${IRON_PROXY_BIN:-<not found>}"
+
 # ── Build fence config ────────────────────────────────────────────────────────
 # Explicit config — no template inheritance. defaultDenyRead: true means only
 # paths in allowRead are readable. useDefaults: false disables fence's built-in
@@ -62,8 +73,14 @@ _dbg "fence binary: $FENCE_BIN"
 
 _FENCE_CFG=$(mktemp /tmp/fence-XXXXXX.json)
 
+_IRON_PROXY_PID=""
+_IRON_CFG=""
+
 _cleanup() {
-  rm -f "$_FENCE_CFG"
+  rm -f "$_FENCE_CFG" "$_IRON_CFG"
+  if [[ -n "$_IRON_PROXY_PID" ]]; then
+    kill "$_IRON_PROXY_PID" 2>/dev/null || true
+  fi
 }
 trap _cleanup EXIT
 
@@ -83,7 +100,7 @@ fi
 # Always readable: /nix (binaries), /proc (self status), /etc (SSL/resolv),
 # /run/current-system (NixOS compat). These are system paths not covered by
 # setup-sandbox-paths.sh which focuses on home/project paths.
-_system_ro=("/nix" "/proc" "/etc" "/run/current-system")
+_system_ro=("/nix" "/proc" "/etc" "/run/current-system" "/tmp")
 
 _deny_write_json=$(printf '%s\n' "${_deny_write[@]}"               | jq -R . | jq -s .)
 _deny_read_json=$(printf '%s\n' "${_deny_write[@]}"                | jq -R . | jq -s .)
@@ -145,16 +162,181 @@ if [[ -n "${OPENCODE_PORT:-}" ]]; then
   export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
 fi
 
-if [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]]; then
+# ── Credential proxy (iron-proxy) ─────────────────────────────────────────────
+# Secrets must not enter the sandbox process environment. iron-proxy intercepts
+# HTTPS traffic and injects credentials at the HTTP layer so the sandboxed
+# agent never sees the raw secret values.
+#
+# Priority:
+#   1. NIXSMITH_CREDENTIAL_PROXY already set → use it directly (no iron-proxy)
+#   2. NIXSMITH_SECRETS_ENV set + iron-proxy available → start iron-proxy
+#   3. Neither → secrets fall through as env vars (legacy, no proxy)
+
+if [[ -n "${NIXSMITH_CREDENTIAL_PROXY:-}" ]]; then
+  _dbg "using pre-configured credential proxy: $NIXSMITH_CREDENTIAL_PROXY"
+  # Secrets already flow through the pre-configured proxy — the raw values
+  # must not also ride along as a plaintext env var (TASK-38).
+  unset NIXSMITH_SECRETS_ENV
+  _PROXY_TUNNEL="$NIXSMITH_CREDENTIAL_PROXY"
+  _PROXY_CA="${NIXSMITH_CREDENTIAL_PROXY_CA:-}"
+
+elif [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]] && [[ -n "$IRON_PROXY_BIN" ]]; then
+  _dbg "starting iron-proxy for credential injection"
+
+  # Generate CA once — persists across sessions
+  _IRON_CA_DIR="${HOME}/.config/nixsmith/iron-proxy"
+  mkdir -p "$_IRON_CA_DIR"
+  if [[ ! -f "$_IRON_CA_DIR/ca.crt" ]]; then
+    _dbg "generating iron-proxy CA in $_IRON_CA_DIR"
+    "$IRON_PROXY_BIN" generate-ca --outdir "$_IRON_CA_DIR" >/dev/null 2>&1
+  fi
+
+  # Pick a free port for the tunnel listener
+  _IRON_PORT=$(python3 -c \
+    'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' \
+    2>/dev/null || echo "0")
+  _dbg "iron-proxy tunnel port: $_IRON_PORT"
+
+  # Write per-session YAML config
+  _IRON_CFG=$(mktemp /tmp/iron-proxy-XXXXXX.yaml)
+
+  # For each KEY=VALUE pair: generate a per-session proxy token, configure
+  # iron-proxy to swap it for the real secret, and export only the proxy token
+  # into the sandbox env. The real secret goes only to iron-proxy's env.
+  _IRON_SECRETS_YAML=""
+  _iron_env=()
+  _sandbox_token_env=()
   while IFS= read -r _pair; do
     [[ -z "$_pair" ]] && continue
     _key="${_pair%%=*}"
     _val="${_pair#*=}"
-    export "${_key}=${_val}"
+    # Random proxy token — sandbox sees this, never the real value
+    _token="proxy-${_key,,}-$(head -c 12 /dev/urandom | base64 | tr -d '+/=')"
+    _IRON_SECRETS_YAML+="        - source:"$'\n'
+    _IRON_SECRETS_YAML+="            type: env"$'\n'
+    _IRON_SECRETS_YAML+="            var: '${_key}'"$'\n'
+    _IRON_SECRETS_YAML+="          replace:"$'\n'
+    _IRON_SECRETS_YAML+="            proxy_value: '${_token}'"$'\n'
+    _IRON_SECRETS_YAML+="            match_headers: ['X-Api-Key', 'Authorization']"$'\n'
+    _IRON_SECRETS_YAML+="            match_body: true"$'\n'
+    _IRON_SECRETS_YAML+="            match_query: true"$'\n'
+    _IRON_SECRETS_YAML+="          rules:"$'\n'
+    _IRON_SECRETS_YAML+="            - host: '*'"$'\n'
+    _iron_env+=("${_key}=${_val}")
+    _sandbox_token_env+=("${_key}=${_token}")
   done <<< "$NIXSMITH_SECRETS_ENV"
-  unset _pair _key _val
+  unset NIXSMITH_SECRETS_ENV
+  unset _pair _key _val _token
+
+  {
+    cat <<IRON_CFG_EOF
+dns:
+  enabled: false
+proxy:
+  http_listen: "127.0.0.1:0"
+  https_listen: "127.0.0.1:0"
+  tunnel_listen: "127.0.0.1:${_IRON_PORT}"
+  upstream_deny_cidrs: []
+metrics:
+  listen: "127.0.0.1:0"
+tls:
+  ca_cert: "${_IRON_CA_DIR}/ca.crt"
+  ca_key: "${_IRON_CA_DIR}/ca.key"
+transforms:
+  - name: allowlist
+    config:
+      warn: true
+  - name: secrets
+    config:
+      secrets:
+IRON_CFG_EOF
+    printf '%s' "$_IRON_SECRETS_YAML"
+  } > "$_IRON_CFG"
+
+  unset _IRON_SECRETS_YAML
+
+  # Start iron-proxy with real secrets in its env only; redirect logs to
+  # FENCE_LOG_FILE when set, otherwise discard them.
+  _iron_log="${FENCE_LOG_FILE:-/dev/null}"
+  env "${_iron_env[@]}" "$IRON_PROXY_BIN" -config "$_IRON_CFG" >>"$_iron_log" 2>&1 &
+  unset _iron_log
+  _IRON_PROXY_PID=$!
+  _dbg "iron-proxy started (pid=$_IRON_PROXY_PID, port=$_IRON_PORT)"
+
+  # Wait up to 5s for the tunnel port to be ready
+  _iron_ready=false
+  for _i in 1 2 3 4 5; do
+    sleep 1
+    if (echo "" >/dev/tcp/127.0.0.1/"$_IRON_PORT") 2>/dev/null; then
+      _iron_ready=true
+      break
+    fi
+  done
+  unset _i
+  if [[ "$_iron_ready" != "true" ]]; then
+    echo "agent-sandbox: iron-proxy did not start within 5s (port $_IRON_PORT), falling back to env injection" >&2
+    kill "$_IRON_PROXY_PID" 2>/dev/null || true
+    _IRON_PROXY_PID=""
+    # Fall back: export real secrets since the proxy isn't intercepting
+    for _pair in "${_iron_env[@]:-}"; do
+      [[ -z "$_pair" ]] && continue
+      export "${_pair?}"
+    done
+    unset _iron_env _sandbox_token_env _pair _IRON_PORT _IRON_CA_DIR
+    _PROXY_TUNNEL=""
+    _PROXY_CA=""
+  else
+    # Export proxy tokens into the sandbox env — real secrets stay in iron-proxy only
+    for _pair in "${_sandbox_token_env[@]:-}"; do
+      [[ -z "$_pair" ]] && continue
+      export "${_pair?}"
+    done
+    unset _iron_env _sandbox_token_env _pair
+
+    _PROXY_TUNNEL="http://127.0.0.1:${_IRON_PORT}"
+    _PROXY_CA="${_IRON_CA_DIR}/ca.crt"
+    unset _IRON_PORT _IRON_CA_DIR
+  fi
+  unset _iron_ready
+
+else
+  # No iron-proxy available — fall back to injecting secrets as env vars (legacy)
+  if [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]]; then
+    while IFS= read -r _pair; do
+      [[ -z "$_pair" ]] && continue
+      _key="${_pair%%=*}"
+      _val="${_pair#*=}"
+      export "${_key}=${_val}"
+    done <<< "$NIXSMITH_SECRETS_ENV"
+    unset _pair _key _val
+  fi
+  unset NIXSMITH_SECRETS_ENV
+  _PROXY_TUNNEL=""
+  _PROXY_CA=""
 fi
-unset NIXSMITH_SECRETS_ENV
+
+# Chain iron-proxy as fence's upstream: fence's internal proxy forwards all
+# traffic to iron-proxy, which swaps tokens before reaching the internet.
+# Setting HTTPS_PROXY directly is ineffective — fence overwrites it with its
+# own socat bridge address. upstreamProxy in the fence config is the correct
+# insertion point.
+if [[ -n "${_PROXY_TUNNEL:-}" ]]; then
+  # Switch from relaxed wildcard mode to proxy-routed mode so fence uses its
+  # internal HTTP proxy (which chains to iron-proxy) for all traffic. Without
+  # this, allowedDomains:["*"] puts fence in relaxed direct-network mode where
+  # upstreamProxy is never consulted.
+  jq --arg upstream "$_PROXY_TUNNEL" \
+    'del(.network.allowedDomains) | .network.defaultAction = "proxy" | .network.upstreamProxy = $upstream' \
+    "$_FENCE_CFG" > "${_FENCE_CFG}.tmp" && mv "${_FENCE_CFG}.tmp" "$_FENCE_CFG"
+  _dbg "fence upstreamProxy set to $_PROXY_TUNNEL"
+fi
+if [[ -n "${_PROXY_CA:-}" ]] && [[ -f "$_PROXY_CA" ]]; then
+  export SSL_CERT_FILE="$_PROXY_CA"
+  export NODE_EXTRA_CA_CERTS="$_PROXY_CA"
+  export REQUESTS_CA_BUNDLE="$_PROXY_CA"
+  export CURL_CA_BUNDLE="$_PROXY_CA"
+fi
+unset _PROXY_TUNNEL _PROXY_CA
 
 # ── Fence invocation ──────────────────────────────────────────────────────────
 
@@ -173,16 +355,11 @@ for _p in "${SANDBOX_MOUNTS_RW[@]:-}"; do
   FENCE_ARGS+=(--expose-host-path-rw "$_p")
 done
 
-if [[ -n "${OPENCODE_PORT:-}" ]]; then
-  # OPENCODE_PORT is a host-side service the sandbox needs to reach outbound,
-  # not a service inside the sandbox. Use allowLocalOutboundPorts in the config.
-  jq --argjson port "${OPENCODE_PORT}" \
-    '.network.allowLocalOutboundPorts = [$port]' \
-    "$_FENCE_CFG" > "${_FENCE_CFG}.tmp" && mv "${_FENCE_CFG}.tmp" "$_FENCE_CFG"
-fi
 
 _dbg "exec fence: $FENCE_BIN ${FENCE_ARGS[*]}"
 unset _git_cfg _deny_write _system_ro
 unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
 
-exec "$FENCE_BIN" "${FENCE_ARGS[@]}" -- "$@"
+# Run fence as a child (not exec) so the EXIT trap fires and kills iron-proxy.
+"$FENCE_BIN" "${FENCE_ARGS[@]}" -- "$@"
+exit $?

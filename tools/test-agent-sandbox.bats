@@ -227,3 +227,34 @@ setup_file() {
   [ "$status" -eq 0 ]
   [ "$output" = "content" ]
 }
+
+# Regression test for TASK-38: NIXSMITH_SECRETS_ENV (the plaintext
+# key=value list built from secrets.json) must never reach the sandboxed
+# process's environment, including when NIXSMITH_CREDENTIAL_PROXY is
+# pre-configured (which skips the iron-proxy startup path entirely).
+@test "NIXSMITH_SECRETS_ENV never leaks when a credential proxy is pre-configured" {
+  local test_home secret_value
+  test_home=$(mktemp -d)
+  secret_value="regression-test-secret-$$"
+  mkdir -p "$test_home/.config/nixsmith"
+  cat > "$test_home/.config/nixsmith/secrets.json" <<EOF
+{
+  "paths": {
+    "$PROJECT_DIR": {
+      "FAKE_REGRESSION_SECRET": "$secret_value"
+    }
+  }
+}
+EOF
+  chmod 600 "$test_home/.config/nixsmith/secrets.json"
+
+  run env HOME="$test_home" \
+    SANDBOX_EXTRA_RO="$test_home" \
+    NIXSMITH_CREDENTIAL_PROXY="http://127.0.0.1:1" \
+    "$SANDBOX_SCRIPT" bash -c 'echo "$NIXSMITH_SECRETS_ENV $FAKE_REGRESSION_SECRET"'
+  rm -rf "$test_home"
+
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"$secret_value"* ]]
+}

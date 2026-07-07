@@ -23,6 +23,7 @@ pkgs.mkShell {
     export AGENTS_SKILLS_DIR="${../../agents/skills}"
     export TOOLS_DIR="${../../tools}"
     export FENCE_PATH="${tools.fence}/bin/fence"
+    export IRON_PROXY_PATH="${tools.iron-proxy}/bin/iron-proxy"
 
     source ${./setup-shell.sh}
   '';
