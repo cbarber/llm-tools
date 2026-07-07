@@ -153,12 +153,10 @@ done
 
 mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
 
+mkdir -p "$HOME/.config/nixsmith/iron-proxy" 2>/dev/null || true
+
 for rw_path in \
-  "$HOME/.config/opencode" \
-  "$HOME/.config/nixsmith" \
-  "$HOME/.claude.json" \
-  "$HOME/.claude" \
-  "$HOME/.cache/opencode" \
+  "$HOME/.bun" \
   "$HOME/.cache/claude" \
   "$HOME/.cache/composer" \
   "$HOME/.cache/go-build" \
