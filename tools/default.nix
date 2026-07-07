@@ -7,6 +7,8 @@ let
   spr = pkgs.callPackage ./spr { };
   git-absorb = pkgs.git-absorb;
 
+  fence = pkgs.callPackage ./fence { };
+
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.stdenv.mkDerivation {
     pname = "forge";
@@ -40,6 +42,7 @@ in
     tea
     spr
     git-absorb
+    fence
     temper
     forge
     git-agent-sequence-editor
@@ -54,6 +57,7 @@ in
     tea
     spr
     git-absorb
+    fence
     temper
     forge
     git-agent-sequence-editor

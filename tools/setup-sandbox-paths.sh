@@ -2,8 +2,8 @@
 # Shared path discovery for agent sandboxes.
 #
 # Populates SANDBOX_MOUNTS_RO and SANDBOX_MOUNTS_RW with paths that need to
-# be accessible inside the sandbox. Callers mount or permit those paths using
-# their platform-specific mechanism (bwrap on Linux, sandbox-exec on macOS).
+# be accessible inside the sandbox. The caller (agent-sandbox.sh) turns these
+# into fence's allowRead/allowWrite config entries.
 #
 # Also generates the session gitconfig (GIT_CONFIG_GLOBAL) pointing to the
 # git-credential-nixsmith helper, which reads GH_TOKEN env var.
@@ -31,6 +31,50 @@ add_mount_rw() {
   done
   [[ -e "$target" ]] && SANDBOX_MOUNTS_RW+=("$target")
 }
+
+add_mount_rw "$(pwd)"
+
+# Git directory discovery — resolved relative to $(pwd) so this works from a
+# repository subdirectory, and worktree-aware so linked worktrees (whose
+# .git is a file pointing outside the worktree) still get their real git
+# dir mounted. Mirrors `git rev-parse --git-dir` / `--git-common-dir`.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  git_dir=$(git rev-parse --git-dir 2>/dev/null)
+  if [[ -n "$git_dir" ]]; then
+    git_dir_abs=$(cd "$(pwd)" && cd "$git_dir" && pwd)
+
+    if [[ -d "$git_dir_abs" ]]; then
+      add_mount_rw "$git_dir_abs"
+
+      common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+      if [[ -n "$common_git_dir" ]]; then
+        common_git_dir_abs=$(cd "$(pwd)" && cd "$common_git_dir" && pwd)
+
+        if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
+          add_mount_rw "$common_git_dir_abs"
+
+          repo_root=$(dirname "$common_git_dir_abs")
+          pwd_path="$(pwd)"
+          if [[ "$repo_root" != "$pwd_path" ]]; then
+            add_mount_ro "$repo_root"
+          fi
+        fi
+      fi
+    fi
+  fi
+fi
+
+# Expose PATH directories that live outside /nix and $HOME so commands
+# resolved via PATH remain runnable inside the sandbox. /nix is already
+# covered by the broader /nix read-only mount; $HOME entries are handled
+# by the explicit allow-lists below.
+IFS=':' read -ra PATH_DIRS <<<"$PATH"
+for path_dir in "${PATH_DIRS[@]}"; do
+  if [[ -d "$path_dir" ]] && [[ ! "$path_dir" =~ ^/nix/ ]] && [[ ! "$path_dir" =~ ^$HOME ]]; then
+    SANDBOX_MOUNTS_RO+=("$path_dir")
+  fi
+done
+unset PATH_DIRS path_dir
 
 append_gitconfig_mounts() {
   local canonical="$1"
@@ -99,8 +143,6 @@ unset _github_owner _nixsmith_secrets_file _gh_token_in_secrets
 
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
   [[ -d "$HOME/.ssh" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh")
-else
-  [[ -f "$HOME/.ssh/known_hosts" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh/known_hosts")
 fi
 
 # shellcheck disable=SC2066
@@ -109,6 +151,8 @@ for ro_path in \
   [[ -e "$ro_path" ]] && SANDBOX_MOUNTS_RO+=("$ro_path")
 done
 
+mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
+
 for rw_path in \
   "$HOME/.config/opencode" \
   "$HOME/.config/nixsmith" \
@@ -116,32 +160,36 @@ for rw_path in \
   "$HOME/.claude" \
   "$HOME/.cache/opencode" \
   "$HOME/.cache/claude" \
-  "$HOME/.local/share/opencode" \
-  "$HOME/.local/share/claude"; do
-  [[ -e "$rw_path" ]] && SANDBOX_MOUNTS_RW+=("$rw_path")
-done
-
-for cache_path in \
-  "$HOME/go" \
-  "$HOME/.cache/go-build" \
-  "$HOME/.cargo" \
-  "$HOME/.cache/pip" \
-  "$HOME/.gem" \
-  "$HOME/.cache/yarn" \
-  "$HOME/.npm" \
-  "$HOME/.local/share/pnpm" \
-  "$HOME/.bun" \
-  "$HOME/.gradle" \
-  "$HOME/.m2" \
-  "$HOME/.composer" \
   "$HOME/.cache/composer" \
+  "$HOME/.cache/go-build" \
+  "$HOME/.cache/nix" \
+  "$HOME/.cache/opencode" \
+  "$HOME/.cache/pip" \
+  "$HOME/.cache/yarn" \
+  "$HOME/.cargo" \
+  "$HOME/.claude" \
+  "$HOME/.claude.json" \
+  "$HOME/.composer" \
+  "$HOME/.config/nixsmith/iron-proxy" \
+  "$HOME/.config/nixsmith/tea" \
+  "$HOME/.config/opencode" \
+  "$HOME/.gem" \
+  "$HOME/.gradle" \
+  "$HOME/.hex" \
+  "$HOME/.local/share/claude" \
+  "$HOME/.local/share/direnv" \
+  "$HOME/.local/share/opencode" \
+  "$HOME/.local/share/pnpm" \
+  "$HOME/.local/state/opencode" \
+  "$HOME/.m2" \
+  "$HOME/.mix" \
+  "$HOME/.npm" \
   "$HOME/.nuget/packages" \
-  "$HOME/.vcpkg" \
   "$HOME/.pub-cache" \
   "$HOME/.swiftpm" \
-  "$HOME/.hex" \
-  "$HOME/.mix"; do
-  [[ -d "$cache_path" ]] && SANDBOX_MOUNTS_RW+=("$cache_path")
+  "$HOME/.vcpkg" \
+  "$HOME/go" ; do
+  [[ -e "$rw_path" ]] && SANDBOX_MOUNTS_RW+=("$rw_path")
 done
 
 if [[ -n "${SANDBOX_EXTRA_RO:-}" ]]; then
@@ -151,10 +199,6 @@ fi
 if [[ -n "${SANDBOX_EXTRA_RW:-}" ]]; then
   IFS=':' read -ra EXTRA_RW <<<"$SANDBOX_EXTRA_RW"
   for path in "${EXTRA_RW[@]}"; do add_mount_rw "$path"; done
-fi
-if [[ -n "${BWRAP_EXTRA_PATHS:-}" ]]; then
-  IFS=':' read -ra EXTRA_PATHS <<<"$BWRAP_EXTRA_PATHS"
-  for path in "${EXTRA_PATHS[@]}"; do add_mount_rw "$path"; done
 fi
 
 # ---------------------------------------------------------------------------
@@ -167,8 +211,8 @@ fi
 #     "paths": { "/path/prefix": { "VAR": "value" } }
 #   }
 # repos match (derived from git remote owner) wins over paths match.
-# Longest paths prefix wins. Vars are passed to bwrap via --setenv and
-# never touch the outer shell.
+# Longest paths prefix wins. Vars are exported by the caller (agent-sandbox.sh)
+# right before exec'ing fence, so the sandboxed process inherits them.
 
 NIXSMITH_SECRETS_FILE="${HOME}/.config/nixsmith/secrets.json"
 NIXSMITH_SECRETS_ENV=""

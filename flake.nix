@@ -54,6 +54,7 @@
                 bats
                 opencode
                 tools.backlog
+                tools.fence
               ]
               ++ lib.optionals stdenv.isLinux [ bubblewrap ];
           };

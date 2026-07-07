@@ -11,7 +11,6 @@ pkgs.mkShell {
       gh
       tea
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ bubblewrap ]
     ++ tools.all;
 
   shellHook = ''
@@ -23,7 +22,7 @@ pkgs.mkShell {
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export AGENTS_SKILLS_DIR="${../../agents/skills}"
     export TOOLS_DIR="${../../tools}"
-    ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
+    export FENCE_PATH="${tools.fence}/bin/fence"
 
     source ${./setup-shell.sh}
   '';

@@ -1,6 +1,6 @@
 # Agent Sandboxing
 
-Agents run in a deny-by-default sandbox. The implementation differs by platform but the security model is the same.
+Agents run in a deny-by-default sandbox via [fence](https://github.com/fencesandbox/fence), which wraps bubblewrap on Linux and Seatbelt on macOS behind one JSON config. The security model is the same on both platforms.
 
 ## Security Model
 
@@ -15,31 +15,18 @@ Agents run in a deny-by-default sandbox. The implementation differs by platform 
 | Rest of home directory | **denied** |
 | Other project directories | **denied** |
 
-## Linux (bubblewrap)
+## Configuration
 
-Uses bind mounts in a user namespace. Selected paths are mounted explicitly; everything else is absent from the namespace.
+`agent-sandbox.sh` builds a per-session fence config with `defaultDenyRead: true` — only paths in `allowRead`/`allowWrite` are visible; everything else is absent. Path lists are built by `setup-sandbox-paths.sh` from the project directory, git dirs, agent config/cache dirs, and `$PATH`.
 
 Key environment variables:
 
-- `AGENT_SANDBOX_SSH=true` — bind-mount `~/.ssh` read-write (for git push over SSH)
-- `AGENT_SANDBOX_BIND_HOME=true` — bind-mount entire `$HOME` read-write (breaks isolation)
+- `AGENT_SANDBOX_SSH=true` — allow reads+writes to `~/.ssh` (for git push over SSH)
+- `AGENT_SANDBOX_BIND_HOME=true` — allow writes to the entire `$HOME` (breaks isolation)
 - `SANDBOX_EXTRA_RO=path1:path2` — additional read-only paths
 - `SANDBOX_EXTRA_RW=path1:path2` — additional read-write paths
-- `BWRAP_EXTRA_PATHS=...` — deprecated alias for `SANDBOX_EXTRA_RW`
-
-## macOS (sandbox-exec)
-
-Uses Apple's `sandbox-exec` with a Scheme profile (`macos-sandbox-profile.sb`). Unlike bubblewrap, it cannot remap mounts, so the profile uses an explicit read allowlist.
-
-Notable constraints:
-
-- `(literal "/")` is required — the kernel reads the root inode before launching any sandboxed process; omitting it causes SIGABRT regardless of what else is allowed
-- `(subpath ...)` is string prefix matching, not filesystem traversal — symlinks are not resolved
-- `/Volumes` is excluded: `/Volumes/Macintosh HD → /` makes it a theoretical traversal vector
-- `/private` is required for `TMPDIR` (`/private/var/folders/.../T/`)
-- Home directory reads are restricted to specific paths (git config, agent SSH keys); no blanket `$HOME` access
-
-Same environment variables as Linux apply.
+- `SANDBOX_LOCAL_OUTBOUND_PORTS=5432:6379` — host loopback ports available inside Fence on Linux
+- `FENCE_PATH` — path to the `fence` binary (set by the nix shellHook)
 
 ## Disabling the Sandbox
 
