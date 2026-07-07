@@ -12,7 +12,6 @@ pkgs.mkShell {
       tea
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-      bubblewrap
       iproute2
       coreutils
     ]
@@ -24,7 +23,7 @@ pkgs.mkShell {
     export SETUP_CONFIG_SCRIPT="${./setup-config.sh}"
     export AGENT_SANDBOX_SCRIPT="${../../tools/agent-sandbox.sh}"
     export TOOLS_DIR="${../../tools}"
-    ${pkgs.lib.optionalString pkgs.stdenv.isLinux ''export BWRAP_PATH="${pkgs.bubblewrap}/bin/bwrap"''}
+    export FENCE_PATH="${tools.fence}/bin/fence"
     export AGENTS_SKILLS_DIR="${../../agents/skills}"
     export OPENCODE_PLUGIN_DIR="${./plugins}"
 

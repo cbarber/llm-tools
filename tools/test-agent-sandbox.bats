@@ -5,18 +5,9 @@ SANDBOX_SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/agent-sandbox.sh
 PROJECT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 
 setup_file() {
-  # Locate bwrap from PATH or Nix store so tests work regardless of which
-  # shell environment invokes bats.
-  if [[ "$(uname -s)" == "Linux" ]] && [[ -z "${BWRAP_PATH:-}" ]]; then
-    if command -v bwrap &>/dev/null; then
-      export BWRAP_PATH="$(command -v bwrap)"
-    else
-      for candidate in /nix/store/*-bubblewrap-*/bin/bwrap; do
-        if [[ -x "$candidate" ]]; then
-          export BWRAP_PATH="$candidate"
-          break
-        fi
-      done
+  if [[ -z "${FENCE_PATH:-}" ]]; then
+    if command -v fence &>/dev/null; then
+      export FENCE_PATH="$(command -v fence)"
     fi
   fi
 }
@@ -42,6 +33,15 @@ setup_file() {
   run "$SANDBOX_SCRIPT" cat "$PROJECT_DIR/README.md"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
+}
+
+@test "sandbox allows writes to the project working tree" {
+  local testfile="$PROJECT_DIR/.sandbox-write-test-$$.txt"
+  run "$SANDBOX_SCRIPT" bash -c "echo ok > '$testfile' && cat '$testfile'"
+  rm -f "$testfile"
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "$output" = "ok" ]
 }
 
 @test "AGENT_WORK_DIR is set inside sandbox" {
@@ -97,6 +97,33 @@ setup_file() {
   fi
   run "$SANDBOX_SCRIPT" curl -s --max-time 5 https://www.google.com
   [ "$status" -eq 0 ]
+}
+
+@test "configured host loopback ports are bridged into the sandbox" {
+  local test_bin test_home
+  test_bin=$(mktemp -d)
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.config/nixsmith"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'while [[ "$1" != "--" ]]; do' \
+    '  if [[ "$1" == "--settings" ]]; then settings="$2"; shift 2; else shift; fi' \
+    'done' \
+    'jq -c ".network.allowLocalOutboundPorts" "$settings"' > "$test_bin/fence"
+  chmod +x "$test_bin/fence"
+
+  run env HOME="$test_home" FENCE_PATH="$test_bin/fence" SANDBOX_LOCAL_OUTBOUND_PORTS="43124:43123:43124" \
+    "$SANDBOX_SCRIPT" true
+  rm -rf "$test_bin" "$test_home"
+
+  [ "$status" -eq 0 ]
+  [ "$output" = "[43123,43124]" ]
+}
+
+@test "invalid host loopback ports are rejected" {
+  run env SANDBOX_LOCAL_OUTBOUND_PORTS="5432:not-a-port" "$SANDBOX_SCRIPT" true
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"invalid port in SANDBOX_LOCAL_OUTBOUND_PORTS: not-a-port"* ]]
 }
 
 @test "/proc is accessible on Linux" {

@@ -3,396 +3,174 @@
 #
 # Usage: agent-sandbox <command> [args...]
 #
-# Runs the given command in a sandboxed environment using bubblewrap.
-# The sandbox restricts access to:
-# - Current project directory (read-write)
-# - /nix store (read-only)
-# - Temporary workspace (read-write, auto-cleaned)
+# Runs the given command inside a fence sandbox. Uses defaultDenyRead so only
+# explicitly allowed paths are readable. Path lists are built by
+# setup-sandbox-paths.sh (same as the bwrap backend) and consumed as
+# allowRead/allowWrite entries in the fence JSON config.
 #
 # Environment variables:
-#   AGENT_SANDBOX_BIND_HOME - "true" to allow writes to entire home dir (breaks isolation)
-#   AGENT_SANDBOX_SSH       - "true" to allow reads+writes to ~/.ssh (for git operations)
-#   SANDBOX_EXTRA_RO        - colon-separated additional read-only paths
-#   SANDBOX_EXTRA_RW        - colon-separated additional read-write paths
-#   BWRAP_EXTRA_PATHS       - deprecated alias for SANDBOX_EXTRA_RW
+#   AGENT_SANDBOX_SSH   - "true" to allow reads+writes to ~/.ssh
+#   SANDBOX_EXTRA_RO    - colon-separated additional read-only paths
+#   SANDBOX_EXTRA_RW    - colon-separated additional read-write paths
+#   SANDBOX_LOCAL_OUTBOUND_PORTS - colon-separated host loopback ports to bridge on Linux
+#   OPENCODE_PORT       - opencode API port to bridge on Linux
 
 set -euo pipefail
 
-# Debug logging (controlled by AGENT_DEBUG env var)
-debug_sandbox() {
-  if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
-    echo "[DEBUG $(date +%H:%M:%S)] agent-sandbox: $*" >&2
-  fi
-}
-
-debug_sandbox "=========================================="
-debug_sandbox "Sandbox script started"
-debug_sandbox "Command: $*"
-debug_sandbox "HOME: $HOME"
-debug_sandbox "PWD: $(pwd)"
-debug_sandbox "=========================================="
-
-# Platform detection
-PLATFORM="$(uname -s)"
-
-if [[ "$PLATFORM" == "Darwin" ]]; then
-  # macOS: use sandbox-exec
-  source "$(dirname "${BASH_SOURCE[0]}")/macos-sandbox.sh"
-  exit $?
-elif [[ "$PLATFORM" != "Linux" ]]; then
-  # Unsupported platform: run command directly without sandboxing
-  echo "Warning: Sandboxing not supported on $PLATFORM, running without isolation" >&2
-  exec "$@"
-fi
-
-# Find bwrap - try BWRAP_PATH env var first, then PATH, then nix store
-BWRAP=""
-if [[ -n "${BWRAP_PATH:-}" ]] && [[ -x "$BWRAP_PATH" ]]; then
-  BWRAP="$BWRAP_PATH"
-elif command -v bwrap &>/dev/null; then
-  BWRAP="bwrap"
-else
-  # Search for bwrap in nix store
-  for candidate in /nix/store/*-bubblewrap-*/bin/bwrap; do
-    if [[ -x "$candidate" ]]; then
-      BWRAP="$candidate"
-      break
-    fi
-  done
-fi
-
-if [[ -z "$BWRAP" ]] || [[ ! -x "$BWRAP" ]]; then
-  echo "Error: bubblewrap (bwrap) not found. Install it to use agent sandboxing." >&2
-  echo "Searched: BWRAP_PATH=${BWRAP_PATH:-unset}, PATH, and /nix/store/*-bubblewrap-*/bin/bwrap" >&2
-  exit 1
-fi
-
-# Detect and report sandbox blockers with OS-specific instructions
-detect_sandbox_blocker() {
-  # Quick test - if bwrap works, no blocker
-  if "$BWRAP" --ro-bind / / true 2>/dev/null; then
-    return 0
-  fi
-
-  # AppArmor userns restriction (Ubuntu 23.10+, Debian 12+)
-  if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" == "1" ]]; then
-    echo "apparmor_userns"
-    return 1
-  fi
-
-  # Kernel disables unprivileged userns
-  if [[ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null)" == "0" ]]; then
-    echo "kernel_userns"
-    return 1
-  fi
-
-  # SELinux enforcing
-  if command -v getenforce &>/dev/null && [[ "$(getenforce 2>/dev/null)" == "Enforcing" ]]; then
-    echo "selinux"
-    return 1
-  fi
-
-  # Inside container
-  if [[ -f /.dockerenv ]] || grep -qE 'docker|lxc|kubepods' /proc/1/cgroup 2>/dev/null; then
-    echo "container"
-    return 1
-  fi
-
-  echo "unknown"
-  return 1
-}
-
-print_blocker_instructions() {
-  local blocker="$1"
-  local bwrap_path="$BWRAP"
-
-  echo "" >&2
-  echo "═══════════════════════════════════════════════════════════════════" >&2
-  echo "  Sandbox Setup Required" >&2
-  echo "═══════════════════════════════════════════════════════════════════" >&2
-  echo "" >&2
-
-  case "$blocker" in
-  apparmor_userns)
-    cat >&2 <<EOF
-Your system uses AppArmor to restrict user namespaces (Ubuntu 23.10+).
-bubblewrap needs an AppArmor profile to create sandboxes.
-
-Option 1: Create AppArmor profile for bwrap (recommended)
-─────────────────────────────────────────────────────────
-  sudo tee /etc/apparmor.d/bwrap << 'PROFILE'
-abi <abi/4.0>,
-include <tunables/global>
-
-profile bwrap $bwrap_path flags=(unconfined) {
-  userns,
-}
-PROFILE
-
-  sudo apparmor_parser -r /etc/apparmor.d/bwrap
-
-Note: The Nix store path changes on updates. You may need to update
-the profile path after running 'nix flake update'. A wildcard profile
-for /nix/store/*/bin/bwrap is more maintainable:
-
-  sudo tee /etc/apparmor.d/nix-bwrap << 'PROFILE'
-abi <abi/4.0>,
-include <tunables/global>
-
-profile nix-bwrap /nix/store/*/bin/bwrap flags=(unconfined) {
-  userns,
-}
-PROFILE
-
-  sudo apparmor_parser -r /etc/apparmor.d/nix-bwrap
-
-Option 2: Run without sandbox
-─────────────────────────────
-  AGENT_SANDBOX=false nix develop .#claude-code
-
-EOF
-    ;;
-
-  kernel_userns)
-    cat >&2 <<EOF
-Your kernel has unprivileged user namespaces disabled.
-bubblewrap requires this feature for sandboxing.
-
-Enable user namespaces:
-───────────────────────
-  sudo sysctl -w kernel.unprivileged_userns_clone=1
-
-To persist across reboots:
-  echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/50-userns.conf
-  sudo sysctl --system
-
-Or run without sandbox:
-  AGENT_SANDBOX=false nix develop .#claude-code
-
-EOF
-    ;;
-
-  selinux)
-    cat >&2 <<EOF
-SELinux is blocking bubblewrap from creating user namespaces.
-
-Option 1: Create SELinux policy for bwrap
-─────────────────────────────────────────
-  # Generate policy module (requires policycoreutils-python-utils)
-  sudo ausearch -c bwrap --raw | audit2allow -M bwrap-sandbox
-  sudo semodule -i bwrap-sandbox.pp
-
-Option 2: Set bwrap to permissive (less secure)
-───────────────────────────────────────────────
-  sudo semanage permissive -a bwrap_t
-
-Or run without sandbox:
-  AGENT_SANDBOX=false nix develop .#claude-code
-
-EOF
-    ;;
-
-  container)
-    cat >&2 <<EOF
-You're running inside a container (Docker/LXC/Kubernetes).
-Nested user namespaces are typically restricted by the container runtime.
-
-Options:
-────────
-1. Run the container with --privileged (not recommended)
-2. Add specific capabilities: --cap-add SYS_ADMIN --security-opt seccomp=unconfined
-3. Run without sandbox (agent will have container-level isolation):
-   AGENT_SANDBOX=false nix develop .#claude-code
-
-EOF
-    ;;
-
-  *)
-    cat >&2 <<EOF
-bubblewrap failed to create a sandbox for an unknown reason.
-
-Debug information:
-──────────────────
-  bwrap path: $bwrap_path
-  Error: $("$BWRAP" --ro-bind / / true 2>&1 || true)
-
-Run without sandbox:
-  AGENT_SANDBOX=false nix develop .#claude-code
-
-Please report this issue with the above details at:
-  https://github.com/cbarber/llm-tools/issues
-
-EOF
-    ;;
-  esac
-
-  echo "═══════════════════════════════════════════════════════════════════" >&2
-  echo "" >&2
-}
-
-# Test if bwrap actually works before proceeding
-if ! blocker=$(detect_sandbox_blocker); then
-  print_blocker_instructions "$blocker"
-  exit 1
-fi
+# shellcheck source=common-helpers.sh
+source "${TOOLS_DIR:-$(dirname "$0")}/common-helpers.sh"
 
 SANDBOX_MOUNTS_RO=()
 SANDBOX_MOUNTS_RW=()
 
 AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
-# shellcheck source=common-helpers.sh
-source "${TOOLS_DIR:-$(dirname "$0")}/common-helpers.sh"
+
 # shellcheck source=setup-sandbox-paths.sh
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 
-BWRAP_ARGS=(
-  --dev-bind /dev /dev
-  --proc /proc
-  --unshare-all
-  --share-net
-  --die-with-parent
-  --setenv PATH "$PATH"
-  --setenv IN_AGENT_SANDBOX "1"
-  --setenv AGENT_WORK_DIR /tmp
-  --setenv NIXSMITH_SANDBOX_RO "${NIXSMITH_SANDBOX_RO:-}"
-  --setenv NIXSMITH_SANDBOX_RW "${NIXSMITH_SANDBOX_RW:-}"
-)
+# ── Locate fence ─────────────────────────────────────────────────────────────
 
-# Inject path-matched secrets from secrets.json as individual --setenv args.
-# NIXSMITH_SECRETS_ENV is newline-separated KEY=VALUE pairs set by setup-sandbox-paths.sh.
-if [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]]; then
-  while IFS= read -r _secret_pair; do
-    [[ -z "$_secret_pair" ]] && continue
-    _secret_key="${_secret_pair%%=*}"
-    _secret_val="${_secret_pair#*=}"
-    BWRAP_ARGS+=(--setenv "$_secret_key" "$_secret_val")
-    unset _secret_val
-    unset _secret_key
-  done <<< "$NIXSMITH_SECRETS_ENV"
-  unset _secret_pair
+FENCE_BIN=""
+if [[ -n "${FENCE_PATH:-}" ]] && [[ -x "$FENCE_PATH" ]]; then
+  FENCE_BIN="$FENCE_PATH"
+elif command -v fence &>/dev/null; then
+  FENCE_BIN="$(command -v fence)"
 fi
 
-add_mount_ro "/nix"
-add_mount_rw "$(pwd)"
-add_mount_rw "/tmp"
-
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  debug_sandbox "Git repository detected"
-
-  git_dir=$(git rev-parse --git-dir 2>/dev/null)
-  if [[ -n "$git_dir" ]]; then
-    git_dir_abs=$(cd "$(pwd)" && cd "$git_dir" && pwd)
-    debug_sandbox "Git dir: $git_dir_abs"
-
-    if [[ -d "$git_dir_abs" ]]; then
-      add_mount_rw "$git_dir_abs"
-      debug_sandbox "Mounted git dir (RW): $git_dir_abs"
-
-      common_git_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
-      if [[ -n "$common_git_dir" ]]; then
-        common_git_dir_abs=$(cd "$(pwd)" && cd "$common_git_dir" && pwd)
-        debug_sandbox "Common git dir: $common_git_dir_abs"
-
-        if [[ "$common_git_dir_abs" != "$git_dir_abs" ]] && [[ -d "$common_git_dir_abs" ]]; then
-          add_mount_rw "$common_git_dir_abs"
-          debug_sandbox "Mounted common git dir (RW): $common_git_dir_abs"
-
-          repo_root=$(dirname "$common_git_dir_abs")
-          pwd_path="$(pwd)"
-          if [[ "$repo_root" != "$pwd_path" ]]; then
-            add_mount_ro "$repo_root"
-            debug_sandbox "Mounted repo root (RO): $repo_root"
-          fi
-        fi
-      fi
-    fi
-  fi
+if [[ -z "$FENCE_BIN" ]]; then
+  echo "agent-sandbox: fence not found. Install it or set FENCE_PATH." >&2
+  exit 1
 fi
 
-[[ -d /etc/static/nix ]] && add_mount_ro "/etc/static/nix"
-[[ -d /etc/nix ]] && add_mount_ro "/etc/nix"
-[[ -d /etc/ssl ]] && add_mount_ro "/etc/ssl"
-[[ -d /etc/pki ]] && add_mount_ro "/etc/pki"
-[[ -d /etc/static/ssl ]] && add_mount_ro "/etc/static/ssl"
-[[ -f /etc/resolv.conf ]] && add_mount_ro "/etc/resolv.conf"
-[[ -f /etc/hosts ]] && add_mount_ro "/etc/hosts"
-[[ -d /usr/bin ]] && add_mount_ro "/usr/bin"
-[[ -f /etc/passwd ]] && add_mount_ro "/etc/passwd"
-[[ -f /etc/group ]] && add_mount_ro "/etc/group"
+# ── Build fence config ────────────────────────────────────────────────────────
+# Explicit config — no template inheritance. defaultDenyRead: true means only
+# paths in allowRead are readable. useDefaults: false disables fence's built-in
+# command deny list (chroot, unshare, etc.) which blocks NixOS coreutils
+# multi-call binaries via landlock.
+#
+# allowRead  ← SANDBOX_MOUNTS_RO  (built by setup-sandbox-paths.sh)
+# allowWrite ← SANDBOX_MOUNTS_RW  (built by setup-sandbox-paths.sh)
+# denyWrite  ← secrets + ssh keys + .git/config
 
-IFS=':' read -ra PATH_DIRS <<<"$PATH"
-for dir in "${PATH_DIRS[@]}"; do
-  if [[ -d "$dir" ]]; then
-    if [[ ! "$dir" =~ ^/nix/ ]] && [[ ! "$dir" =~ ^$HOME ]]; then
-      SANDBOX_MOUNTS_RO+=("$dir")
-    fi
-  fi
-done
+_FENCE_CFG=$(mktemp /tmp/fence-XXXXXX.json)
 
-if [[ -d /bin ]]; then
-  path_has_bin=false
-  for dir in "${PATH_DIRS[@]}"; do
-    [[ "$dir" == "/bin" ]] && path_has_bin=true && break
-  done
-  [[ "$path_has_bin" == "false" ]] && add_mount_ro "/bin"
-fi
-
-for lib_dir in /lib /lib64 /lib32 /usr/lib /usr/lib64 /usr/lib32; do
-  [[ -d "$lib_dir" ]] && add_mount_ro "$lib_dir"
-done
-
-
-
-build_mounts() {
-  local mode=$1
-  shift
-  local mounts=("$@")
-
-  for mount in "${mounts[@]}"; do
-    [[ -z "$mount" ]] && continue
-
-    IFS=':' read -r src dest <<<"$mount"
-    [[ -z "$dest" ]] && dest="$src"
-
-    src="${src/#\~/$HOME}"
-    dest="${dest/#\~/$HOME}"
-
-    [[ ! -e "$src" ]] && continue
-
-    if [[ "$src" != "$dest" ]]; then
-      local parent
-      parent=$(dirname "$dest")
-      BWRAP_ARGS+=(--dir "$parent")
-    fi
-
-    if [[ "$mode" == "rw" ]]; then
-      BWRAP_ARGS+=(--bind "$src" "$dest")
-    else
-      BWRAP_ARGS+=(--ro-bind "$src" "$dest")
-    fi
-  done
+_cleanup() {
+  rm -f "$_FENCE_CFG"
 }
+trap _cleanup EXIT
 
-build_mounts ro "${SANDBOX_MOUNTS_RO[@]}"
-build_mounts rw "${SANDBOX_MOUNTS_RW[@]}"
-
-# ---------------------------------------------------------------------------
-# OpenCode: blank out auth.json via OPENCODE_AUTH_CONTENT
-# ---------------------------------------------------------------------------
-# OPENCODE_AUTH_CONTENT overrides auth.json entirely when set. Blank it out
-# so stored credentials never reach the sandbox — provider env vars injected
-# via --args (ANTHROPIC_API_KEY etc.) are the sole credential source.
-BWRAP_ARGS+=(--setenv OPENCODE_AUTH_CONTENT "{}")
-
-# RO overlay after RW mounts so it takes precedence — agents must not override identity
-if [[ -n "${common_git_dir_abs:-}" ]] && [[ -f "$common_git_dir_abs/config" ]]; then
-  BWRAP_ARGS+=(--ro-bind "$common_git_dir_abs/config" "$common_git_dir_abs/config")
-  debug_sandbox "Overlaid git config read-only: $common_git_dir_abs/config"
-elif [[ -n "${git_dir_abs:-}" ]] && [[ -f "$git_dir_abs/config" ]]; then
-  BWRAP_ARGS+=(--ro-bind "$git_dir_abs/config" "$git_dir_abs/config")
-  debug_sandbox "Overlaid git config read-only: $git_dir_abs/config"
+# Paths agents must never write.
+_deny_write=(
+  "${HOME}/.gnupg"
+  "${HOME}/.config/nixsmith/secrets.json"
+)
+if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]]; then
+  _deny_write+=("${HOME}/.ssh")
+fi
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config
+  [[ -f "$_git_cfg" ]] && _deny_write+=("$_git_cfg")
 fi
 
-exec {args_fd}< <(printf '%s\0' "${BWRAP_ARGS[@]}")
-exec "$BWRAP" --args "$args_fd" "$@"
+# Always readable: /nix (binaries), /proc (self status), /etc (SSL/resolv),
+# /run/current-system (NixOS compat). These are system paths not covered by
+# setup-sandbox-paths.sh which focuses on home/project paths.
+_system_ro=("/nix" "/proc" "/etc" "/run/current-system")
+
+_deny_write_json=$(printf '%s\n' "${_deny_write[@]}"               | jq -R . | jq -s .)
+_deny_read_json=$(printf '%s\n' "${_deny_write[@]}"                | jq -R . | jq -s .)
+_allow_read_json=$(printf '%s\n' "${_system_ro[@]}" "${SANDBOX_MOUNTS_RO[@]:-}" "${SANDBOX_MOUNTS_RW[@]:-}" | jq -R . | jq -s .)
+_allow_write_json=$(printf '%s\n' "/tmp" "${SANDBOX_MOUNTS_RW[@]:-}"            | jq -R . | jq -s .)
+_local_ports=()
+if [[ -n "${SANDBOX_LOCAL_OUTBOUND_PORTS:-}" ]]; then
+  IFS=':' read -ra _local_ports <<< "$SANDBOX_LOCAL_OUTBOUND_PORTS"
+  for _port in "${_local_ports[@]}"; do
+    if [[ ! "$_port" =~ ^[0-9]+$ ]] || (( 10#$_port < 1 || 10#$_port > 65535 )); then
+      echo "agent-sandbox: invalid port in SANDBOX_LOCAL_OUTBOUND_PORTS: $_port" >&2
+      exit 1
+    fi
+  done
+fi
+_local_ports_json=$(printf '%s\n' "${_local_ports[@]:-}" | jq -R 'select(length > 0) | tonumber' | jq -s 'unique')
+
+jq -n \
+  --argjson allowRead  "$_allow_read_json" \
+  --argjson allowWrite "$_allow_write_json" \
+  --argjson allowLocalOutboundPorts "$_local_ports_json" \
+  --argjson denyRead   "$_deny_read_json" \
+  --argjson denyWrite  "$_deny_write_json" \
+  '{
+    allowPty: true,
+    network: {
+      allowedDomains: ["*"],
+      allowLocalOutbound: true,
+      allowLocalOutboundPorts: $allowLocalOutboundPorts,
+      allowLocalBinding: true
+    },
+    filesystem: {
+      defaultDenyRead: true,
+      allowRead:  $allowRead,
+      allowWrite: $allowWrite,
+      denyRead:   $denyRead,
+      denyWrite:  $denyWrite
+    },
+    command: {
+      useDefaults: false
+    }
+  }' > "$_FENCE_CFG"
+
+# ── Environment ───────────────────────────────────────────────────────────────
+
+export IN_AGENT_SANDBOX=1
+export AGENT_WORK_DIR=/tmp
+export OPENCODE_AUTH_CONTENT="{}"
+export NIXSMITH_SANDBOX_RO="${NIXSMITH_SANDBOX_RO:-}"
+export NIXSMITH_SANDBOX_RW="${NIXSMITH_SANDBOX_RW:-}"
+
+if [[ -n "${GIT_CONFIG_GLOBAL:-}" ]]; then
+  export GIT_CONFIG_GLOBAL
+fi
+
+if [[ -n "${OPENCODE_PORT:-}" ]]; then
+  export OPENCODE_PORT
+  export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
+fi
+
+if [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]]; then
+  while IFS= read -r _pair; do
+    [[ -z "$_pair" ]] && continue
+    _key="${_pair%%=*}"
+    _val="${_pair#*=}"
+    export "${_key}=${_val}"
+  done <<< "$NIXSMITH_SECRETS_ENV"
+  unset _pair _key _val
+fi
+unset NIXSMITH_SECRETS_ENV
+
+# ── Fence invocation ──────────────────────────────────────────────────────────
+
+FENCE_ARGS=(--settings "$_FENCE_CFG")
+
+# expose-host-path-rw makes paths writable inside the sandbox (fence's
+# --ro-bind / / baseline is read-only; RW paths need explicit exposure).
+FENCE_ARGS+=(--expose-host-path-rw "$(pwd)")
+FENCE_ARGS+=(--expose-host-path-rw /tmp)
+for _p in "${SANDBOX_MOUNTS_RW[@]:-}"; do
+  [[ -z "$_p" ]] && continue
+  [[ -e "$_p" ]] || continue
+  FENCE_ARGS+=(--expose-host-path-rw "$_p")
+done
+
+if [[ -n "${OPENCODE_PORT:-}" ]]; then
+  # OPENCODE_PORT is a host-side service the sandbox needs to reach outbound,
+  # not a service inside the sandbox. Use allowLocalOutboundPorts in the config.
+  jq --argjson port "${OPENCODE_PORT}" \
+    '.network.allowLocalOutboundPorts = [$port]' \
+    "$_FENCE_CFG" > "${_FENCE_CFG}.tmp" && mv "${_FENCE_CFG}.tmp" "$_FENCE_CFG"
+fi
+
+unset _git_cfg _deny_write _system_ro
+unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
+
+exec "$FENCE_BIN" "${FENCE_ARGS[@]}" -- "$@"
