@@ -4,6 +4,11 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
+  if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
+    _FENCE_LOG="/tmp/fence-$(date +%s).log"
+    echo "[DEBUG] fence log: $_FENCE_LOG" >&2
+    export FENCE_LOG_FILE="$_FENCE_LOG"
+  fi
   sandboxed-opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"; }
   export -f sandboxed-opencode
 fi
