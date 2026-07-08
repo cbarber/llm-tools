@@ -17,7 +17,10 @@
 
 set -euo pipefail
 
+_dbg() { [[ "${AGENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG agent-sandbox] $*" >&2 || true; }
+
 # shellcheck source=common-helpers.sh
+_dbg "sourcing common-helpers.sh"
 source "${TOOLS_DIR:-$(dirname "$0")}/common-helpers.sh"
 
 SANDBOX_MOUNTS_RO=()
@@ -27,9 +30,12 @@ AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
 # shellcheck source=setup-sandbox-paths.sh
+_dbg "sourcing setup-sandbox-paths.sh"
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
+_dbg "setup-sandbox-paths.sh done"
 
 # ── Locate fence ─────────────────────────────────────────────────────────────
+_dbg "locating fence binary"
 
 FENCE_BIN=""
 if [[ -n "${FENCE_PATH:-}" ]] && [[ -x "$FENCE_PATH" ]]; then
@@ -42,6 +48,7 @@ if [[ -z "$FENCE_BIN" ]]; then
   echo "agent-sandbox: fence not found. Install it or set FENCE_PATH." >&2
   exit 1
 fi
+_dbg "fence binary: $FENCE_BIN"
 
 # ── Build fence config ────────────────────────────────────────────────────────
 # Explicit config — no template inheritance. defaultDenyRead: true means only
@@ -119,6 +126,7 @@ jq -n \
       useDefaults: false
     }
   }' > "$_FENCE_CFG"
+_dbg "fence config written: $_FENCE_CFG"
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
@@ -151,6 +159,9 @@ unset NIXSMITH_SECRETS_ENV
 # ── Fence invocation ──────────────────────────────────────────────────────────
 
 FENCE_ARGS=(--settings "$_FENCE_CFG")
+if [[ -n "${FENCE_LOG_FILE:-}" ]]; then
+  FENCE_ARGS+=(--fence-log-file "$FENCE_LOG_FILE")
+fi
 
 # expose-host-path-rw makes paths writable inside the sandbox (fence's
 # --ro-bind / / baseline is read-only; RW paths need explicit exposure).
@@ -170,6 +181,7 @@ if [[ -n "${OPENCODE_PORT:-}" ]]; then
     "$_FENCE_CFG" > "${_FENCE_CFG}.tmp" && mv "${_FENCE_CFG}.tmp" "$_FENCE_CFG"
 fi
 
+_dbg "exec fence: $FENCE_BIN ${FENCE_ARGS[*]}"
 unset _git_cfg _deny_write _system_ro
 unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
 
