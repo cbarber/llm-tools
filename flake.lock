@@ -7,11 +7,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1781727312,
-        "narHash": "sha256-OETycHHr8tZgNu9e2dzCd0e6UD66SXSO/R872uz5BBQ=",
+        "lastModified": 1783812546,
+        "narHash": "sha256-J/dh7QEJWYLaMF+i/aXGy85SSpZycPUD9O6yg2XGImM=",
         "owner": "MrLesk",
         "repo": "Backlog.md",
-        "rev": "2c5ea4ce71476813ca135653a5ac57944eaeacad",
+        "rev": "d765cb324a9ad5c081cddce3c84f42a77314360a",
         "type": "github"
       },
       "original": {
@@ -125,11 +125,11 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1782467914,
-        "narHash": "sha256-pGvFkM8N0xEkIIXDe5YYfbEAvHrk4IxBrjB/x8OomhE=",
+        "lastModified": 1783522502,
+        "narHash": "sha256-iffAls3iaNTyJC2faYcUXSI+Gp02cDjYl+MygxKl2GI=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "e73de5be04e0eff4190a1432b946d469c794e7b4",
+        "rev": "0bb7ec54c8483066ec9d7720e780a5caa71f8612",
         "type": "github"
       },
       "original": {
