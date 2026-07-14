@@ -213,24 +213,9 @@ doctor() {
     else
         check_ok "owner: ${gh_owner}"
 
-        # Resolve token: secrets.json repos entry preferred, file fallback
-        local secrets_file="${HOME}/.config/nixsmith/secrets.json"
-        local repo_key="github:${gh_owner}"
-        local gh_token=""
-
-        if [[ -f "$secrets_file" ]] && command -v jq >/dev/null 2>&1 && \
-           jq -e 'has("repos")' "$secrets_file" >/dev/null 2>&1; then
-            gh_token=$(jq -r --arg k "$repo_key" '.repos[$k].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
-            if [[ -n "$gh_token" ]]; then
-                check_ok "token: secrets.json repos.${repo_key}.GH_TOKEN"
-            fi
-        fi
-
-        # Live network check — always performed. Fall back to any GH_TOKEN
-        # already in the environment (e.g. injected by iron-proxy) instead
-        # of clobbering it with an empty value when secrets.json yields none.
+        # Live network check using GH_TOKEN injected by iron-proxy
         local auth_out auth_user
-        if auth_out=$(GH_TOKEN="${gh_token:-${GH_TOKEN:-}}" gh auth status 2>&1); then
+        if auth_out=$(gh auth status 2>&1); then
             auth_user=$(echo "$auth_out" | grep -oE 'Logged in to github\.com account [^ ]+' | awk '{print $NF}' || true)
             check_ok "gh auth status: ok${auth_user:+ (${auth_user})}"
         else
