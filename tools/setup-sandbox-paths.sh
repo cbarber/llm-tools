@@ -5,11 +5,12 @@
 # be accessible inside the sandbox. The caller (agent-sandbox.sh) turns these
 # into fence's allowRead/allowWrite config entries.
 #
-# Also generates the session gitconfig (GIT_CONFIG_GLOBAL) pointing to the
-# git-credential-nixsmith helper, which reads GH_TOKEN env var.
+# Also exports GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n so the
+# sandboxed git forces GitHub remotes through HTTPS + the git-credential-
+# nixsmith helper (which reads the GH_TOKEN env var) — no synthetic gitconfig
+# file or [include] of the user's real config is needed.
 #
 # Required by caller before sourcing:
-#   AGENT_GITCONFIG_PATH  — where to write the generated gitconfig file
 #   extract_github_owner  — function from common-helpers.sh (sourced by caller)
 
 # bwrap bind-mounts paths literally — symlinks must exist inside the sandbox
@@ -76,70 +77,38 @@ for path_dir in "${PATH_DIRS[@]}"; do
 done
 unset PATH_DIRS path_dir
 
-append_gitconfig_mounts() {
-  local canonical="$1"
-  local real dir
-  real=$(readlink -f "$canonical")
-  dir=$(dirname "$real")
+# Force GitHub remotes through HTTPS + the token credential helper — no SSH
+# key exists inside the sandbox. Injected via git's native env-config
+# mechanism (GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n) rather than
+# a synthetic gitconfig file: it needs no RO mount or [include] resolution,
+# applies above every config file, and is unconditional — it doesn't depend
+# on a token already being present in secrets.json.
+_git_cfg_keys=()
+_git_cfg_values=()
+_add_git_cfg() { _git_cfg_keys+=("$1"); _git_cfg_values+=("$2"); }
 
-  [[ "$canonical" != "$real" ]] && SANDBOX_MOUNTS_RO+=("$canonical")
-  SANDBOX_MOUNTS_RO+=("$real")
+_add_git_cfg "url.https://github.com/.insteadOf" "git@github.com:"
+_add_git_cfg "credential.https://github.com.helper" "!git-credential-nixsmith"
 
-  while IFS= read -r include_path; do
-    local expanded="${include_path/#\~/$HOME}"
-    [[ "$expanded" != /* ]] && expanded="$dir/$expanded"
-    local resolved
-    resolved=$(readlink -f "$expanded" 2>/dev/null || echo "$expanded")
-    [[ -f "$resolved" ]] && SANDBOX_MOUNTS_RO+=("$resolved")
-  done < <(grep -A1 '^\[include' "$real" 2>/dev/null | grep 'path =' | sed 's/.*path = //' | tr -d ' ')
-}
+# Allowlisted identity/preference passthrough from the user's real gitconfig.
+# Deliberately narrow — the rest of the user's config is never read into the
+# sandbox; it can carry directives (an https->ssh url.insteadOf, diff.external,
+# filter.lfs, etc.) that would fight or break the sandbox's own config above.
+for _key in user.name user.email push.default push.autoSetupRemote init.defaultBranch; do
+  # --includes: `--global --get` doesn't follow [include]/[includeIf] unless
+  # asked — many gitconfigs (e.g. split work/personal identity) rely on it.
+  _val=$(git config --global --includes --get "$_key" 2>/dev/null || true)
+  [[ -n "$_val" ]] && _add_git_cfg "$_key" "$_val"
+done
+unset _key _val
 
-xdg_gitconfig_target=""
-gitconfig_target=""
-[[ -e "$HOME/.config/git/config" ]] && xdg_gitconfig_target="$HOME/.config/git/config"
-[[ -e "$HOME/.gitconfig" ]]         && gitconfig_target="$HOME/.gitconfig"
-
-[[ -n "$xdg_gitconfig_target" ]] && append_gitconfig_mounts "$xdg_gitconfig_target"
-[[ -n "$gitconfig_target" ]]     && append_gitconfig_mounts "$gitconfig_target"
-
-# Resolve the GitHub token for the current repo's owner.
-# Primary source: secrets.json repos entry (GH_TOKEN value).
-#
-# When the token comes from secrets.json it flows through NIXSMITH_SECRETS_ENV
-# as GH_TOKEN; git-credential-nixsmith uses the GH_TOKEN env var.
-
-_nixsmith_secrets_file="${HOME}/.config/nixsmith/secrets.json"
-_github_owner=$(extract_github_owner 2>/dev/null || true)
-_gh_token_in_secrets=false
-
-if [[ -n "$_github_owner" ]] && [[ -f "$_nixsmith_secrets_file" ]] && command -v jq >/dev/null 2>&1; then
-  if jq -e 'has("repos")' "$_nixsmith_secrets_file" >/dev/null 2>&1; then
-    _gh_secret=$(jq -r --arg k "github:${_github_owner}" '.repos[$k].GH_TOKEN // empty' "$_nixsmith_secrets_file" 2>/dev/null || true)
-    [[ -n "$_gh_secret" ]] && _gh_token_in_secrets=true
-    unset _gh_secret
-  fi
-fi
-
-# Inject synthetic gitconfig when either a token file or secrets.json GH_TOKEN
-# is available. The credential helper uses GH_TOKEN env var injected via 
-# --setenv by agent-sandbox.sh.
-if [[ "$_gh_token_in_secrets" == "true" ]]; then
-  {
-    cat <<EOF
-[url "https://github.com/"]
-       insteadOf = https://github.com/
-       insteadOf = git@github.com:
-
-[credential "https://github.com"]
-       helper = !git-credential-nixsmith
-
-EOF
-    [[ -n "$xdg_gitconfig_target" ]] && printf '[include]\n\tpath = %s\n' "$xdg_gitconfig_target"
-    [[ -n "$gitconfig_target" ]]     && printf '[include]\n\tpath = %s\n' "$gitconfig_target"
-  } > "$AGENT_GITCONFIG_PATH"
-  export GIT_CONFIG_GLOBAL="$AGENT_GITCONFIG_PATH"
-fi
-unset _github_owner _nixsmith_secrets_file _gh_token_in_secrets
+GIT_CONFIG_COUNT="${#_git_cfg_keys[@]}"
+export GIT_CONFIG_COUNT
+for _i in "${!_git_cfg_keys[@]}"; do
+  export "GIT_CONFIG_KEY_${_i}=${_git_cfg_keys[$_i]}"
+  export "GIT_CONFIG_VALUE_${_i}=${_git_cfg_values[$_i]}"
+done
+unset _git_cfg_keys _git_cfg_values _i
 
 if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
   [[ -d "$HOME/.ssh" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh")
