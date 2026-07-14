@@ -218,9 +218,11 @@ doctor() {
             fi
         fi
 
-        # Live network check — always performed
+        # Live network check — always performed. Fall back to any GH_TOKEN
+        # already in the environment (e.g. injected by iron-proxy) instead
+        # of clobbering it with an empty value when secrets.json yields none.
         local auth_out auth_user
-        if auth_out=$(GH_TOKEN="$gh_token" gh auth status 2>&1); then
+        if auth_out=$(GH_TOKEN="${gh_token:-${GH_TOKEN:-}}" gh auth status 2>&1); then
             auth_user=$(echo "$auth_out" | grep -oE 'Logged in to github\.com account [^ ]+' | awk '{print $NF}' || true)
             check_ok "gh auth status: ok${auth_user:+ (${auth_user})}"
         else
