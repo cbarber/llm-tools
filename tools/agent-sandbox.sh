@@ -26,7 +26,6 @@ source "${TOOLS_DIR:-$(dirname "$0")}/common-helpers.sh"
 SANDBOX_MOUNTS_RO=()
 SANDBOX_MOUNTS_RW=()
 
-AGENT_GITCONFIG_PATH=$(mktemp /tmp/agent-gitconfig-XXXXXX)
 mkdir -p "$HOME/.config/nixsmith" 2>/dev/null || true
 
 # shellcheck source=setup-sandbox-paths.sh
@@ -152,10 +151,6 @@ export AGENT_WORK_DIR=/tmp
 export OPENCODE_AUTH_CONTENT="{}"
 export NIXSMITH_SANDBOX_RO="${NIXSMITH_SANDBOX_RO:-}"
 export NIXSMITH_SANDBOX_RW="${NIXSMITH_SANDBOX_RW:-}"
-
-if [[ -n "${GIT_CONFIG_GLOBAL:-}" ]]; then
-  export GIT_CONFIG_GLOBAL
-fi
 
 if [[ -n "${OPENCODE_PORT:-}" ]]; then
   export OPENCODE_PORT

@@ -171,27 +171,35 @@ doctor() {
 
     # ── 1. Git state ───────────────────────────────────────────────────────
     echo "Git"
-    local branch upstream ahead behind dirty
-    branch=$(git branch --show-current 2>/dev/null || echo "")
-    if [[ -z "$branch" ]]; then
-        check_warn "branch: detached HEAD"
-    else
-        check_ok "branch: ${branch}"
+    local branch upstream ahead behind dirty is_git_repo=false
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        is_git_repo=true
     fi
 
-    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
-    if [[ -n "$upstream" ]]; then
-        read -r ahead behind < <(git rev-list --left-right --count "${upstream}...HEAD" 2>/dev/null || echo "0 0")
-        check_ok "upstream: ${upstream} (ahead ${ahead}, behind ${behind})"
+    if [[ "$is_git_repo" == false ]]; then
+        check_warn "not a git repository"
     else
-        check_warn "upstream: no tracking branch set"
-    fi
+        branch=$(git branch --show-current 2>/dev/null || echo "")
+        if [[ -z "$branch" ]]; then
+            check_warn "branch: detached HEAD"
+        else
+            check_ok "branch: ${branch}"
+        fi
 
-    dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$dirty" -eq 0 ]]; then
-        check_ok "working tree: clean"
-    else
-        check_warn "working tree: ${dirty} modified file(s)"
+        upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+        if [[ -n "$upstream" ]]; then
+            read -r ahead behind < <(git rev-list --left-right --count "${upstream}...HEAD" 2>/dev/null || echo "0 0")
+            check_ok "upstream: ${upstream} (ahead ${ahead}, behind ${behind})"
+        else
+            check_warn "upstream: no tracking branch set"
+        fi
+
+        dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$dirty" -eq 0 ]]; then
+            check_ok "working tree: clean"
+        else
+            check_warn "working tree: ${dirty} modified file(s)"
+        fi
     fi
     echo ""
 
@@ -230,6 +238,42 @@ doctor() {
         fi
     fi
     echo ""
+
+    if [[ "$is_git_repo" == true ]]; then
+        echo "Git config"
+        local config_out credential_out config_value key remote_url
+        for key in user.name user.email; do
+            config_value=$(git config --get "$key" 2>/dev/null || true)
+            if [[ -n "$config_value" ]]; then
+                check_ok "${key}: set"
+            else
+                check_fail "${key}: not set"
+            fi
+        done
+
+        remote_url=$(git config --get remote.origin.url 2>/dev/null || true)
+        if [[ "$remote_url" =~ github\.com[:/] ]]; then
+            if [[ "$(git ls-remote --get-url origin 2>/dev/null)" =~ ^https://github\.com/ ]]; then
+                check_ok "origin resolves to GitHub HTTPS"
+            else
+                check_fail "origin does not resolve to GitHub HTTPS"
+            fi
+        else
+            check_warn "origin: not a GitHub remote (skipping URL rewrite check)"
+        fi
+
+        config_out=$(git config --show-origin --get-all credential.https://github.com.helper 2>/dev/null || true)
+        if ! grep -Fq "command line:" <<< "$config_out" || ! grep -Fq "!git-credential-nixsmith" <<< "$config_out"; then
+            check_fail "GitHub credential helper: injected config is not effective"
+        elif credential_out=$(printf 'protocol=https\nhost=github.com\n\n' | GH_TOKEN=nixsmith-doctor-probe git credential fill 2>/dev/null) &&
+             grep -Fxq "username=x-access-token" <<< "$credential_out" &&
+             grep -Fxq "password=nixsmith-doctor-probe" <<< "$credential_out"; then
+            check_ok "GitHub credential helper returns injected credentials"
+        else
+            check_fail "GitHub credential helper failed through git credential fill"
+        fi
+        echo ""
+    fi
 
     # ── 3. Required tools in PATH ──────────────────────────────────────────
     echo "Tools"
