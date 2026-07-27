@@ -100,67 +100,6 @@ if [[ "$remote_url" =~ github\.com ]]; then
       fi
     fi
   fi
-
-  # Check per-owner file; offer migration to secrets.json
-  if [[ -f "$per_owner_file" ]]; then
-    debug "Per-owner token file exists"
-    if [[ -t 0 ]]; then
-      echo ""
-      echo "════════════════════════════════════════════════════════════"
-      echo "  Migrate GitHub token to secrets.json?"
-      echo "════════════════════════════════════════════════════════════"
-      echo ""
-      echo "  Token file: ${per_owner_file}"
-      echo "  Destination: ${SECRETS_FILE} (repos.${repo_key}.GH_TOKEN)"
-      echo ""
-      echo "  Migrating stores the token alongside other project secrets"
-      echo "  and removes the standalone file."
-      echo ""
-      read -r -p "  Migrate now? [y/N]: " migrate_choice </dev/tty
-      if [[ "${migrate_choice,,}" == "y" ]]; then
-        file_token=$(cat "$per_owner_file")
-        mkdir -p "${NIXSMITH_CONFIG}"
-        chmod 700 "${NIXSMITH_CONFIG}"
-        if [[ ! -f "$SECRETS_FILE" ]]; then
-          printf '{"repos":{"%s":{"GH_TOKEN":"%s"}},"paths":{}}\n' "$repo_key" "$file_token" | jq . > "$SECRETS_FILE"
-        else
-          tmp=$(mktemp)
-          jq --arg k "$repo_key" --arg t "$file_token" \
-            '.repos //= {} | .repos[$k] //= {} | .repos[$k].GH_TOKEN = $t' \
-            "$SECRETS_FILE" | jq . > "$tmp" && mv "$tmp" "$SECRETS_FILE"
-        fi
-        chmod 600 "$SECRETS_FILE"
-        rm -f "$per_owner_file"
-        echo "  ✓ Migrated to ${SECRETS_FILE}"
-        export GH_TOKEN="$file_token"
-        exit 0
-      fi
-    fi
-    echo "✓ Agent API tokens verified - ${per_owner_file}"
-    export GH_TOKEN
-    GH_TOKEN=$(cat "$per_owner_file")
-    exit 0
-  fi
-
-  if [[ -f "$legacy_file" ]]; then
-    echo "" >&2
-    echo "════════════════════════════════════════════════════════════" >&2
-    echo "  GitHub token migration required" >&2
-    echo "════════════════════════════════════════════════════════════" >&2
-    echo "" >&2
-    echo "  The single-org token (~/.config/nixsmith/github-token) is" >&2
-    echo "  deprecated. Tokens are now stored per GitHub org/user so" >&2
-    echo "  the agent can work across multiple organizations." >&2
-    echo "" >&2
-    echo "  Run this command to migrate:" >&2
-    echo "" >&2
-    echo "    mv ${legacy_file} ${per_owner_file}" >&2
-    echo "" >&2
-    echo "  Then re-enter the shell." >&2
-    echo "" >&2
-    echo "════════════════════════════════════════════════════════════" >&2
-    exit 1
-  fi
 fi
 
 # Gitea: unchanged — single config file covers all repos
