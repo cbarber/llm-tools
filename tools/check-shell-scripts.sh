@@ -47,7 +47,7 @@ case "$MODE" in
     # Get staged files
     while IFS= read -r file; do
       # Check if it's a shell script
-      if [[ "$file" == *.sh ]] || [[ "$file" == tools/* ]]; then
+      if [[ "$file" == *.sh ]] || { [[ "$file" == tools/* ]] && [[ -x "$file" ]]; }; then
         if [[ -f "$file" ]]; then
           check_file "$file" || ((failed++))
         fi
