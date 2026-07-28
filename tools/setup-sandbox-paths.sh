@@ -183,6 +183,28 @@ fi
 
 NIXSMITH_SECRETS_FILE="${HOME}/.config/nixsmith/secrets.json"
 NIXSMITH_SECRETS_ENV=""
+NIXSMITH_OPENCODE_OAUTH_PROVIDERS="[]"
+
+set_scoped_secrets() {
+  local selected_scope="$1"
+  [[ -n "$selected_scope" ]] || return 0
+
+  if ! jq -e '
+    type == "object" and
+    ([to_entries[] | select(.key != "_opencodeAuth") | .value | type == "string"] | all) and
+    (if has("_opencodeAuth") then
+      (._opencodeAuth | type == "object" and
+        ((.oauthProviders // []) | type == "array" and all(.[]; type == "string" and length > 0)))
+    else true end)
+  ' <<< "$selected_scope" >/dev/null; then
+    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment values must be strings and _opencodeAuth.oauthProviders must be an array of provider IDs." >&2
+    return 1
+  fi
+
+  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth") | "\(.key)=\(.value)"' <<< "$selected_scope")
+  [[ -z "$NIXSMITH_SECRETS_ENV" ]] || NIXSMITH_SECRETS_ENV+=$'\n'
+  NIXSMITH_OPENCODE_OAUTH_PROVIDERS=$(jq -c '._opencodeAuth.oauthProviders // [] | unique' <<< "$selected_scope")
+}
 
 if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
   # Migration warning: flat top-level keys (old format has no "paths"/"repos")
@@ -195,36 +217,36 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
   fi
 
   if [[ "$_secrets_valid" == "true" ]]; then
+    _selected_scope=""
+
     # repos match: derive github:<owner> from remote, check repos object
     _github_owner=$(extract_github_owner 2>/dev/null || true)
     if [[ -n "$_github_owner" ]]; then
       _repo_key="github:${_github_owner}"
-      _repo_match=$(jq -r --arg k "$_repo_key" '.repos[$k] // empty | to_entries[] | "\(.key)=\(.value)"' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
-      if [[ -n "$_repo_match" ]]; then
-        NIXSMITH_SECRETS_ENV="$_repo_match"$'\n'
-      fi
+      _selected_scope=$(jq -c --arg k "$_repo_key" '.repos[$k] // empty | select(type == "object" and length > 0)' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
     fi
 
     # paths match: longest prefix of pwd wins; only used when no repos match
-    if [[ -z "$NIXSMITH_SECRETS_ENV" ]]; then
+    if [[ -z "$_selected_scope" ]]; then
       _current_pwd="$(pwd)"
       while IFS= read -r _prefix; do
         if [[ "$_current_pwd" == "$_prefix"* ]]; then
-          while IFS= read -r _pair; do
-            NIXSMITH_SECRETS_ENV="${NIXSMITH_SECRETS_ENV}${_pair}"$'\n'
-          done < <(jq -r --arg p "$_prefix" '.paths[$p] | to_entries[] | "\(.key)=\(.value)"' "$NIXSMITH_SECRETS_FILE" 2>/dev/null)
+          _selected_scope=$(jq -c --arg p "$_prefix" '.paths[$p] // empty | select(type == "object")' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
           break
         fi
       done < <(jq -r '(.paths // {}) | keys[] | [., length] | @tsv' "$NIXSMITH_SECRETS_FILE" 2>/dev/null | sort -t$'\t' -k2 -rn | cut -f1)
-      unset _current_pwd _prefix _pair
+      unset _current_pwd _prefix
     fi
 
-    unset _repo_key _repo_match _github_owner
+    set_scoped_secrets "$_selected_scope"
+
+    unset _repo_key _github_owner _selected_scope
   fi
   unset _secrets_valid
 fi
 
-export NIXSMITH_SECRETS_ENV
+export NIXSMITH_SECRETS_ENV NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+unset -f set_scoped_secrets
 
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
   SANDBOX_MOUNTS_RW+=("$HOME")
@@ -236,4 +258,3 @@ fi
 NIXSMITH_SANDBOX_RO=$(IFS=:; echo "${SANDBOX_MOUNTS_RO[*]}")
 NIXSMITH_SANDBOX_RW=$(IFS=:; echo "${SANDBOX_MOUNTS_RW[*]}")
 export NIXSMITH_SANDBOX_RO NIXSMITH_SANDBOX_RW
-

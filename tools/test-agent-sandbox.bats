@@ -212,6 +212,30 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "canonical OpenCode credentials are unreadable and unwritable" {
+  local test_home
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.config/nixsmith" "$test_home/.local/share/opencode"
+  printf '%s\n' '{"openai":{"type":"oauth"}}' > "$test_home/.local/share/opencode/auth.json"
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" true
+  local sandbox_status=$status
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" cat "$test_home/.local/share/opencode/auth.json"
+  local read_status=$status
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" bash -c "printf changed > '$test_home/.local/share/opencode/auth.json'"
+  local write_status=$status
+  rm -rf "$test_home"
+
+  [ "$sandbox_status" -eq 0 ]
+  [ "$read_status" -ne 0 ]
+  [ "$write_status" -ne 0 ]
+}
+
 @test "multi-hop symlink chain is accessible inside sandbox" {
   local chain_dir
   chain_dir=$(mktemp -d)

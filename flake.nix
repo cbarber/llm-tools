@@ -37,6 +37,7 @@
           inherit pkgs tools;
           claude-code = self.packages.${system}.claude-code;
           opencode = self.packages.${system}.opencode;
+          opencode-auth = import ./agents/opencode/auth.nix { inherit pkgs; };
           default = pkgs.mkShell {
             name = "dev-shell";
             buildInputs =

@@ -4,15 +4,17 @@ Supplements `setup-agent-api-tokens.sh` script.
 
 ## Architecture
 
-Agents use two separate authentication mechanisms:
+Agents use separate authentication mechanisms:
 
 - **Fine-grained PAT**: Git operations (push/pull/fetch) for GitHub, and PR/issue operations
 - **Deploy keys (SSH)**: Git operations for non-GitHub hosts (GitLab, Gitea)
+- **LLM credentials**: Scoped API keys and OpenCode OAuth grants
 - **Namespace**: `~/.config/nixsmith/`
 
-Both are configured automatically on first shell entry. Inside the sandbox, the PAT is
-injected as a git credential helper so all GitHub remotes use HTTPS regardless of how
-the repo was cloned or what URL rewrites exist in the host gitconfig.
+Git credentials are configured automatically on first shell entry. Inside the
+sandbox, the PAT is injected as a git credential helper so all GitHub remotes
+use HTTPS regardless of how the repo was cloned or what URL rewrites exist in
+the host gitconfig.
 
 ## GitHub Token
 
@@ -180,7 +182,10 @@ LLM provider credentials are injected into the sandbox via
   "repos": {
     "github:acmecorp": {
       "ANTHROPIC_API_KEY": "sk-ant-work-...",
-      "GH_TOKEN": "ghp_..."
+      "GH_TOKEN": "ghp_...",
+      "_opencodeAuth": {
+        "oauthProviders": ["openai"]
+      }
     }
   },
   "paths": {
@@ -197,8 +202,10 @@ LLM provider credentials are injected into the sandbox via
 **Matching:** `repos` match (derived from the git remote owner) wins over
 `paths`. Under `paths`, the longest prefix of `pwd` wins.
 
-**Injection:** at sandbox launch, matched vars are passed to bwrap as individual
-`--setenv` arguments and are never assigned to outer shell variables.
+**Injection:** at sandbox launch, matched API keys are replaced with per-session
+tokens. `iron-proxy` substitutes the real values in outbound requests, so the
+agent does not receive the raw API keys. The current wrapper falls back to direct
+environment injection if `iron-proxy` is unavailable or fails to start.
 
 **Supported variables** (non-exhaustive):
 
@@ -218,8 +225,8 @@ LLM provider credentials are injected into the sandbox via
 | NVIDIA | `NVIDIA_API_KEY` |
 | DigitalOcean | `DIGITALOCEAN_ACCESS_TOKEN` |
 
-Any key in the matched object is injected — the list above is guidance, not a
-restriction.
+Any string key except the reserved `_opencodeAuth` object is treated as an
+environment credential. The list above is guidance, not a restriction.
 
 **Setup:**
 
@@ -234,10 +241,29 @@ pattern matches the current project.
 
 ### Agent credential file isolation
 
-OpenCode stores credentials in `~/.local/share/opencode/auth.json`, which
-is mounted into the sandbox for legitimate reasons (session history, MCP
-OAuth tokens). To prevent stored credentials leaking across projects,
-`OPENCODE_AUTH_CONTENT` is set to an empty JSON object.
+OpenCode stores credentials in `~/.local/share/opencode/auth.json`. For a
+sandboxed OpenCode launch, `_opencodeAuth.oauthProviders` grants access to only
+the named OAuth entries from that canonical file. The filtered map is validated
+and exported through `OPENCODE_AUTH_CONTENT`; missing, malformed, or expired
+entries abort launch.
+
+The canonical `auth.json` is unreadable and unwritable inside Fence. Other
+OpenCode state under `~/.local/share/opencode` remains available. OAuth values
+are necessarily visible to OpenCode and subprocesses through the environment;
+unlike API keys, they are not obfuscated by `iron-proxy`.
+
+Authenticate outside Fence with upstream OpenCode:
+
+```bash
+nix develop github:cbarber/llm-tools#opencode-auth --command opencode auth login \
+  --provider openai --method "ChatGPT Pro/Plus (browser)"
+```
+
+The auth shell clears inherited `OPENCODE_AUTH_CONTENT` and updates the
+canonical file without exposing it to the agent. If OAuth expires during an
+active session, OpenCode cannot persist an upstream refresh because canonical
+writes are denied. Re-run the authentication command and restart the agent;
+the next launch also prints the command when it detects the expired credential.
 
 ### Outer shell isolation
 
