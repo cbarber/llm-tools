@@ -33,6 +33,14 @@ _dbg "sourcing setup-sandbox-paths.sh"
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 _dbg "setup-sandbox-paths.sh done"
 
+if [[ "${1:-}" == "opencode" || "${1:-}" == */opencode ]]; then
+  # shellcheck source=setup-opencode-auth.sh
+  source "${TOOLS_DIR:-$(dirname "$0")}/setup-opencode-auth.sh"
+else
+  export OPENCODE_AUTH_CONTENT="{}"
+fi
+unset NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+
 # ── Locate fence ─────────────────────────────────────────────────────────────
 _dbg "locating fence binary"
 
@@ -83,14 +91,16 @@ _cleanup() {
 }
 trap _cleanup EXIT
 
-# Paths agents must never write.
-_deny_write=(
+# Paths agents must never read or write.
+_deny_read=(
   "${HOME}/.gnupg"
   "${HOME}/.config/nixsmith/secrets.json"
+  "${HOME}/.local/share/opencode/auth.json"
 )
 if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]]; then
-  _deny_write+=("${HOME}/.ssh")
+  _deny_read+=("${HOME}/.ssh")
 fi
+_deny_write=("${_deny_read[@]}")
 if git rev-parse --git-dir >/dev/null 2>&1; then
   _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config
   [[ -f "$_git_cfg" ]] && _deny_write+=("$_git_cfg")
@@ -102,7 +112,7 @@ fi
 _system_ro=("/nix" "/proc" "/etc" "/run/current-system" "/tmp")
 
 _deny_write_json=$(printf '%s\n' "${_deny_write[@]}"               | jq -R . | jq -s .)
-_deny_read_json=$(printf '%s\n' "${_deny_write[@]}"                | jq -R . | jq -s .)
+_deny_read_json=$(printf '%s\n' "${_deny_read[@]}"                 | jq -R . | jq -s .)
 _allow_read_json=$(printf '%s\n' "${_system_ro[@]}" "${SANDBOX_MOUNTS_RO[@]:-}" "${SANDBOX_MOUNTS_RW[@]:-}" | jq -R . | jq -s .)
 _allow_write_json=$(printf '%s\n' "/tmp" "${SANDBOX_MOUNTS_RW[@]:-}"            | jq -R . | jq -s .)
 _local_ports=()
@@ -133,6 +143,7 @@ jq -n \
     },
     filesystem: {
       defaultDenyRead: true,
+      allowGitConfig: true,
       allowRead:  $allowRead,
       allowWrite: $allowWrite,
       denyRead:   $denyRead,
@@ -148,7 +159,7 @@ _dbg "fence config written: $_FENCE_CFG"
 
 export IN_AGENT_SANDBOX=1
 export AGENT_WORK_DIR=/tmp
-export OPENCODE_AUTH_CONTENT="{}"
+export GIT_CONFIG_GLOBAL=/dev/null
 export NIXSMITH_SANDBOX_RO="${NIXSMITH_SANDBOX_RO:-}"
 export NIXSMITH_SANDBOX_RW="${NIXSMITH_SANDBOX_RW:-}"
 
@@ -340,19 +351,8 @@ if [[ -n "${FENCE_LOG_FILE:-}" ]]; then
   FENCE_ARGS+=(--fence-log-file "$FENCE_LOG_FILE")
 fi
 
-# expose-host-path-rw makes paths writable inside the sandbox (fence's
-# --ro-bind / / baseline is read-only; RW paths need explicit exposure).
-FENCE_ARGS+=(--expose-host-path-rw "$(pwd)")
-FENCE_ARGS+=(--expose-host-path-rw /tmp)
-for _p in "${SANDBOX_MOUNTS_RW[@]:-}"; do
-  [[ -z "$_p" ]] && continue
-  [[ -e "$_p" ]] || continue
-  FENCE_ARGS+=(--expose-host-path-rw "$_p")
-done
-
-
 _dbg "exec fence: $FENCE_BIN ${FENCE_ARGS[*]}"
-unset _git_cfg _deny_write _system_ro
+unset _git_cfg _deny_read _deny_write _system_ro
 unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
 
 # Run fence as a child (not exec) so the EXIT trap fires and kills iron-proxy.
