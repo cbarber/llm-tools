@@ -5,6 +5,12 @@ SANDBOX_SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/agent-sandbox.sh
 PROJECT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 
 setup_file() {
+  if [[ -n "${IN_AGENT_SANDBOX:-}" ]]; then
+    echo "test-agent-sandbox.bats must run outside Fence." >&3
+    echo "Exit the agent and run: bats tools/test-agent-sandbox.bats" >&3
+    return 1
+  fi
+
   if [[ -z "${FENCE_PATH:-}" ]]; then
     if command -v fence &>/dev/null; then
       export FENCE_PATH="$(command -v fence)"
