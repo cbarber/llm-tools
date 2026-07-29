@@ -9,7 +9,6 @@
 # allowRead/allowWrite entries in the fence JSON config.
 #
 # Environment variables:
-#   AGENT_SANDBOX_SSH   - "true" to allow reads+writes to ~/.ssh
 #   SANDBOX_EXTRA_RO    - colon-separated additional read-only paths
 #   SANDBOX_EXTRA_RW    - colon-separated additional read-write paths
 #   SANDBOX_LOCAL_OUTBOUND_PORTS - colon-separated host loopback ports to bridge on Linux
@@ -96,10 +95,8 @@ _deny_read=(
   "${HOME}/.gnupg"
   "${HOME}/.config/nixsmith/secrets.json"
   "${HOME}/.local/share/opencode/auth.json"
+  "${HOME}/.ssh"
 )
-if [[ "${AGENT_SANDBOX_SSH:-false}" != "true" ]]; then
-  _deny_read+=("${HOME}/.ssh")
-fi
 _deny_write=("${_deny_read[@]}")
 if git rev-parse --git-dir >/dev/null 2>&1; then
   _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config

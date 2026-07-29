@@ -135,27 +135,6 @@ setup_file() {
   [[ "$output" == *"Name:"* ]]
 }
 
-
-@test "personal SSH keys require AGENT_SANDBOX_SSH=true" {
-  if [[ ! -d "$HOME/.ssh" ]]; then
-    skip "no ~/.ssh directory"
-  fi
-  local key="$HOME/.ssh/test-personal-key-$$"
-  echo "personal key" > "$key"
-
-  run "$SANDBOX_SCRIPT" cat "$key"
-  local default_status=$status
-  rm -f "$key"
-  echo "personal key" > "$key"
-
-  run env AGENT_SANDBOX_SSH=true "$SANDBOX_SCRIPT" cat "$key"
-  local ssh_status=$status
-  rm -f "$key"
-
-  [ "$default_status" -ne 0 ]
-  [ "$ssh_status" -eq 0 ]
-}
-
 @test ".git/config is read-only inside sandbox" {
   run "$SANDBOX_SCRIPT" bash -c "git -C '$PROJECT_DIR' config user.name 'Sandbox Test'"
   [ "$status" -ne 0 ]
