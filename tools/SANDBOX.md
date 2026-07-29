@@ -21,7 +21,6 @@ Agents run in a deny-by-default sandbox via [fence](https://github.com/fencesand
 
 Key environment variables:
 
-- `AGENT_SANDBOX_SSH=true` — allow reads+writes to `~/.ssh` (for git push over SSH)
 - `AGENT_SANDBOX_BIND_HOME=true` — allow writes to the entire `$HOME` (breaks isolation)
 - `SANDBOX_EXTRA_RO=path1:path2` — additional read-only paths
 - `SANDBOX_EXTRA_RW=path1:path2` — additional read-write paths

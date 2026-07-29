@@ -110,10 +110,6 @@ for _i in "${!_git_cfg_keys[@]}"; do
 done
 unset _git_cfg_keys _git_cfg_values _i
 
-if [[ "${AGENT_SANDBOX_SSH:-false}" == "true" ]]; then
-  [[ -d "$HOME/.ssh" ]] && SANDBOX_MOUNTS_RO+=("$HOME/.ssh")
-fi
-
 # shellcheck disable=SC2066
 for ro_path in \
   "$HOME/.agents"; do
