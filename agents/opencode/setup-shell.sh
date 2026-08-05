@@ -9,7 +9,15 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
     echo "[DEBUG] fence log: $_FENCE_LOG" >&2
     export FENCE_LOG_FILE="$_FENCE_LOG"
   fi
-  sandboxed-opencode() { agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"; }
+  sandboxed-opencode() {
+    if [[ -n "${HERDR_SOCKET_PATH:-}" ]]; then
+      HERDR_AGENT=opencode \
+        SANDBOX_EXTRA_RO="${SANDBOX_EXTRA_RO:+${SANDBOX_EXTRA_RO}:}${HERDR_SOCKET_PATH}" \
+        agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"
+      return
+    fi
+    agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"
+  }
   export -f sandboxed-opencode
 fi
 
