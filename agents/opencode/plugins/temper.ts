@@ -162,13 +162,14 @@ async function injectSkill(
   $: PluginInput["$"],
   directory: string,
   sessionID: string,
-  content: string
+  content: string,
+  noReply = true,
 ): Promise<void> {
   const rendered = await executeBashBlock($, content, directory);
   await client.session.prompt({
     path: { id: sessionID },
     body: {
-      noReply: true,
+      noReply,
       parts: [{ type: "text", text: rendered, synthetic: true }],
     },
   });
@@ -377,7 +378,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         throw new Error(rendered);
       } else {
         await logEvent(client, "dispatch-inject", { sessionID, skill: skill.name });
-        await injectSkill(client, $, directory, sessionID, skill.content);
+        await injectSkill(client, $, directory, sessionID, skill.content, ctx.event !== "session.idle");
       }
     }
   }

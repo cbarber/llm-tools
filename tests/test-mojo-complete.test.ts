@@ -82,13 +82,14 @@ function taskRequests(mock: MockServer) {
   );
 }
 
-function findMojoCompleteAppearancesInFinalMessage(mock: MockServer): Array<{ reqIndex: number; role: string; content: string }> {
+function findMojoCompleteAppearances(mock: MockServer): Array<{ reqIndex: number; role: string; content: string }> {
   const tasks = taskRequests(mock);
-  const last = tasks.length - 1;
   const found: Array<{ reqIndex: number; role: string; content: string }> = [];
-  for (const m of tasks[last].request.messages) {
-    if (m.role === "user" && m.content.includes("# mojo-complete")) {
-      found.push({ reqIndex: last, role: m.role, content: m.content });
+  for (let i = 0; i < tasks.length; i++) {
+    for (const m of tasks[i].request.messages) {
+      if (m.role === "user" && m.content.includes("# mojo-complete")) {
+        found.push({ reqIndex: i, role: m.role, content: m.content });
+      }
     }
   }
   return found;
@@ -144,7 +145,7 @@ describe("mojo-complete — when-guard fails (no remote)", () => {
   });
 
   it("never fires across multiple idle events", () => {
-    const appearances = findMojoCompleteAppearancesInFinalMessage(mock);
+    const appearances = findMojoCompleteAppearances(mock);
     if (appearances.length > 0) {
       logDiagnostics(mock, "mojo-complete appeared unexpectedly");
     }
@@ -168,7 +169,7 @@ describe("mojo-complete — once:true fires at most once per session", () => {
     mock.when((req) => req.toolNames.length === 0).reply("Test session title");
     mock.when((req) => req.toolNames.length > 0).replySequence([
       { reply: { text: "Done after first prompt." } },
-      { reply: { text: "Done after second prompt." } },
+      { reply: { text: "Completed workflow." } },
     ]);
 
     const dir = await createFixtureRepoWithRemote();
@@ -178,8 +179,6 @@ describe("mojo-complete — once:true fires at most once per session", () => {
     const sessionID = await createSession(ocPort, dir);
 
     await sendPromptAndWait(ocPort, sessionID, "First prompt.", mock);
-    await new Promise((r) => setTimeout(r, 1000));
-    await sendPromptAndWait(ocPort, sessionID, "Second prompt.", mock);
 
     await rm(dir, { recursive: true, force: true }).catch(() => { });
   }, 90_000);
@@ -190,7 +189,7 @@ describe("mojo-complete — once:true fires at most once per session", () => {
   });
 
   it("fires exactly once despite multiple session.idle events", () => {
-    const appearances = findMojoCompleteAppearancesInFinalMessage(mock);
+    const appearances = findMojoCompleteAppearances(mock);
     if (appearances.length !== 1) {
       logDiagnostics(mock, `mojo-complete appeared ${appearances.length} time(s), expected 1`);
     }
