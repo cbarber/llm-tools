@@ -6,6 +6,7 @@
  */
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { createOpencodeClient as createV2Client } from "@opencode-ai/sdk/v2/client";
 
 type OpencodeClient = PluginInput["client"];
@@ -37,12 +38,12 @@ type DispatchContext =
   | { event: "session.created" }
   | { event: "session.idle" }
   | { event: "chat.message" }
-  | { event: "tool.execute.before"; tool: string }
+  | { event: "tool.execute.before"; tool: string; command: string }
   | {
     event: "tool.execute.after";
     tool: string;
     command: string;
-    filePath?: string;
+    filePaths?: string[];
     output: { title: string; output: string; metadata: any };
   }
   | { event: "todo.updated"; todos: Array<{ content: string; status: string; priority: string; id: string }> };
@@ -112,6 +113,16 @@ function matchesTrigger(trigger: Trigger, ctx: DispatchContext): boolean {
   if (trigger.tool && !new RegExp(trigger.tool).test(tool)) return false;
   if (trigger.command && !new RegExp(trigger.command).test(command)) return false;
   return true;
+}
+
+function changedFilePaths(tool: string, args: any, directory: string): string[] {
+  if (tool === "edit" || tool === "write") {
+    return args?.filePath ? [resolve(directory, args.filePath)] : [];
+  }
+  if (tool !== "apply_patch") return [];
+
+  const paths = [...String(args?.patchText ?? "").matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)];
+  return paths.map((match) => resolve(directory, match[1].trim()));
 }
 
 async function evalWhen($: PluginInput["$"], when: string, cwd: string): Promise<boolean> {
@@ -297,15 +308,14 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     await logEvent(client, "dispatch", { sessionID, ctx });
 
-    for (const skill of skills) {
-      const trigger = skill.triggers.find((t) => matchesTrigger(t, ctx));
-      if (!trigger) {
-        continue;
-      }
+    const matches = skills.flatMap((skill) =>
+      skill.triggers.filter((trigger) => matchesTrigger(trigger, ctx)).map((trigger) => ({ skill, trigger }))
+    );
 
+    for (const { skill, trigger } of matches) {
       const action: TriggerAction = trigger.action ?? "inject";
 
-      // reset action: clear firedOnce and throttle for this skill — no injection.
+      // reset action: clear firedOnce for this skill — no injection.
       if (action === "reset") {
         if (state.firedOnce.has(skill.name)) {
           state.firedOnce.delete(skill.name);
@@ -327,14 +337,15 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
 
       if (trigger.worktree) {
-        const filePath = "filePath" in ctx ? (ctx.filePath ?? "") : "";
-        if (!filePath) {
+        const filePaths = "filePaths" in ctx ? (ctx.filePaths ?? []) : [];
+        if (filePaths.length === 0) {
           await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "worktree-no-filepath" });
           continue;
         }
         const worktreeRoot = (await $.cwd(directory)`git rev-parse --show-toplevel`.nothrow().text()).trim();
-        if (!filePath.startsWith(worktreeRoot + "/") && filePath !== worktreeRoot) {
-          await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "worktree-outside", filePath, worktreeRoot });
+        const outside = filePaths.find((filePath) => !filePath.startsWith(worktreeRoot + "/") && filePath !== worktreeRoot);
+        if (outside) {
+          await logEvent(client, "dispatch-skip", { skill: skill.name, reason: "worktree-outside", filePath: outside, worktreeRoot });
           continue;
         }
       }
@@ -404,20 +415,23 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "tool.execute.before": async (input, _output) => {
       await logEvent(client, "tool.execute.before", { tool: input.tool });
-      await dispatchEvent(input.sessionID, { event: "tool.execute.before", tool: input.tool });
+      const command: string = input.tool === "bash" ? (_output.args?.command ?? "") : "";
+      await dispatchEvent(input.sessionID, { event: "tool.execute.before", tool: input.tool, command });
     },
 
     "tool.execute.after": async (input, output) => {
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
-      const filePath: string = (input.tool === "edit" || input.tool === "write")
-        ? (input.args?.filePath ?? "")
-        : "";
-      await logEvent(client, "tool.execute.after", { tool: input.tool, command, filePath });
+      const filePaths = changedFilePaths(input.tool, input.args, directory);
+      await logEvent(client, "tool.execute.after", { tool: input.tool, command, filePaths });
+      if (input.tool === "bash" && output.metadata?.exit !== 0) {
+        await logEvent(client, "dispatch-skip", { tool: input.tool, command, reason: "command-failed" });
+        return;
+      }
       await dispatchEvent(input.sessionID, {
         event: "tool.execute.after",
         tool: input.tool,
         command,
-        filePath,
+        filePaths,
         output,
       });
     },
@@ -470,7 +484,7 @@ if (import.meta.main) {
       ctx = { event, tool, command, output: { title: "", output: "", metadata: null } }
       break;
     case "tool.execute.before":
-      ctx = { event, tool }
+      ctx = { event, tool, command }
       break;
     case "session.idle":
     case "session.created":
