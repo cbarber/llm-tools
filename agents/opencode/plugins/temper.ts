@@ -184,6 +184,31 @@ type SessionState = {
 
 const sessionStore = new Map<string, SessionState>();
 
+const BASH_GIT_INSTRUCTIONS = `
+# Git and GitHub
+- Only commit, amend, push, or create PRs when explicitly requested.
+- Before committing, inspect \`git status\`, \`git diff\`, and \`git log --oneline -10\`; stage only intended files and never commit secrets.
+- Write a concise commit message that matches the repo style.
+- Do not update git config, skip hooks, use interactive \`-i\`, force-push, or create empty commits unless explicitly requested.
+- If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.
+- Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.
+- Review all commits included in the PR, not just the latest commit.
+- Use \`gh\` for GitHub tasks, including PRs, issues, checks, and releases; return the PR URL when done.`;
+
+const SYSTEM_GIT_INSTRUCTIONS = [
+  "- Do not amend a commit unless explicitly requested to do so.",
+  "- You struggle using the git interactive console. **ALWAYS** prefer using non-interactive git commands.",
+  "- Do not amend commits unless explicitly requested.",
+  "NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.",
+  "DO NOT run `git commit`, `git push`, `git reset`, `git rebase` and/or do any other git mutations unless explicitly asked to do so. Ask for confirmation each time when you need to do git mutations, even if the user has confirmed in earlier conversations.",
+  "If the user tells you to stage and commit, you may do so. ",
+  "You are NEVER allowed to stage and commit files automatically.",
+];
+
+function removeSystemGitInstructions(system: string): string {
+  return SYSTEM_GIT_INSTRUCTIONS.reduce((result, instruction) => result.replace(instruction, ""), system);
+}
+
 const _registeredDirs = new Set<string>();
 export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) => {
   if (_registeredDirs.has(directory)) return {};
@@ -347,6 +372,18 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   }
 
   return {
+    "tool.definition": async (input, output) => {
+      if (input.toolID !== "bash") return;
+      if (!output.description.includes(BASH_GIT_INSTRUCTIONS)) {
+        throw new Error("Expected Bash Git workflow instructions were not found");
+      }
+      output.description = output.description.replace(BASH_GIT_INSTRUCTIONS, "");
+    },
+
+    "experimental.chat.system.transform": async (_input, output) => {
+      output.system.splice(0, output.system.length, ...output.system.map(removeSystemGitInstructions));
+    },
+
     "shell.env": async (input, output) => {
       if (input.sessionID) output.env.OPENCODE_SESSION_ID = input.sessionID;
     },
