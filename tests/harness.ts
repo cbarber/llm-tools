@@ -57,7 +57,7 @@ export async function createFixtureRepo(): Promise<string> {
   return dir;
 }
 
-export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Promise<void> {
+export async function writeOpencodeConfig(dir: string, mockBaseUrl: string, modelID = "mock-model"): Promise<void> {
   await writeFile(join(dir, "opencode.json"), JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     share: "disabled",
@@ -69,7 +69,7 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
         name: "LLM Mock",
         options: { baseURL: mockBaseUrl, apiKey: "test" },
         models: {
-          "mock-model": {
+          [modelID]: {
             name: "Mock Model",
             tool_call: true,
             limit: { context: 200_000, output: 4096 },
@@ -78,7 +78,7 @@ export async function writeOpencodeConfig(dir: string, mockBaseUrl: string): Pro
         },
       },
     },
-    model: "llm-mock/mock-model",
+    model: `llm-mock/${modelID}`,
   }, null, 2));
 }
 

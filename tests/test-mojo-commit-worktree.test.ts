@@ -112,3 +112,48 @@ describe("mojo-commit — worktree gate (outside worktree)", () => {
     expect(appearances.length).toBe(0);
   });
 });
+
+describe("mojo-commit — apply_patch", () => {
+  let stopOpencode: () => void;
+  let mock: MockServer;
+  let dir: string;
+
+  beforeAll(async () => {
+    const ocPort = await findFreePort();
+    const mockPort = await findFreePort();
+
+    mock = await createMock({ port: mockPort, logLevel: "none" });
+    mock.when((req) => req.toolNames.length === 0).reply("Test session title");
+    mock.when((req) => req.toolNames.length > 0).replySequence([
+      {
+        reply: {
+          tools: [{
+            name: "apply_patch",
+            args: {
+              patchText: "*** Begin Patch\n*** Update File: README.md\n@@\n-# Test\n+# Patched\n*** End Patch",
+            },
+          }],
+        },
+      },
+      { reply: { text: "Done." } },
+    ]);
+
+    dir = await createFixtureRepo();
+    await writeOpencodeConfig(dir, `${mock.url}/v1`, "gpt-test");
+
+    ({ stop: stopOpencode } = await startOpencode(dir, ocPort));
+    const sessionID = await createSession(ocPort, dir);
+    await sendPromptAndWait(ocPort, sessionID, "Patch README.md.", mock);
+  }, 90_000);
+
+  afterAll(async () => {
+    stopOpencode?.();
+    await mock?.stop();
+    await rm(dir, { recursive: true, force: true }).catch(() => { });
+  });
+
+  it("fires mojo-commit after an in-worktree patch", () => {
+    const appearances = findMojoCommitAppearances(mock);
+    expect(appearances.length).toBe(1);
+  });
+});
