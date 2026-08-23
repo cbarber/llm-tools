@@ -125,6 +125,7 @@ for rw_path in \
   "$HOME/.cache/claude" \
   "$HOME/.cache/composer" \
   "$HOME/.cache/go-build" \
+  "$HOME/.cache/golangci-lint" \
   "$HOME/.cache/nix" \
   "$HOME/.cache/opencode" \
   "$HOME/.cache/pip" \
