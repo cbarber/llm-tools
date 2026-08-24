@@ -267,6 +267,24 @@ setup_file() {
   [ "$output" = "content" ]
 }
 
+@test "credential proxy CA is configured for Git and Nix" {
+  local test_home ca_cert
+  test_home=$(mktemp -d)
+  ca_cert="$test_home/ca.crt"
+  mkdir -p "$test_home/.config/nixsmith"
+  printf certificate > "$ca_cert"
+
+  run env HOME="$test_home" \
+    SANDBOX_EXTRA_RO="$test_home" \
+    NIXSMITH_CREDENTIAL_PROXY="http://127.0.0.1:1" \
+    NIXSMITH_CREDENTIAL_PROXY_CA="$ca_cert" \
+    "$SANDBOX_SCRIPT" bash -c \
+    'test "$GIT_SSL_CAINFO" = "$SSL_CERT_FILE" && test "$NIX_SSL_CERT_FILE" = "$SSL_CERT_FILE"'
+  rm -rf "$test_home"
+
+  [ "$status" -eq 0 ]
+}
+
 # Regression test for TASK-38: NIXSMITH_SECRETS_ENV (the plaintext
 # key=value list built from secrets.json) must never reach the sandboxed
 # process's environment, including when NIXSMITH_CREDENTIAL_PROXY is

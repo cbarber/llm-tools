@@ -359,6 +359,8 @@ if [[ -n "${_PROXY_TUNNEL:-}" ]]; then
 fi
 if [[ -n "${_PROXY_CA:-}" ]] && [[ -f "$_PROXY_CA" ]]; then
   export SSL_CERT_FILE="$_PROXY_CA"
+  export GIT_SSL_CAINFO="$_PROXY_CA"
+  export NIX_SSL_CERT_FILE="$_PROXY_CA"
   export NODE_EXTRA_CA_CERTS="$_PROXY_CA"
   export REQUESTS_CA_BUNDLE="$_PROXY_CA"
   export CURL_CA_BUNDLE="$_PROXY_CA"
