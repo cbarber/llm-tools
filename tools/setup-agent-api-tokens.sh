@@ -24,14 +24,12 @@ debug "TERM: ${TERM:-<unset>}"
 debug "=========================================="
 
 NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
-TEA_CONFIG_DIR="${NIXSMITH_CONFIG}/tea"
 
 # shellcheck source=common-helpers.sh
 source "$(dirname "$0")/common-helpers.sh"
 
 debug "Config paths:"
 debug "  NIXSMITH_CONFIG: $NIXSMITH_CONFIG"
-debug "  TEA_CONFIG_DIR: $TEA_CONFIG_DIR"
 
 # Check if setup is needed - exit early if tokens already exist
 debug "Checking for git repository..."
@@ -54,38 +52,70 @@ if [[ -z "$remote_url" ]]; then
 fi
 debug "Remote URL found: $remote_url"
 
-# Detect forge type from git remote
-detect_forge() {
-  local url
-  url=$(git remote get-url origin 2>/dev/null || echo "")
-
-  if [[ "$url" =~ github\.com ]]; then
-    echo "github"
-  elif [[ "$url" =~ gitea ]]; then
-    echo "gitea"
-  else
-    echo "unknown"
-  fi
-}
-
 extract_gitea_url() {
-  local url
-  url=$(git remote get-url origin 2>/dev/null || echo "")
-  if [[ "$url" =~ ^git@([^:]+): ]]; then
-    echo "https://${BASH_REMATCH[1]}"
-  elif [[ "$url" =~ ^https://([^/]+) ]]; then
-    echo "https://${BASH_REMATCH[1]}"
-  fi
+  local repo_url
+  repo_url=$(extract_repo_url) || return 1
+  echo "https://${repo_url%%/*}"
 }
 
-# Early-exit logic for GitHub: secrets.json repos entry takes priority,
-# then per-owner token file, then legacy single-token file (migration required).
 SECRETS_FILE="${NIXSMITH_CONFIG}/secrets.json"
 
-if [[ "$remote_url" =~ github\.com ]]; then
+store_repo_token() {
+  local repo_key="$1" token_name="$2" token="$3" tmp
+  mkdir -p "${NIXSMITH_CONFIG}"
+  chmod 700 "${NIXSMITH_CONFIG}"
+  tmp=$(mktemp "${NIXSMITH_CONFIG}/secrets.json.XXXXXX")
+
+  if [[ -f "$SECRETS_FILE" ]]; then
+    if ! jq --arg k "$repo_key" --arg n "$token_name" --arg t "$token" \
+      '.repos //= {} | .repos[$k] //= {} | .repos[$k][$n] = $t' \
+      "$SECRETS_FILE" > "$tmp"; then
+      rm -f "$tmp"
+      return 1
+    fi
+  else
+    jq -n --arg k "$repo_key" --arg n "$token_name" --arg t "$token" \
+      '{repos: {($k): {($n): $t}}, paths: {}}' > "$tmp"
+  fi
+
+  chmod 600 "$tmp"
+  mv "$tmp" "$SECRETS_FILE"
+}
+
+remove_legacy_tea_config() {
+  local tea_config="${NIXSMITH_CONFIG}/tea/config.yml"
+  [[ -f "$tea_config" ]] || return 0
+  rm -f "$tea_config"
+  rmdir "${NIXSMITH_CONFIG}/tea" 2>/dev/null || true
+  echo "✓ Removed legacy Tea credential config ${tea_config}"
+}
+
+migrate_legacy_github_scope() {
+  local owner old_key new_key tmp
+  [[ -f "$SECRETS_FILE" ]] || return 0
   owner=$(extract_github_owner 2>/dev/null || true)
-  repo_key="github:${owner}"
-  debug "GitHub owner: '$owner'"
+  [[ -n "$owner" ]] || return 0
+  old_key="github:${owner}"
+  jq -e --arg k "$old_key" '.repos[$k] != null' "$SECRETS_FILE" >/dev/null 2>&1 || return 0
+  new_key=$(extract_repo_owner_scope)
+  tmp=$(mktemp "${NIXSMITH_CONFIG}/secrets.json.XXXXXX")
+
+  if ! jq --arg old "$old_key" --arg new "$new_key" \
+    '.repos[$new] = ((.repos[$old] // {}) + (.repos[$new] // {})) | del(.repos[$old])' \
+    "$SECRETS_FILE" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  chmod 600 "$tmp"
+  mv "$tmp" "$SECRETS_FILE"
+  echo "✓ Migrated secrets.json repository scope ${old_key} to ${new_key}"
+}
+
+if [[ "$(detect_forge)" == "github" ]]; then
+  migrate_legacy_github_scope
+  repo_key=$(nixsmith_repo_scope_key "$SECRETS_FILE" 2>/dev/null || true)
+  [[ -n "$repo_key" ]] || repo_key=$(extract_repo_owner_scope 2>/dev/null || true)
   debug "GitHub repo key: '$repo_key'"
 
   # Check secrets.json repos entry
@@ -95,18 +125,10 @@ if [[ "$remote_url" =~ github\.com ]]; then
       if [[ -n "$secrets_token" ]]; then
         debug "secrets.json repos entry exists — exiting early"
         echo "✓ Agent API tokens verified - ${SECRETS_FILE} (repos.${repo_key})"
-        export GH_TOKEN="$secrets_token"
         exit 0
       fi
     fi
   fi
-fi
-
-# Gitea: unchanged — single config file covers all repos
-if [[ "$remote_url" =~ gitea ]] && [[ -f "$TEA_CONFIG_DIR/config.yml" ]]; then
-  debug "Gitea remote detected and config exists - exiting early"
-  echo "✓ Agent API tokens verified (Gitea token exists)"
-  exit 0
 fi
 
 debug "No early exit conditions met - continuing with setup"
@@ -128,7 +150,9 @@ setup_github() {
     return 1
   fi
 
-  local repo_key="github:${owner}"
+  local repo_key
+  repo_key=$(nixsmith_repo_scope_key "$SECRETS_FILE" 2>/dev/null || true)
+  [[ -n "$repo_key" ]] || repo_key=$(extract_repo_owner_scope)
   local token_name="nixsmith - ${HOSTNAME} - ${owner}"
 
   echo "GitHub API Token Setup"
@@ -193,25 +217,25 @@ setup_github() {
     return 1
   fi
 
-  # Store token in secrets.json
-  mkdir -p "${NIXSMITH_CONFIG}"
-  chmod 700 "${NIXSMITH_CONFIG}"
-  if [[ ! -f "$SECRETS_FILE" ]]; then
-    printf '{"repos":{"%s":{"GH_TOKEN":"%s"}},"paths":{}}\n' "$repo_key" "$token" | jq . > "$SECRETS_FILE"
-  else
-    local tmp
-    tmp=$(mktemp)
-    jq --arg k "$repo_key" --arg t "$token" \
-      '.repos //= {} | .repos[$k] //= {} | .repos[$k].GH_TOKEN = $t' \
-      "$SECRETS_FILE" | jq . > "$tmp" && mv "$tmp" "$SECRETS_FILE"
+  if ! store_repo_token "$repo_key" GH_TOKEN "$token"; then
+    echo "Error: Failed to update ${SECRETS_FILE}" >&2
+    return 1
   fi
-  chmod 600 "$SECRETS_FILE"
-
-  # Export for immediate use
-  export GH_TOKEN="$token"
 
   echo "✓ GitHub token configured (${SECRETS_FILE})"
   echo ""
+}
+
+# Tea supports an in-memory login when both variables are present.
+verify_gitea() {
+  local gitea_url="$1" token="$2"
+  local verify_output
+  if ! verify_output=$(GITEA_INSTANCE_URL="$gitea_url" GITEA_TOKEN="$token" \
+    tea api "/repos/{owner}/{repo}" --output /dev/null 2>&1); then
+    echo "Tea CLI output:" >&2
+    echo "$verify_output" >&2
+    return 1
+  fi
 }
 
 # Setup Gitea token
@@ -219,9 +243,30 @@ setup_gitea() {
   local gitea_url
   gitea_url=$(extract_gitea_url)
 
+  local repo_key
+  repo_key=$(nixsmith_repo_scope_key "$SECRETS_FILE" 2>/dev/null || true)
+  [[ -n "$repo_key" ]] || repo_key=$(extract_repo_owner_scope 2>/dev/null || true)
+
   if [[ -z "$gitea_url" ]]; then
     echo "Error: Could not determine Gitea URL" >&2
     return 1
+  fi
+
+  # Check secrets.json repos entry
+  if [[ -f "$SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    if jq -e 'has("repos")' "$SECRETS_FILE" >/dev/null 2>&1; then
+      secrets_token=$(jq -r --arg k "$repo_key" '.repos[$k].GITEA_TOKEN // empty' "$SECRETS_FILE" 2>/dev/null || true)
+      if [[ -n "$secrets_token" ]]; then
+        if ! verify_gitea "$gitea_url" "$secrets_token"; then
+          echo "Error: Token verification failed" >&2
+          return 1
+        fi
+        remove_legacy_tea_config
+        debug "secrets.json repos entry exists — verified with tea"
+        echo "✓ Agent API tokens verified - ${SECRETS_FILE} (repos.${repo_key})"
+        return 0
+      fi
+    fi
   fi
 
   echo "Gitea API Token Setup"
@@ -247,7 +292,7 @@ setup_gitea() {
   echo "Configure the token:"
   echo "  1. Token Name: nixsmith - ${HOSTNAME}"
   echo "  2. Select scopes:"
-  echo "     ☑ read:repository"
+  echo "     ☑ write:repository"
   echo "     ☑ write:issue"
   echo "  3. Generate Token"
   echo ""
@@ -262,28 +307,18 @@ setup_gitea() {
     return 1
   fi
 
-  # Configure tea
-  echo "Configuring tea CLI..."
-  mkdir -p "${TEA_CONFIG_DIR}"
-  chmod 700 "${TEA_CONFIG_DIR}"
-
-  # Use XDG_CONFIG_HOME to target our namespace
-  XDG_CONFIG_HOME="${NIXSMITH_CONFIG}" tea login add \
-    --name nixsmith \
-    --url "${gitea_url}" \
-    --token "$token" 2>/dev/null || {
-    echo "Error: Failed to configure tea CLI" >&2
-    return 1
-  }
-
-  # Verify
   echo "Verifying token..."
-  if ! XDG_CONFIG_HOME="${NIXSMITH_CONFIG}" tea repos list >/dev/null 2>&1; then
+  verify_gitea "$gitea_url" "$token" || {
     echo "Error: Token verification failed" >&2
     return 1
+  }
+  if ! store_repo_token "$repo_key" GITEA_TOKEN "$token"; then
+    echo "Error: Failed to update ${SECRETS_FILE}" >&2
+    return 1
   fi
+  remove_legacy_tea_config
 
-  echo "✓ Gitea token configured"
+  echo "✓ Gitea token configured (${SECRETS_FILE})"
   echo ""
 }
 
@@ -294,10 +329,10 @@ main() {
 
   case "$forge_type" in
     github)
-      setup_github || exit 1
+      setup_github
       ;;
     gitea)
-      setup_gitea || exit 1
+      setup_gitea
       ;;
     *)
       echo "Error: Could not detect forge type (GitHub or Gitea)" >&2

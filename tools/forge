@@ -4,30 +4,11 @@
 
 set -euo pipefail
 
-NIXSMITH_CONFIG="${HOME}/.config/nixsmith"
-
 # shellcheck source=common-helpers.sh
 source "$(dirname "$0")/common-helpers.sh"
 
-# Wrapper for tea that uses nixsmith namespace
 run_tea() {
-    XDG_CONFIG_HOME="${NIXSMITH_CONFIG}" tea "$@"
-}
-
-# Detect forge type from git remote
-detect_forge() {
-    local remote_url
-    remote_url=$(git remote get-url origin 2>/dev/null || echo "")
-    
-    if [[ "$remote_url" =~ github\.com ]]; then
-        echo "github"
-    elif [[ "$remote_url" =~ gitlab\.com ]]; then
-        echo "gitlab"
-    elif [[ "$remote_url" =~ gitea ]]; then
-        echo "gitea"
-    else
-        echo "unknown"
-    fi
+    tea "$@"
 }
 
 # Authenticate GitHub
@@ -38,54 +19,31 @@ authenticate_github() {
         return 0
     fi
 
-    # secrets.json repos entry
-    local secrets_file="${NIXSMITH_CONFIG}/secrets.json"
-    local gh_owner
-    gh_owner=$(extract_github_owner 2>/dev/null || true)
-    if [[ -f "$secrets_file" ]] && command -v jq >/dev/null 2>&1; then
-        if [[ -n "$gh_owner" ]] && jq -e 'has("repos")' "$secrets_file" >/dev/null 2>&1; then
-            local token
-            token=$(jq -r --arg k "github:${gh_owner}" '.repos[$k].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
-            if [[ -n "$token" ]]; then
-                GH_TOKEN="$token"
-                export GH_TOKEN
-                return 0
-            fi
-        fi
-
-        # paths match fallback — check current pwd against paths entries
-        if jq -e 'has("paths")' "$secrets_file" >/dev/null 2>&1; then
-            local current_pwd _prefix
-            current_pwd="$(pwd)"
-            while IFS= read -r _prefix; do
-                if [[ "$current_pwd" == "$_prefix"* ]]; then
-                    token=$(jq -r --arg p "$_prefix" '.paths[$p].GH_TOKEN // empty' "$secrets_file" 2>/dev/null || true)
-                    [[ -n "$token" ]] && { GH_TOKEN="$token"; export GH_TOKEN; return 0; }
-                    break
-                fi
-            done < <(jq -r '(.paths // {}) | keys[] | [., length] | @tsv' "$secrets_file" 2>/dev/null | sort -t$'\t' -k2 -rn | cut -f1)
-        fi
-    fi
-
-    if gh auth status &>/dev/null 2>&1; then
-        echo "⚠️  Warning: Using dev's gh auth. Set up agent tokens: tools/setup-agent-api-tokens.sh" >&2
-    else
-        echo "Error: No GitHub authentication." >&2
-        echo "Run: tools/setup-agent-api-tokens.sh" >&2
-        exit 1
-    fi
+    echo "Error: GH_TOKEN was not injected for this repository." >&2
+    echo "Run: tools/setup-agent-api-tokens.sh" >&2
+    exit 1
 }
 
 # Authenticate Gitea
 authenticate_gitea() {
-    if ! run_tea repos list >/dev/null 2>&1; then
+    if [[ -z "${GITEA_TOKEN:-}" || -z "${GITEA_INSTANCE_URL:-}" ]]; then
+        echo "Error: GITEA_TOKEN and GITEA_INSTANCE_URL were not injected for this repository." >&2
+        echo "Run: tools/setup-agent-api-tokens.sh" >&2
+        exit 1
+    fi
+
+    if ! run_tea api "/repos/{owner}/{repo}" --output /dev/null 2>&1; then
         echo "Error: Gitea not authenticated." >&2
         echo "Run: tools/setup-agent-api-tokens.sh" >&2
         exit 1
     fi
 }
 
-FORGE_TYPE=$(detect_forge)
+if [[ -n "${GITEA_TOKEN:-}" ]]; then
+    FORGE_TYPE="gitea"
+else
+    FORGE_TYPE=$(detect_forge)
+fi
 
 # doctor runs before authentication — it is the tool used to diagnose auth
 # failures, so it must not require auth to start.
@@ -349,10 +307,9 @@ doctor() {
                     check_fail "secrets.json: old flat format — wrap keys under \"paths\" or \"repos\""
                 else
                     # repos match
-                    local gh_owner repo_key repo_var_count
-                    gh_owner=$(extract_github_owner 2>/dev/null || true)
-                    if [[ -n "$gh_owner" ]]; then
-                        repo_key="github:${gh_owner}"
+                    local repo_key repo_var_count
+                    repo_key=$(nixsmith_repo_scope_key "$secrets_file" 2>/dev/null || true)
+                    if [[ -n "$repo_key" ]]; then
                         repo_var_count=$(jq -r --arg k "$repo_key" '.repos[$k] // {} | keys | length' "$secrets_file" 2>/dev/null || echo "0")
                         if [[ "$repo_var_count" -gt 0 ]]; then
                             check_ok "secrets.json: repos matched '${repo_key}' (${repo_var_count} var(s))"
@@ -365,7 +322,7 @@ doctor() {
                     local current_pwd matched_prefixes=()
                     current_pwd="$(pwd)"
                     while IFS= read -r _prefix; do
-                        [[ "$current_pwd" == "$_prefix"* ]] && matched_prefixes+=("$_prefix")
+                        [[ "$_prefix" == "/" || "$current_pwd" == "$_prefix" || "$current_pwd" == "$_prefix"/* ]] && matched_prefixes+=("$_prefix")
                     done < <(jq -r '(.paths // {}) | keys[]' "$secrets_file" 2>/dev/null)
 
                     if [[ ${#matched_prefixes[@]} -eq 0 ]]; then
