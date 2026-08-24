@@ -221,6 +221,36 @@ setup_file() {
   [ "$write_status" -ne 0 ]
 }
 
+@test "iron-proxy certificate is read-only and private key is inaccessible" {
+  local test_home
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.config/nixsmith/iron-proxy"
+  printf certificate > "$test_home/.config/nixsmith/iron-proxy/ca.crt"
+  printf private-key > "$test_home/.config/nixsmith/iron-proxy/ca.key"
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" cat "$test_home/.config/nixsmith/iron-proxy/ca.crt"
+  local cert_read_status=$status
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" bash -c "printf changed > '$test_home/.config/nixsmith/iron-proxy/ca.crt'"
+  local cert_write_status=$status
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" cat "$test_home/.config/nixsmith/iron-proxy/ca.key"
+  local key_read_status=$status
+
+  run env HOME="$test_home" SANDBOX_EXTRA_RO="$test_home" \
+    "$SANDBOX_SCRIPT" bash -c "printf changed > '$test_home/.config/nixsmith/iron-proxy/ca.key'"
+  local key_write_status=$status
+  rm -rf "$test_home"
+
+  [ "$cert_read_status" -eq 0 ]
+  [ "$cert_write_status" -ne 0 ]
+  [ "$key_read_status" -ne 0 ]
+  [ "$key_write_status" -ne 0 ]
+}
+
 @test "multi-hop symlink chain is accessible inside sandbox" {
   local chain_dir
   chain_dir=$(mktemp -d)

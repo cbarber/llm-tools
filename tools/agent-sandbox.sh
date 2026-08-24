@@ -93,11 +93,13 @@ trap _cleanup EXIT
 # Paths agents must never read or write.
 _deny_read=(
   "${HOME}/.gnupg"
+  "${HOME}/.config/nixsmith/iron-proxy/ca.key"
   "${HOME}/.config/nixsmith/secrets.json"
   "${HOME}/.local/share/opencode/auth.json"
   "${HOME}/.ssh"
 )
 _deny_write=("${_deny_read[@]}")
+_deny_write+=("${HOME}/.config/nixsmith/iron-proxy")
 if git rev-parse --git-dir >/dev/null 2>&1; then
   _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config
   [[ -f "$_git_cfg" ]] && _deny_write+=("$_git_cfg")
