@@ -15,7 +15,8 @@ buildGoModule {
     hash = "sha256-f3fbf5C9Ima3qJkVakrydtra5gxNEyTSKk2oVv+Zjg4=";
   };
 
-  vendorHash = "sha256-6KUQeShcgeOJwlP/aE8RlgfmtmGNC9MJjJtJ1BMREe4=";
+  proxyVendor = true;
+  vendorHash = "sha256-PFnsyPwYd1llOgpcK7Ky6Zhz3xZ3IV6cXAUVjwwQC9M=";
 
   subPackages = [ "cmd/iron-proxy" ];
 
