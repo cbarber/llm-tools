@@ -19,7 +19,7 @@ the host gitconfig.
 ## GitHub Token
 
 GitHub fine-grained PATs are stored in `secrets.json` under the `repos` key,
-keyed by `github:<owner>` (org or username, always lowercased).
+keyed by a normalized repository URL prefix such as `github.com/cbarber`.
 
 **Token name on GitHub:** `nixsmith - <hostname> - <owner>`
 
@@ -47,16 +47,25 @@ the session gitconfig or any temp file.
 **Requirements:**
 
 - Token name: `nixsmith - {hostname}`
-- Scopes: `read:repository`, `write:issue`
+- Scopes: `write:repository`, `write:issue`
 - Note: Token grants access to all user repositories (Gitea limitation)
 
-**Storage:** `~/.config/nixsmith/tea/config.yml` (via tea CLI)
+The authoritative token is stored as `GITEA_TOKEN` in `secrets.json`, keyed by
+a normalized repository URL prefix such as `git.thingiedoo.com/cbarber`.
+Inside the sandbox, `GITEA_INSTANCE_URL` is derived from the matched origin and
+Tea uses both variables to construct an in-memory login. No Tea configuration
+file is generated. Credential-proxy substitution for `GITEA_TOKEN` is restricted
+to that origin host.
 
 **Gitea:**
 
 1. Visit: {gitea-url}/user/settings/applications
 2. Generate token with required scopes
-3. Configure: `XDG_CONFIG_HOME=~/.config/nixsmith tea login add --name nixsmith --url {gitea-url} --token TOKEN`
+3. Run `tools/setup-agent-api-tokens.sh` and paste the token; the script verifies
+   it using Tea's environment login and writes it to `secrets.json`.
+
+After successful verification, setup removes the legacy
+`~/.config/nixsmith/tea/config.yml` credential file created by older versions.
 
 ## forge CLI Usage
 
@@ -156,7 +165,7 @@ forge issue show <number> [--json]
 forge doctor          # Start here — shows token file path and live auth status
 ```
 
-- Test Gitea: `XDG_CONFIG_HOME=~/.config/nixsmith tea repos list`
+- Test Gitea inside the agent sandbox: `tea repos list`
 
 **Token verification fails:**
 
@@ -180,7 +189,7 @@ LLM provider credentials are injected into the sandbox via
 ```json
 {
   "repos": {
-    "github:acmecorp": {
+    "github.com/acmecorp": {
       "ANTHROPIC_API_KEY": "sk-ant-work-...",
       "GH_TOKEN": "ghp_...",
       "_opencodeAuth": {
@@ -199,8 +208,11 @@ LLM provider credentials are injected into the sandbox via
 }
 ```
 
-**Matching:** `repos` match (derived from the git remote owner) wins over
-`paths`. Under `paths`, the longest prefix of `pwd` wins.
+**Matching:** origin URLs are normalized to lowercase `host/path` values with
+the scheme, SSH user, trailing slash, and `.git` suffix removed. The longest
+boundary-delimited `repos` prefix wins over `paths`, so an owner scope such as
+`github.com/cbarber` can be overridden by `github.com/cbarber/llm-tools`.
+Under `paths`, the longest boundary-delimited prefix of `pwd` wins.
 
 **Injection:** at sandbox launch, matched API keys are replaced with per-session
 tokens. `iron-proxy` substitutes the real values in outbound requests, so the
@@ -216,7 +228,8 @@ environment injection if `iron-proxy` is unavailable or fails to start.
 | Google Vertex | `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT` |
 | AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEARER_TOKEN_BEDROCK` |
 | Azure OpenAI | `AZURE_OPENAI_API_KEY`, `AZURE_RESOURCE_NAME` |
-| GitHub | `GITHUB_TOKEN` |
+| GitHub | `GH_TOKEN` |
+| Gitea | `GITEA_TOKEN` |
 | GitLab | `GITLAB_TOKEN` |
 | Groq | `GROQ_API_KEY` |
 | Mistral | `MISTRAL_API_KEY` |
@@ -225,8 +238,8 @@ environment injection if `iron-proxy` is unavailable or fails to start.
 | NVIDIA | `NVIDIA_API_KEY` |
 | DigitalOcean | `DIGITALOCEAN_ACCESS_TOKEN` |
 
-Any string key except the reserved `_opencodeAuth` object is treated as an
-environment credential. The list above is guidance, not a restriction.
+Any valid environment-variable name except the reserved `_opencodeAuth` object
+is treated as a credential. The list above is guidance, not a restriction.
 
 **Setup:**
 
@@ -267,8 +280,8 @@ the next launch also prints the command when it detects the expired credential.
 
 ### Outer shell isolation
 
-After sourcing `.env` files, `setup-shared-shell.sh` unsets all known AI
-provider credentials from the outer shell. This prevents credentials set in
+After sourcing `.env` files, `setup-shared-shell.sh` unsets all known AI-provider
+and forge credentials from the outer shell. This prevents credentials set in
 `.env` or the environment from leaking into the sandbox via shell inheritance.
 Credentials reach the sandbox exclusively through secrets.json `--setenv`
 injection.
@@ -278,7 +291,8 @@ The blocklist covers: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
 `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
 `AWS_BEARER_TOKEN_BEDROCK`, `AZURE_OPENAI_API_KEY`, `AZURE_RESOURCE_NAME`,
-`GITLAB_TOKEN`, `CLOUDFLARE_API_TOKEN`, `NVIDIA_API_KEY`,
+`GH_TOKEN`, `GITHUB_TOKEN`, `GITEA_TOKEN`, `GITEA_INSTANCE_URL`, `GITLAB_TOKEN`,
+`CLOUDFLARE_API_TOKEN`, `NVIDIA_API_KEY`,
 `DIGITALOCEAN_ACCESS_TOKEN`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`,
 `OPENROUTER_API_KEY`.
 

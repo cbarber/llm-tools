@@ -11,7 +11,7 @@
 # file or [include] of the user's real config is needed.
 #
 # Required by caller before sourcing:
-#   extract_github_owner  — function from common-helpers.sh (sourced by caller)
+#   nixsmith_repo_scope_key — function from common-helpers.sh (sourced by caller)
 
 # bwrap bind-mounts paths literally — symlinks must exist inside the sandbox
 # at every step of the chain or traversal fails. Mount each link and the target.
@@ -135,7 +135,6 @@ for rw_path in \
   "$HOME/.claude.json" \
   "$HOME/.composer" \
   "$HOME/.config/nixsmith/iron-proxy" \
-  "$HOME/.config/nixsmith/tea" \
   "$HOME/.config/opencode" \
   "$HOME/.gem" \
   "$HOME/.gradle" \
@@ -171,36 +170,50 @@ fi
 # File: ~/.config/nixsmith/secrets.json (mode 600)
 # Format:
 #   {
-#     "repos": { "github:<owner>": { "VAR": "value" } },
+#     "repos": { "host/owner": { "VAR": "value" } },
 #     "paths": { "/path/prefix": { "VAR": "value" } }
 #   }
-# repos match (derived from git remote owner) wins over paths match.
-# Longest paths prefix wins. Vars are exported by the caller (agent-sandbox.sh)
+# Longest repo URL prefix wins over the longest path prefix.
+# Vars are exported by the caller (agent-sandbox.sh)
 # right before exec'ing fence, so the sandboxed process inherits them.
 
 NIXSMITH_SECRETS_FILE="${HOME}/.config/nixsmith/secrets.json"
 NIXSMITH_SECRETS_ENV=""
+NIXSMITH_DERIVED_ENV=""
+NIXSMITH_GITEA_HOST=""
 NIXSMITH_OPENCODE_OAUTH_PROVIDERS="[]"
 
 set_scoped_secrets() {
   local selected_scope="$1"
+  local repo_url
   [[ -n "$selected_scope" ]] || return 0
 
   if ! jq -e '
     type == "object" and
-    ([to_entries[] | select(.key != "_opencodeAuth") | .value | type == "string"] | all) and
+    ([to_entries[] | select(.key != "_opencodeAuth") |
+      (.key | test("^[A-Za-z_][A-Za-z0-9_]*$")) and (.value | type == "string")] | all) and
     (if has("_opencodeAuth") then
       (._opencodeAuth | type == "object" and
         ((.oauthProviders // []) | type == "array" and all(.[]; type == "string" and length > 0)))
     else true end)
   ' <<< "$selected_scope" >/dev/null; then
-    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment values must be strings and _opencodeAuth.oauthProviders must be an array of provider IDs." >&2
+    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment keys must be variable names, values must be strings, and _opencodeAuth.oauthProviders must be an array of provider IDs." >&2
     return 1
   fi
 
-  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth") | "\(.key)=\(.value)"' <<< "$selected_scope")
+  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth" and .key != "GITEA_INSTANCE_URL") | "\(.key)=\(.value)"' <<< "$selected_scope")
   [[ -z "$NIXSMITH_SECRETS_ENV" ]] || NIXSMITH_SECRETS_ENV+=$'\n'
   NIXSMITH_OPENCODE_OAUTH_PROVIDERS=$(jq -c '._opencodeAuth.oauthProviders // [] | unique' <<< "$selected_scope")
+
+  if jq -e 'has("GITEA_TOKEN")' <<< "$selected_scope" >/dev/null; then
+    repo_url=$(extract_repo_url 2>/dev/null || true)
+    if [[ -z "$repo_url" ]]; then
+      echo "Cannot use GITEA_TOKEN from ${NIXSMITH_SECRETS_FILE} without a repository origin." >&2
+      return 1
+    fi
+    NIXSMITH_GITEA_HOST="${repo_url%%/*}"
+    NIXSMITH_DERIVED_ENV="GITEA_INSTANCE_URL=https://${NIXSMITH_GITEA_HOST}"$'\n'
+  fi
 }
 
 if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
@@ -216,10 +229,8 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
   if [[ "$_secrets_valid" == "true" ]]; then
     _selected_scope=""
 
-    # repos match: derive github:<owner> from remote, check repos object
-    _github_owner=$(extract_github_owner 2>/dev/null || true)
-    if [[ -n "$_github_owner" ]]; then
-      _repo_key="github:${_github_owner}"
+    _repo_key=$(nixsmith_repo_scope_key "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
+    if [[ -n "$_repo_key" ]]; then
       _selected_scope=$(jq -c --arg k "$_repo_key" '.repos[$k] // empty | select(type == "object" and length > 0)' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
     fi
 
@@ -227,7 +238,7 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     if [[ -z "$_selected_scope" ]]; then
       _current_pwd="$(pwd)"
       while IFS= read -r _prefix; do
-        if [[ "$_current_pwd" == "$_prefix"* ]]; then
+        if [[ "$_prefix" == "/" || "$_current_pwd" == "$_prefix" || "$_current_pwd" == "$_prefix"/* ]]; then
           _selected_scope=$(jq -c --arg p "$_prefix" '.paths[$p] // empty | select(type == "object")' "$NIXSMITH_SECRETS_FILE" 2>/dev/null || true)
           break
         fi
@@ -237,12 +248,12 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
 
     set_scoped_secrets "$_selected_scope"
 
-    unset _repo_key _github_owner _selected_scope
+    unset _repo_key _selected_scope
   fi
   unset _secrets_valid
 fi
 
-export NIXSMITH_SECRETS_ENV NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST NIXSMITH_OPENCODE_OAUTH_PROVIDERS
 unset -f set_scoped_secrets
 
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then

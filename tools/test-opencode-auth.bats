@@ -81,8 +81,8 @@ teardown() {
 @test "repository OAuth metadata wins over path secrets without becoming an environment variable" {
   mkdir -p "$TEST_HOME/.config/nixsmith"
   git -C "$TEST_REPO" init -q
-  git -C "$TEST_REPO" remote add origin git@github.com:scope-owner/project.git
-  printf '%s\n' "{\"repos\":{\"github:scope-owner\":{\"_opencodeAuth\":{\"oauthProviders\":[\"openai\"]}}},\"paths\":{\"$TEST_REPO\":{\"ANTHROPIC_API_KEY\":\"path-key\",\"_opencodeAuth\":{\"oauthProviders\":[\"anthropic\"]}}}}" > "$TEST_HOME/.config/nixsmith/secrets.json"
+  git -C "$TEST_REPO" remote add origin git@git.thingiedoo.com:scope-owner/project.git
+  printf '%s\n' "{\"repos\":{\"git.thingiedoo.com/scope-owner\":{\"_opencodeAuth\":{\"oauthProviders\":[\"openai\"]}}},\"paths\":{\"$TEST_REPO\":{\"ANTHROPIC_API_KEY\":\"path-key\",\"_opencodeAuth\":{\"oauthProviders\":[\"anthropic\"]}}}}" > "$TEST_HOME/.config/nixsmith/secrets.json"
 
   run env HOME="$TEST_HOME" bash -c '
     cd "$1"
@@ -154,6 +154,6 @@ teardown() {
   ' _ "$TEST_REPO" "$COMMON_HELPERS" "$PATHS_SCRIPT"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *'environment values must be strings'* ]]
+  [[ "$output" == *'values must be strings'* ]]
   [[ "$output" != *'nested'* ]]
 }

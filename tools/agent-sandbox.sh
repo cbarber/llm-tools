@@ -175,6 +175,14 @@ fi
 #   2. NIXSMITH_SECRETS_ENV set + iron-proxy available → start iron-proxy
 #   3. Neither → secrets fall through as env vars (legacy, no proxy)
 
+if [[ -n "${NIXSMITH_DERIVED_ENV:-}" ]]; then
+  while IFS= read -r _pair; do
+    [[ -z "$_pair" ]] && continue
+    export "${_pair?}"
+  done <<< "$NIXSMITH_DERIVED_ENV"
+fi
+unset NIXSMITH_DERIVED_ENV _pair
+
 if [[ -n "${NIXSMITH_CREDENTIAL_PROXY:-}" ]]; then
   _dbg "using pre-configured credential proxy: $NIXSMITH_CREDENTIAL_PROXY"
   # Secrets already flow through the pre-configured proxy — the raw values
@@ -213,6 +221,14 @@ elif [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]] && [[ -n "$IRON_PROXY_BIN" ]]; then
     [[ -z "$_pair" ]] && continue
     _key="${_pair%%=*}"
     _val="${_pair#*=}"
+    _host="*"
+    if [[ "$_key" == "GITEA_TOKEN" ]]; then
+      if [[ -z "${NIXSMITH_GITEA_HOST:-}" ]]; then
+        echo "agent-sandbox: refusing unscoped GITEA_TOKEN" >&2
+        exit 1
+      fi
+      _host="$NIXSMITH_GITEA_HOST"
+    fi
     # Random proxy token — sandbox sees this, never the real value
     _token="proxy-${_key,,}-$(head -c 12 /dev/urandom | base64 | tr -d '+/=')"
     _IRON_SECRETS_YAML+="        - source:"$'\n'
@@ -224,12 +240,17 @@ elif [[ -n "${NIXSMITH_SECRETS_ENV:-}" ]] && [[ -n "$IRON_PROXY_BIN" ]]; then
     _IRON_SECRETS_YAML+="            match_body: true"$'\n'
     _IRON_SECRETS_YAML+="            match_query: true"$'\n'
     _IRON_SECRETS_YAML+="          rules:"$'\n'
-    _IRON_SECRETS_YAML+="            - host: '*'"$'\n'
+    if [[ "$_key" == "GH_TOKEN" || "$_key" == "GITHUB_TOKEN" ]]; then
+      _IRON_SECRETS_YAML+="            - host: 'github.com'"$'\n'
+      _IRON_SECRETS_YAML+="            - host: '*.github.com'"$'\n'
+    else
+      _IRON_SECRETS_YAML+="            - host: '${_host}'"$'\n'
+    fi
     _iron_env+=("${_key}=${_val}")
     _sandbox_token_env+=("${_key}=${_token}")
   done <<< "$NIXSMITH_SECRETS_ENV"
   unset NIXSMITH_SECRETS_ENV
-  unset _pair _key _val _token
+  unset NIXSMITH_GITEA_HOST _pair _key _val _host _token
 
   {
     cat <<IRON_CFG_EOF
@@ -317,6 +338,7 @@ else
   _PROXY_TUNNEL=""
   _PROXY_CA=""
 fi
+unset NIXSMITH_GITEA_HOST
 
 # Chain iron-proxy as fence's upstream: fence's internal proxy forwards all
 # traffic to iron-proxy, which swaps tokens before reaching the internet.

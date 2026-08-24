@@ -21,7 +21,7 @@ fi
 [[ -f .env ]] && source .env
 [[ -f "${AGENT_ENV_CONFIG_DIR}/.env" ]] && source "${AGENT_ENV_CONFIG_DIR}/.env"
 
-# Strip known AI provider credentials from the outer shell after .env sourcing.
+# Strip known credentials from the outer shell after .env sourcing.
 # These vars are injected exclusively into the sandbox via secrets.json --setenv,
 # preventing them from leaking across projects through shell inheritance.
 for _blocklist_var in \
@@ -31,7 +31,7 @@ for _blocklist_var in \
   GOOGLE_APPLICATION_CREDENTIALS GOOGLE_CLOUD_PROJECT \
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEARER_TOKEN_BEDROCK \
   AZURE_OPENAI_API_KEY AZURE_RESOURCE_NAME \
-  GITLAB_TOKEN \
+  GH_TOKEN GITHUB_TOKEN GITEA_TOKEN GITEA_INSTANCE_URL GITLAB_TOKEN \
   CLOUDFLARE_API_TOKEN \
   NVIDIA_API_KEY \
   DIGITALOCEAN_ACCESS_TOKEN \
@@ -46,16 +46,4 @@ if [[ "${SKIP_AGENT_SETUP:-}" != "true" ]] && git remote -v &>/dev/null 2>&1; th
     exit 1
   }
 
-  # Export GH_TOKEN for the current shell session so forge and gh CLI work
-  # without the sandbox credential helper. Resolved from secrets.json
-  _gh_owner=$(extract_github_owner 2>/dev/null || true)
-  _secrets_file="${HOME}/.config/nixsmith/secrets.json"
-  if [[ -n "$_gh_owner" ]] && [[ -f "$_secrets_file" ]] && command -v jq >/dev/null 2>&1; then
-    if jq -e 'has("repos")' "$_secrets_file" >/dev/null 2>&1; then
-      _gh_token=$(jq -r --arg k "github:${_gh_owner}" '.repos[$k].GH_TOKEN // empty' "$_secrets_file" 2>/dev/null || true)
-      [[ -n "$_gh_token" ]] && export GH_TOKEN="$_gh_token"
-      unset _gh_token
-    fi
-  fi
-  unset _gh_owner _secrets_file
 fi
