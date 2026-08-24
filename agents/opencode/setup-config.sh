@@ -6,6 +6,7 @@ set -euo pipefail
 
 GLOBAL_CONFIG_DIR="${HOME}/.config/opencode"
 GLOBAL_CONFIG="${GLOBAL_CONFIG_DIR}/opencode.json"
+[[ -f "${GLOBAL_CONFIG_DIR}/opencode.jsonc" && ! -f "$GLOBAL_CONFIG" ]] && GLOBAL_CONFIG="${GLOBAL_CONFIG_DIR}/opencode.jsonc"
 PROJECT_CONFIG="opencode.json"
 
 # ---------------------------------------------------------------------------
