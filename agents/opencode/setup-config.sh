@@ -102,13 +102,13 @@ if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
 
   if [[ ! -f "$TEMPER_DEST" ]]; then
     mkdir -p "$PLUGINS_DIR"
-    cp "$TEMPER_SRC" "$TEMPER_DEST"
+    install -m 0644 "$TEMPER_SRC" "$TEMPER_DEST"
     echo "Installed temper plugin to ${TEMPER_DEST}"
   else
     src_hash=$(sha256sum "$TEMPER_SRC" | cut -d' ' -f1)
     dest_hash=$(sha256sum "$TEMPER_DEST" | cut -d' ' -f1)
     if [[ "$src_hash" != "$dest_hash" ]]; then
-      cp "$TEMPER_SRC" "$TEMPER_DEST"
+      install -m 0644 "$TEMPER_SRC" "$TEMPER_DEST"
       echo "Updated temper plugin at ${TEMPER_DEST} (nix store version changed)"
     fi
   fi
