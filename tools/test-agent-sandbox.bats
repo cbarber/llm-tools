@@ -64,7 +64,7 @@ setup_file() {
 
 @test "sandbox can write to /tmp" {
   local tmpfile
-  tmpfile=$(mktemp -u -t sandbox-test-XXXXXX)
+  tmpfile=$(mktemp -u /tmp/sandbox-test-XXXXXX)
   run "$SANDBOX_SCRIPT" bash -c "echo test > $tmpfile"
   [ "$status" -eq 0 ]
   [ -f "$tmpfile" ]
