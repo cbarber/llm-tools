@@ -142,6 +142,7 @@ for rw_path in \
   "$HOME/.local/share/claude" \
   "$HOME/.local/share/direnv" \
   "$HOME/.local/share/opencode" \
+  "$HOME/.local/share/opentui" \
   "$HOME/.local/share/pnpm" \
   "$HOME/.local/state/opencode" \
   "$HOME/.m2" \
