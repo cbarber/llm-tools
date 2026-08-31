@@ -352,8 +352,8 @@ if [[ -n "${_PROXY_TUNNEL:-}" ]]; then
   # internal HTTP proxy (which chains to iron-proxy) for all traffic. Without
   # this, allowedDomains:["*"] puts fence in relaxed direct-network mode where
   # upstreamProxy is never consulted.
-  jq --arg upstream "$_PROXY_TUNNEL" \
-    'del(.network.allowedDomains) | .network.defaultAction = "proxy" | .network.upstreamProxy = $upstream' \
+  jq --arg upstream "$_PROXY_TUNNEL" --arg direct "${SANDBOX_DIRECT_DOMAINS:-}" \
+    '.network.allowedDomains = ($direct | split(":") | map(select(length > 0))) | .network.defaultAction = "proxy" | .network.upstreamProxy = $upstream' \
     "$_FENCE_CFG" > "${_FENCE_CFG}.tmp" && mv "${_FENCE_CFG}.tmp" "$_FENCE_CFG"
   _dbg "fence upstreamProxy set to $_PROXY_TUNNEL"
 fi
