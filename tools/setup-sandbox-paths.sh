@@ -135,6 +135,7 @@ for rw_path in \
   "$HOME/.claude" \
   "$HOME/.claude.json" \
   "$HOME/.composer" \
+  "$HOME/.cursor" \
   "$HOME/.config/opencode" \
   "$HOME/.gem" \
   "$HOME/.gradle" \
