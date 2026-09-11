@@ -17,6 +17,8 @@ if [[ -n "${OPENCODE:-}" ]]; then
   echo "Agent: OpenCode"
 elif [[ -n "${CLAUDE_CODE:-}" ]]; then
   echo "Agent: Claude Code"
+elif [[ -n "${CURSOR_CLI:-}" ]]; then
+  echo "Agent: Cursor CLI"
 else
   echo "Agent: Unknown"
 fi
