@@ -1,0 +1,108 @@
+diff --git a/src/plugin-v2.ts b/src/plugin-v2.ts
+index 68bc479..6055c68 100644
+--- a/src/plugin-v2.ts
++++ b/src/plugin-v2.ts
+@@ -236 +236 @@ export function createV2Setup() {
+-    try {
++    if (TOOL_LOOP_MODE !== "opencode") try {
+diff --git a/src/plugin.ts b/src/plugin.ts
+index ea5cf93..a689dee 100644
+--- a/src/plugin.ts
++++ b/src/plugin.ts
+@@ -2994 +2994,3 @@ export const CursorPlugin: Plugin = async ({ $, directory, worktree, client, ser
+-    tool: { ...toolHookEntries, ...mcpToolEntries },
++    tool: TOOL_LOOP_MODE === "opencode"
++      ? {}
++      : { ...toolHookEntries, ...mcpToolEntries },
+diff --git a/src/provider/runtime-interception.ts b/src/provider/runtime-interception.ts
+index 0fc3644..95ec9af 100644
+--- a/src/provider/runtime-interception.ts
++++ b/src/provider/runtime-interception.ts
+@@ -116,0 +117,16 @@ export class ToolBoundaryExtractionError extends Error {
++function blockedPassthroughTermination(tool: string): ToolSchemaValidationTermination {
++  return {
++    reason: "schema_validation",
++    message: `Cursor requested unrecognized tool "${tool}"; refusing to bypass OpenCode tool hooks`,
++    tool,
++    errorClass: "validation",
++    missing: [],
++    unexpected: [],
++    typeErrors: [],
++  };
++}
++
++function allowToolPassthrough(): boolean {
++  return process.env.CURSOR_ACP_ALLOW_TOOL_PASSTHROUGH === "true";
++}
++
+@@ -145,0 +162,8 @@ export async function handleToolLoopEventLegacy(
++    if (!allowToolPassthrough()) {
++      return {
++        intercepted: false,
++        skipConverter: true,
++        terminate: blockedPassthroughTermination(extraction.passthroughName ?? "unknown"),
++      };
++    }
++
+@@ -329,0 +354,8 @@ export async function handleToolLoopEventV1(
++    if (!allowToolPassthrough()) {
++      return {
++        intercepted: false,
++        skipConverter: true,
++        terminate: blockedPassthroughTermination(extraction.passthroughName ?? "unknown"),
++      };
++    }
++
+diff --git a/src/provider/tool-schema-compat.ts b/src/provider/tool-schema-compat.ts
+index a9ad0b5..3deeae9 100644
+--- a/src/provider/tool-schema-compat.ts
++++ b/src/provider/tool-schema-compat.ts
+@@ -421,0 +422,14 @@ function normalizeToolSpecificArgs(
++  if (normalizedToolName === "read") {
++    const normalized: JsonRecord = { ...args };
++    const schemaProperties = getSchemaPropertyNames(schema);
++    if (
++      schemaProperties.has("filePath")
++      && normalized.filePath === undefined
++      && typeof normalized.path === "string"
++    ) {
++      normalized.filePath = normalized.path;
++      delete normalized.path;
++    }
++    return normalized;
++  }
++
+diff --git a/tests/unit/provider-tool-schema-compat.test.ts b/tests/unit/provider-tool-schema-compat.test.ts
+index d0fa825..7a33587 100644
+--- a/tests/unit/provider-tool-schema-compat.test.ts
++++ b/tests/unit/provider-tool-schema-compat.test.ts
+@@ -129,0 +130,29 @@ describe("tool schema compatibility", () => {
++  it("maps Cursor read path to OpenCode filePath", () => {
++    const result = applyToolSchemaCompat(
++      {
++        id: "c_read",
++        type: "function",
++        function: {
++          name: "read",
++          arguments: JSON.stringify({ path: "/tmp/example.md" }),
++        },
++      },
++      new Map([
++        [
++          "read",
++          {
++            type: "object",
++            properties: { filePath: { type: "string" } },
++            required: ["filePath"],
++            additionalProperties: false,
++          },
++        ],
++      ]),
++    );
++
++    expect(JSON.parse(result.toolCall.function.arguments)).toEqual({
++      filePath: "/tmp/example.md",
++    });
++    expect(result.validation.ok).toBe(true);
++  });
++

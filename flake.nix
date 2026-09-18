@@ -31,6 +31,7 @@
         packages = {
           claude-code = import ./agents/claude-code { inherit pkgs tools; };
           cursor-cli = import ./agents/cursor-cli { inherit pkgs tools; };
+          open-cursor = tools.open-cursor;
           opencode = import ./agents/opencode { inherit pkgs tools; };
           temper-acp = tools.temper-acp;
         };

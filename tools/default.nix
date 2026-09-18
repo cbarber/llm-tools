@@ -11,6 +11,7 @@ let
   iron-proxy = pkgs.callPackage ./iron-proxy { };
   temper-acp = pkgs.callPackage ./temper-acp { };
   toad = pkgs.callPackage ./toad.nix { };
+  open-cursor = pkgs.callPackage ./open-cursor.nix { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.stdenv.mkDerivation {
@@ -49,6 +50,7 @@ in
     iron-proxy
     temper-acp
     toad
+    open-cursor
     temper
     forge
     git-agent-sequence-editor
