@@ -48,6 +48,22 @@ type DispatchContext =
   }
   | { event: "todo.updated"; todos: Array<{ content: string; status: string; priority: string; id: string }> };
 
+type ProviderToolPart = {
+  id?: string;
+  type: "tool";
+  callID: string;
+  tool: string;
+  metadata?: { providerExecuted?: boolean };
+  state: {
+    status: string;
+    input?: Record<string, unknown>;
+    title?: string;
+    output?: string;
+    metadata?: Record<string, unknown>;
+    time?: { end?: number };
+  };
+};
+
 // Parses the subset of YAML used by our skill frontmatter schema.
 // Handles scalar fields (name, description, once) and the triggers list.
 function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: string } {
@@ -125,6 +141,60 @@ function changedFilePaths(tool: string, args: any, directory: string): string[] 
   return paths.map((match) => resolve(directory, match[1].trim()));
 }
 
+class ProviderToolQueue {
+  private readonly seen = new Set<string>();
+  private pending: DispatchContext[] = [];
+
+  constructor(private readonly directory: string) {}
+
+  restore(part: unknown): void {
+    if (!this.isTerminalProviderTool(part)) return;
+    this.seen.add(this.key(part));
+  }
+
+  update(part: unknown, earliest = 0): boolean {
+    if (!this.isTerminalProviderTool(part)) return false;
+    if (typeof part.state.time?.end === "number" && part.state.time.end < earliest) return false;
+    const key = this.key(part);
+    if (this.seen.has(key)) return false;
+    this.seen.add(key);
+    if (part.state.status !== "completed") return false;
+    if (part.tool === "bash" && typeof part.state.metadata?.exit === "number" && part.state.metadata.exit !== 0) return false;
+
+    const input = part.state.input ?? {};
+    this.pending.push({
+      event: "tool.execute.after",
+      tool: part.tool,
+      command: part.tool === "bash" ? String(input.command ?? "") : "",
+      filePaths: changedFilePaths(part.tool, input, this.directory),
+      output: {
+        title: part.state.title ?? part.tool,
+        output: part.state.output ?? "",
+        metadata: part.state.metadata ?? {},
+      },
+    });
+    return true;
+  }
+
+  drain(): DispatchContext[] {
+    const pending = this.pending;
+    this.pending = [];
+    return pending;
+  }
+
+  private isTerminalProviderTool(part: unknown): part is ProviderToolPart {
+    if (!part || typeof part !== "object") return false;
+    const tool = part as ProviderToolPart;
+    return tool.type === "tool" &&
+      tool.metadata?.providerExecuted === true &&
+      (tool.state?.status === "completed" || tool.state?.status === "error");
+  }
+
+  private key(part: ProviderToolPart): string {
+    return part.id ?? part.callID;
+  }
+}
+
 async function evalWhen($: PluginInput["$"], when: string, cwd: string): Promise<boolean> {
   try {
     const result = await $.cwd(cwd)`bash -c ${when}`.nothrow();
@@ -192,6 +262,10 @@ type SessionState = {
   phase: SessionPhase;
   firedOnce: Set<string>;
   lastInjectionTokens: Map<string, number>;
+  providerTools: ProviderToolQueue;
+  pendingProviderParts: unknown[];
+  restoreStartedAt: number;
+  hydration?: Promise<SessionState>;
 };
 
 const sessionStore = new Map<string, SessionState>();
@@ -235,43 +309,55 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
   async function hydrateSession(sessionID: string): Promise<SessionState> {
     const state = sessionStore.get(sessionID)!;
+    if (state.hydration) return state.hydration;
 
-    try {
-      const response = await v2.session.messages({ sessionID });
-      const messages = response.data ?? [];
+    const hydration = (async () => {
+      try {
+        const response = await v2.session.messages({ sessionID });
+        const messages = response.data ?? [];
 
-      // If no messages yet, don't cache — allow re-hydration on next event
-      // once the server has loaded the session history.
-      if (messages.length === 0) return state;
+        // If no messages yet, don't cache — allow re-hydration on next event
+        // once the server has loaded the session history.
+        if (messages.length === 0) return state;
 
-      const foundInHistory: string[] = [];
-      for (const { parts } of messages) {
-        for (const part of parts) {
-          if (part.type === "text" && part.synthetic) {
-            const m = part.text.match(/^# (\S+)/m);
-            if (m) {
-              state.firedOnce.add(m[1]);
-              foundInHistory.push(m[1]);
+        for (const part of state.pendingProviderParts.splice(0)) {
+          state.providerTools.update(part, state.restoreStartedAt);
+        }
+
+        const foundInHistory: string[] = [];
+        for (const { parts } of messages) {
+          for (const part of parts) {
+            if (part.type === "text" && part.synthetic) {
+              const m = part.text.match(/^# (\S+)/m);
+              if (m) {
+                state.firedOnce.add(m[1]);
+                foundInHistory.push(m[1]);
+              }
+            } else if (part.type === "tool" && part.tool === "skill") {
+              const input = (part.state as { input?: { name?: string } }).input;
+              const name = input?.name;
+              if (name) {
+                state.firedOnce.add(name);
+                if (!foundInHistory.includes(name)) foundInHistory.push(name);
+              }
             }
-          } else if (part.type === "tool" && part.tool === "skill") {
-            const input = (part.state as { input?: { name?: string } }).input;
-            const name = input?.name;
-            if (name) {
-              state.firedOnce.add(name);
-              if (!foundInHistory.includes(name)) foundInHistory.push(name);
-            }
+            state.providerTools.restore(part);
           }
         }
+
+        state.phase = "restored";
+        sessionStore.set(sessionID, state);
+        await logEvent(client, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
+      } catch (error) {
+        await logEvent(client, "hydrate-error", { sessionID, error: String(error) });
       }
+      return state;
+    })();
 
-      await logEvent(client, "dispatch-hydrate", { sessionID, foundInHistory, messageCount: messages.length });
-    } catch (error) {
-      await logEvent(client, "hydrate-error", { sessionID, error: String(error) });
-    }
-
-    state.phase = "restored";
-    sessionStore.set(sessionID, state);
-    return state;
+    state.hydration = hydration.finally(() => {
+      state.hydration = undefined;
+    });
+    return state.hydration;
   }
 
   async function loadSkills(): Promise<Skill[]> {
@@ -296,7 +382,8 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   async function dispatchEvent(
     sessionID: string,
     ctx: DispatchContext,
-  ): Promise<void> {
+    deferReply = false,
+  ): Promise<boolean> {
     // Load skills on every dispatch so changes to ~/.agents/skills/ take
     // effect without restarting the plugin process.
     const skills = await loadSkills();
@@ -304,7 +391,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     const state = sessionStore.get(sessionID);
     if (!state || state.phase === "pending-restore") {
       await logEvent(client, "dispatch-skip-no-state", { ctx });
-      return;
+      return false;
     }
 
     await logEvent(client, "dispatch", { sessionID, ctx });
@@ -313,6 +400,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       skill.triggers.filter((trigger) => matchesTrigger(trigger, ctx)).map((trigger) => ({ skill, trigger }))
     );
 
+    let injected = false;
     for (const { skill, trigger } of matches) {
       const action: TriggerAction = trigger.action ?? "inject";
 
@@ -378,9 +466,11 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         throw new Error(rendered);
       } else {
         await logEvent(client, "dispatch-inject", { sessionID, skill: skill.name });
-        await injectSkill(client, $, directory, sessionID, skill.content, ctx.event !== "session.idle");
+        await injectSkill(client, $, directory, sessionID, skill.content, deferReply || ctx.event !== "session.idle");
+        injected = true;
       }
     }
+    return injected;
   }
 
   return {
@@ -411,6 +501,9 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         phase: "pending-restore",
         firedOnce: new Set(),
         lastInjectionTokens: new Map(),
+        providerTools: new ProviderToolQueue(directory),
+        pendingProviderParts: [],
+        restoreStartedAt: Date.now(),
       });
     },
 
@@ -446,6 +539,9 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
           phase: "new",
           firedOnce: new Set(),
           lastInjectionTokens: new Map(),
+          providerTools: new ProviderToolQueue(directory),
+          pendingProviderParts: [],
+          restoreStartedAt: Date.now(),
         });
         await dispatchEvent(sessionID, { event: "session.created" });
       }
@@ -457,7 +553,30 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
-        await dispatchEvent(sessionID, { event: "session.idle" });
+        let state = sessionStore.get(sessionID);
+        if (state?.phase === "pending-restore") state = await hydrateSession(sessionID);
+        if (state?.phase === "pending-restore") state = await hydrateSession(sessionID);
+        let injected = false;
+        for (const ctx of state?.providerTools.drain() ?? []) {
+          injected = await dispatchEvent(sessionID, ctx, true) || injected;
+        }
+        injected = await dispatchEvent(sessionID, { event: "session.idle" }, true) || injected;
+        if (injected) {
+          await injectSkill(client, $, directory, sessionID, "Continue with the injected workflow context.", false);
+        }
+      }
+      if (event.type === "message.part.updated") {
+        const { part } = event.properties;
+        if (part.type !== "tool") return;
+        const state = sessionStore.get(part.sessionID);
+        if (!state) return;
+        if (state.phase === "pending-restore") {
+          state.pendingProviderParts.push(part);
+          return;
+        }
+        if (state.providerTools.update(part)) {
+          await logEvent(client, "provider-tool-queued", { sessionID: part.sessionID, callID: part.callID, tool: part.tool });
+        }
       }
       if (event.type === "todo.updated") {
         const { sessionID, todos } = event.properties;
@@ -469,6 +588,19 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
 if (import.meta.main) {
   const [skillFile, event = "session.created", tool = "", command = ""] = process.argv.slice(2);
+  if (skillFile === "--provider-tools") {
+    const queue = new ProviderToolQueue(command || process.cwd());
+    const parts = JSON.parse(event) as Array<{ restore?: boolean; part: unknown }>;
+    const updates = parts.map(({ restore, part }) => {
+      if (restore) {
+        queue.restore(part);
+        return false;
+      }
+      return queue.update(part);
+    });
+    console.log(JSON.stringify({ updates, pending: queue.drain() }));
+    process.exit(0);
+  }
   if (!skillFile) {
     console.error("Usage: bun .opencode/plugin/temper/index.ts <skill-file> [event] [tool] [command]");
     process.exit(1);

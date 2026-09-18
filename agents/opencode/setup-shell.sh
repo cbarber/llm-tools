@@ -3,6 +3,16 @@ set -euo pipefail
 
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
+export AGENT_CLI_CREDENTIAL_STORE=file
+export NODE_USE_ENV_PROXY=1
+export OPENCODE_CURSOR_TRANSPORT=sidecar
+export OPENCODE_CURSOR_SIDECAR_HTTP1=1
+cursor_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/cursor"
+cursor_data_dir="${HOME}/.cursor"
+mkdir -p "$cursor_config_dir" "$cursor_data_dir"
+export SANDBOX_EXTRA_RW="${SANDBOX_EXTRA_RW:+$SANDBOX_EXTRA_RW:}$cursor_config_dir:$cursor_data_dir"
+unset cursor_config_dir cursor_data_dir
+
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
   if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
     _FENCE_LOG="/tmp/fence-$(date +%s).log"
