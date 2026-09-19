@@ -4,7 +4,7 @@ title: Evaluate open-cursor for Cursor runtime
 status: Done
 assignee: []
 created_date: '2026-09-18 02:46'
-updated_date: '2026-09-18 21:33'
+updated_date: '2026-09-19 02:36'
 labels: []
 dependencies: []
 priority: medium
@@ -20,11 +20,11 @@ Assess Nomadcxx/open-cursor as an OpenCode-native replacement for the Toad and A
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Verified the OpenCode-owned tool loop is the default; cursor-agent may still perform Cursor-native side effects before interception.
+Final implementation packages open-cursor 2.5.8 as a pinned patched Nix derivation. OpenCode-owned mode suppresses global V1/V2 tool registration, rejects unknown cursor-agent tool passthrough, and disables the duplicate MCP bridge so Temper remains authoritative. Pre-start cursor-agent model discovery populates the model picker from OAuth with a five-second timeout and preserves the previous catalog when offline.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Integrated open-cursor 2.5.8 into the standard OpenCode Nix environment with cursor-agent, managed provider configuration, file credentials, and direct Cursor network routing.
+Integrated a reproducible patched open-cursor provider into the standard OpenCode environment. Cursor models are discovered from the authenticated OAuth account before startup; OpenCode retains native tool ownership and Temper observes every permitted tool execution.
 <!-- SECTION:FINAL_SUMMARY:END -->
