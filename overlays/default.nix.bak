@@ -23,7 +23,7 @@ let
   claude-code = {
     version = "2.1.91";
     srcHash = "sha256-u7jdM6hTYN05ZLPz630Yj7gI0PeCSArg4O6ItQRAMy4=";
-    npmDepsHash = "";
+    npmDepsHash = "sha256-0ppKP+XMgTzVVZtL7GDsOjgvSPUDrUa7SoG048RLaNg=";
   };
 
 in
