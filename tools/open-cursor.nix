@@ -10,33 +10,32 @@ buildNpmPackage rec {
   version = "2.5.8";
 
   src = fetchFromGitHub {
-    owner = "Nomadcxx";
+    owner = "cbarber";
     repo = "opencode-cursor";
-    rev = "v${version}";
-    hash = "sha256-cDrLAEXomuolTikaWdXGWScYkLaPsH9JNkcl4PMzL6Q=";
+    rev = "55bc3956f8b1e54e734cc777edca01f0407e9f1c";
+    hash = "sha256-uLRndAkL5wlLLtIukuHjdo85pghFVdbpTGur5Yplbyo=";
   };
 
-  npmDepsHash = "sha256-M8YmlLK8VVYq+RxF/YdmvJpjcqoKUDSPx7Bn0xGfhZI=";
+  npmDepsHash = "sha256-ufqxSzvmtnxhL+zRkVVvnCVjLZ5m+aNRmeS8wvFVlAg=";
   nativeBuildInputs = [ bun ];
-  patches = [ ./patches/open-cursor-opencode-tool-loop.patch ];
   npmBuildScript = "build";
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    bun test tests/unit/provider-tool-schema-compat.test.ts
+    bun test tests/unit/plugin-proxy-reuse.test.ts tests/unit/provider-backend.test.ts tests/unit/provider-tool-schema-compat.test.ts tests/unit/proxy/plugin-resume.test.ts tests/unit/sdk-runner.test.ts
     runHook postCheck
   '';
 
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/lib/open-cursor"
-    cp -r dist node_modules package.json "$out/lib/open-cursor/"
+    cp -r dist node_modules package.json scripts "$out/lib/open-cursor/"
     runHook postInstall
   '';
 
   meta = {
     description = "Cursor subscription bridge for OpenCode";
-    homepage = "https://github.com/Nomadcxx/opencode-cursor";
+    homepage = "https://github.com/cbarber/opencode-cursor";
     license = lib.licenses.bsd3;
   };
 }

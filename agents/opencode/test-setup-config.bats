@@ -14,13 +14,14 @@ teardown() {
 }
 
 run_setup() {
-  run bash -c 'cd "$1" && HOME="$2" PATH="$3:$PATH" OPEN_CURSOR_PLUGIN_ENTRY="$4" OPENCODE_PLUGIN_DIR="$5" bash "$6"' \
+  local proxy_port="${1:-32124}"
+  run bash -c 'cd "$1" && HOME="$2" PATH="$3:$PATH" OPEN_CURSOR_PLUGIN_ENTRY="$4" OPENCODE_PLUGIN_DIR="$5" CURSOR_ACP_PROXY_PORT="$7" bash "$6"' \
     _ "$TEST_WORK" "$TEST_HOME" "$TEST_BIN" \
     "/nix/store/new-open-cursor-2.5.8/lib/open-cursor/dist/plugin-entry.js" \
-    "${TEST_ROOT}/missing-plugins" "$SETUP_CONFIG_SCRIPT"
+    "${TEST_ROOT}/missing-plugins" "$SETUP_CONFIG_SCRIPT" "$proxy_port"
 }
 
-@test "configures patched plugin and discovered Cursor models" {
+@test "configures pinned plugin and discovered Cursor models idempotently" {
   cat >"${TEST_BIN}/cursor-agent" <<'EOF'
 #!/usr/bin/env bash
 cat <<'MODELS'
@@ -49,10 +50,13 @@ EOF
 }
 EOF
 
-  run_setup
+  run_setup 54321
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$output" >&2
   fi
+  [ "$status" -eq 0 ]
+
+  run_setup 54321
   [ "$status" -eq 0 ]
 
   run jq -e '
@@ -60,6 +64,7 @@ EOF
       "other-plugin",
       "file:///nix/store/new-open-cursor-2.5.8/lib/open-cursor/dist/plugin-entry.js"
     ] and
+    .provider["cursor-acp"].options.baseURL == "http://127.0.0.1:54321/v1" and
     (.provider["cursor-acp"].models | keys) == ["auto", "composer-2.5", "sonnet-4.6-thinking"] and
     .provider["cursor-acp"].models["sonnet-4.6-thinking"].name == "Claude 4.6 Sonnet (Thinking)"
   ' "${TEST_WORK}/opencode.json"

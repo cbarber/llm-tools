@@ -105,6 +105,7 @@ assert_share_disabled() {
 configure_cursor_provider() {
   local config="$1"
   local plugin="file://${OPEN_CURSOR_PLUGIN_ENTRY}"
+  local proxy_base_url="http://127.0.0.1:${CURSOR_ACP_PROXY_PORT:-32124}/v1"
   local discovered_models="null"
   local models_output
   local tmp
@@ -126,7 +127,7 @@ configure_cursor_provider() {
   fi
 
   tmp=$(mktemp)
-  jq --arg plugin "$plugin" --argjson discovered_models "$discovered_models" '
+  jq --arg plugin "$plugin" --arg proxy_base_url "$proxy_base_url" --argjson discovered_models "$discovered_models" '
     .plugin = (((.plugin // []) | map(select(
       (type != "string") or (
         (startswith("@rama_nigg/open-cursor@") or test("/[^/]+-open-cursor-[^/]+/lib/open-cursor/dist/plugin-entry\\.js$")) | not
@@ -137,7 +138,7 @@ configure_cursor_provider() {
     .provider["cursor-acp"].name //= "Cursor ACP" |
     .provider["cursor-acp"].npm //= "@ai-sdk/openai-compatible" |
     .provider["cursor-acp"].options //= {} |
-    .provider["cursor-acp"].options.baseURL //= "http://127.0.0.1:32124/v1" |
+    .provider["cursor-acp"].options.baseURL = $proxy_base_url |
     .provider["cursor-acp"].models //= {} |
     if $discovered_models == null then
       .provider["cursor-acp"].models.auto //= {"name": "Auto"}

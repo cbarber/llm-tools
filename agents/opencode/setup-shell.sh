@@ -4,15 +4,19 @@ set -euo pipefail
 source "${TOOLS_DIR}/setup-shared-aliases.sh"
 
 export AGENT_CLI_CREDENTIAL_STORE=file
+export CURSOR_ACP_BACKEND=sdk
 export CURSOR_ACP_TOOL_LOOP_MODE=opencode
 export CURSOR_ACP_MCP_BRIDGE=false
 export CURSOR_ACP_MODEL_AUTO_REFRESH=false
 export CURSOR_ACP_ALLOW_TOOL_PASSTHROUGH=false
+export OPEN_CURSOR_SDK_SYSTEM_PROMPT_MODE=message
+export NODE_USE_ENV_PROXY=1
 cursor_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/cursor"
-mkdir -p "$cursor_config_dir"
-export SANDBOX_EXTRA_RW="${SANDBOX_EXTRA_RW:+$SANDBOX_EXTRA_RW:}$cursor_config_dir"
+cursor_data_dir="${HOME}/.cursor"
+mkdir -p "$cursor_config_dir" "$cursor_data_dir"
+export SANDBOX_EXTRA_RW="${SANDBOX_EXTRA_RW:+$SANDBOX_EXTRA_RW:}$cursor_config_dir:$cursor_data_dir"
 export SANDBOX_DIRECT_DOMAINS="${SANDBOX_DIRECT_DOMAINS:+$SANDBOX_DIRECT_DOMAINS:}*.cursor.sh"
-unset cursor_config_dir
+unset cursor_config_dir cursor_data_dir
 
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
   if [[ "${AGENT_DEBUG:-false}" == "true" ]]; then
@@ -48,6 +52,7 @@ fi
 export OPENCODE_ENABLE_EXA=1
 export OPENCODE_PORT
 export OPENCODE_API="http://127.0.0.1:${OPENCODE_PORT}"
+export CURSOR_ACP_PROXY_PORT="$((OPENCODE_PORT + 10000))"
 echo "OpenCode API: $OPENCODE_API"
 
 ${SETUP_CONFIG_SCRIPT}
