@@ -4,7 +4,7 @@ title: Prototype ACP state-machine skill proxy
 status: Done
 assignee: []
 created_date: '2026-09-08 02:01'
-updated_date: '2026-09-18 21:33'
+updated_date: '2026-09-24 01:50'
 labels: []
 dependencies: []
 references:
@@ -34,6 +34,8 @@ Build a stable ACP v1 proof of concept that runs between a generic ACP client an
 Implemented in PR #182 with a configurable Symposium conductor, session-scoped Temper ACP proxy, lifecycle and cancellation handling, prompt injection, and unit coverage. Verified by cargo fmt, Clippy, cargo test, shellcheck, nixfmt, Nix package builds, and CI run 34560117525.
 
 2026-09-17: Patched packaged Toad 0.6.20 to zero-pad encoded control bytes in ACP tool-call IDs, preventing Cursor tool calls containing newline bytes from producing invalid Textual widget identifiers.
+
+2026-09-23: Follow-up library research found that Rust-only macro crates cannot prevent ACP/OpenCode semantic drift. Created TASK-42.1 for a project-owned portable definition, generated Rust/TypeScript artifacts, pure reducer effects, and shared conformance vectors. Statig is the preferred mature Rust implementation option if needed; SCXML and Determa State remain watch-list options.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
