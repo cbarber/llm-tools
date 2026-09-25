@@ -37,7 +37,6 @@
         };
 
         devShells = {
-          inherit pkgs tools;
           claude-code = self.packages.${system}.claude-code;
           cursor-cli = self.packages.${system}.cursor-cli;
           opencode = self.packages.${system}.opencode;
