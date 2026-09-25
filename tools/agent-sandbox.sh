@@ -136,6 +136,7 @@ jq -n \
     allowPty: true,
     network: {
       allowedDomains: ["*"],
+      allowUnixSockets: ["/nix/var/nix/daemon-socket/socket"],
       allowLocalOutbound: true,
       allowLocalOutboundPorts: $allowLocalOutboundPorts,
       allowLocalBinding: true

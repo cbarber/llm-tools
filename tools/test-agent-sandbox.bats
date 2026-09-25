@@ -97,6 +97,35 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
+@test "Nix daemon is accessible on macOS" {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    skip "not applicable on $(uname -s)"
+  fi
+  if [[ ! -S /nix/var/nix/daemon-socket/socket ]]; then
+    skip "Nix daemon socket is unavailable"
+  fi
+
+  run env NIXSMITH_CREDENTIAL_PROXY="http://127.0.0.1:1" \
+    "$SANDBOX_SCRIPT" nix store ping
+  [ "$status" -eq 0 ]
+}
+
+@test "unrelated Unix sockets remain blocked on macOS" {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    skip "not applicable on $(uname -s)"
+  fi
+  if ! command -v python3 &>/dev/null; then
+    skip "python3 not available"
+  fi
+
+  local socket_path="/tmp/sandbox-test-unix-$$.sock"
+  run env NIXSMITH_CREDENTIAL_PROXY="http://127.0.0.1:1" \
+    "$SANDBOX_SCRIPT" python3 -c \
+    'import socket, sys; s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$socket_path"
+  rm -f "$socket_path"
+  [ "$status" -ne 0 ]
+}
+
 @test "network access works" {
   if ! command -v curl &>/dev/null; then
     skip "curl not available"
