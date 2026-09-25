@@ -4,7 +4,7 @@ title: Prototype ACP state-machine skill proxy
 status: Done
 assignee: []
 created_date: '2026-09-08 02:01'
-updated_date: '2026-09-24 01:50'
+updated_date: '2026-09-25 21:33'
 labels: []
 dependencies: []
 references:
@@ -36,6 +36,8 @@ Implemented in PR #182 with a configurable Symposium conductor, session-scoped T
 2026-09-17: Patched packaged Toad 0.6.20 to zero-pad encoded control bytes in ACP tool-call IDs, preventing Cursor tool calls containing newline bytes from producing invalid Textual widget identifiers.
 
 2026-09-23: Follow-up library research found that Rust-only macro crates cannot prevent ACP/OpenCode semantic drift. Created TASK-42.1 for a project-owned portable definition, generated Rust/TypeScript artifacts, pure reducer effects, and shared conformance vectors. Statig is the preferred mature Rust implementation option if needed; SCXML and Determa State remain watch-list options.
+
+2026-09-25: Mid-turn-input research confirmed the locked ACP v1 schema and installed Cursor ACP build expose no session/inject method or capability. Temper's queued session/prompt continuation remains the reliable Cursor fallback. OpenCode's prompt({ noReply: true }) is a practical in-process breakpoint steer because its active loop rereads history between iterations. Created TASK-42.3 to adopt native ACP injection only after protocol and downstream-agent support exist.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
