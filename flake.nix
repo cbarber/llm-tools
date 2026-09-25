@@ -30,12 +30,16 @@
       {
         packages = {
           claude-code = import ./agents/claude-code { inherit pkgs tools; };
+          cursor-cli = import ./agents/cursor-cli { inherit pkgs tools; };
+          open-cursor = tools.open-cursor;
           opencode = import ./agents/opencode { inherit pkgs tools; };
+          temper-acp = tools.temper-acp;
         };
 
         devShells = {
           inherit pkgs tools;
           claude-code = self.packages.${system}.claude-code;
+          cursor-cli = self.packages.${system}.cursor-cli;
           opencode = self.packages.${system}.opencode;
           opencode-auth = import ./agents/opencode/auth.nix { inherit pkgs; };
           default = pkgs.mkShell {

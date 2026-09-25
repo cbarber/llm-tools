@@ -62,6 +62,12 @@ EOF
   esac
 fi
 
+if [[ "$CONFIG_LOCATION" == "global" ]]; then
+  ACTIVE_CONFIG="$GLOBAL_CONFIG"
+else
+  ACTIVE_CONFIG="$PROJECT_CONFIG"
+fi
+
 # ---------------------------------------------------------------------------
 # Temper plugin install
 # ---------------------------------------------------------------------------
@@ -95,6 +101,61 @@ assert_share_disabled() {
 
 [[ -f "$PROJECT_CONFIG" ]] && assert_share_disabled "$PROJECT_CONFIG"
 [[ -f "$GLOBAL_CONFIG" ]] && assert_share_disabled "$GLOBAL_CONFIG"
+
+configure_cursor_provider() {
+  local config="$1"
+  local plugin="file://${OPEN_CURSOR_PLUGIN_ENTRY}"
+  local proxy_base_url="http://127.0.0.1:${CURSOR_ACP_PROXY_PORT:-32124}/v1"
+  local discovered_models="null"
+  local models_output
+  local tmp
+
+  if models_output=$(timeout 5s cursor-agent models 2>/dev/null); then
+    discovered_models=$(printf '%s\n' "$models_output" | jq -Rs '
+      split("\n") |
+      map(
+        gsub("\\u001b\\[[0-9;]*m"; "") |
+        try capture("^\\s*(?<id>[a-zA-Z0-9._-]+)\\s+-\\s+(?<name>.+?)(?:\\s+\\((?:current|default)\\))*\\s*$") catch null
+      ) |
+      map(select(. != null) | {key: .id, value: {name: .name}}) |
+      from_entries |
+      .auto //= {name: "Auto"}
+    ')
+    if [[ $(jq 'length' <<<"$discovered_models") -le 1 ]]; then
+      discovered_models="null"
+    fi
+  fi
+
+  tmp=$(mktemp)
+  jq --arg plugin "$plugin" --arg proxy_base_url "$proxy_base_url" --argjson discovered_models "$discovered_models" '
+    .plugin = (((.plugin // []) | map(select(
+      (type != "string") or (
+        (startswith("@rama_nigg/open-cursor@") or test("/[^/]+-open-cursor-[^/]+/lib/open-cursor/dist/plugin-entry\\.js$")) | not
+      )
+    ))) + [$plugin]) |
+    .provider //= {} |
+    .provider["cursor-acp"] //= {} |
+    .provider["cursor-acp"].name //= "Cursor ACP" |
+    .provider["cursor-acp"].npm //= "@ai-sdk/openai-compatible" |
+    .provider["cursor-acp"].options //= {} |
+    .provider["cursor-acp"].options.baseURL = $proxy_base_url |
+    .provider["cursor-acp"].models //= {} |
+    if $discovered_models == null then
+      .provider["cursor-acp"].models.auto //= {"name": "Auto"}
+    else
+      .provider["cursor-acp"].models = $discovered_models
+    end
+  ' "$config" > "$tmp"
+
+  if cmp -s "$config" "$tmp"; then
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$config"
+    echo "Configured Cursor provider in ${config}"
+  fi
+}
+
+configure_cursor_provider "$ACTIVE_CONFIG"
 
 if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
   TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
