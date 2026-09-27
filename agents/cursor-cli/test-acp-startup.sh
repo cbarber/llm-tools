@@ -15,7 +15,9 @@ if [[ -z "${ACP_AGENT_COMMAND:-}" ]]; then
 fi
 
 timeout="${ACP_STARTUP_TIMEOUT:-20}"
+usage_grace="${ACP_USAGE_GRACE:-2}"
 rpc_response=""
+usage_update_seen=false
 debug_dir="${ACP_STARTUP_DEBUG_DIR:-$(mktemp -d /tmp/cursor-acp-startup.XXXXXX)}"
 agent_command="$ACP_AGENT_COMMAND"
 
@@ -72,6 +74,9 @@ read_response() {
   while ((SECONDS < deadline)); do
     if IFS= read -r -t 1 -u "${ACP_PROCESS[0]}" line; then
       echo "ACP response: $line"
+      if jq -e '.method == "session/update" and .params.update.sessionUpdate == "usage_update"' >/dev/null 2>&1 <<<"$line"; then
+        usage_update_seen=true
+      fi
       if jq -e --argjson expected_id "$expected_id" '.id == $expected_id' >/dev/null 2>&1 <<<"$line"; then
         rpc_response="$line"
         return 0
@@ -129,3 +134,38 @@ if ! jq -e '.result.sessionId | strings | length > 0' >/dev/null 2>&1 <<<"$rpc_r
 fi
 
 echo "ACP startup OK: session/new returned a session ID"
+
+if [[ -z "${ACP_TEST_PROMPT:-}" ]]; then
+  exit 0
+fi
+
+session_id=$(jq -r '.result.sessionId' <<<"$rpc_response")
+prompt_request=$(jq -nc --arg session_id "$session_id" --arg text "$ACP_TEST_PROMPT" '{
+  jsonrpc: "2.0",
+  id: 2,
+  method: "session/prompt",
+  params: {
+    sessionId: $session_id,
+    prompt: [{type: "text", text: $text}]
+  }
+}')
+echo "Sending session/prompt"
+printf '%s\n' "$prompt_request" >&"${ACP_PROCESS[1]}"
+read_response 2
+
+usage_deadline=$((SECONDS + usage_grace))
+while [[ "$usage_update_seen" != true ]] && ((SECONDS < usage_deadline)); do
+  if IFS= read -r -t 1 -u "${ACP_PROCESS[0]}" line; then
+    echo "ACP response: $line"
+    if jq -e '.method == "session/update" and .params.update.sessionUpdate == "usage_update"' >/dev/null 2>&1 <<<"$line"; then
+      usage_update_seen=true
+    fi
+  fi
+done
+
+if [[ "$usage_update_seen" != true ]]; then
+  echo "test-acp-startup: session/prompt returned without a usage_update" >&2
+  exit 1
+fi
+
+echo "ACP usage OK: session/prompt emitted a usage_update"
