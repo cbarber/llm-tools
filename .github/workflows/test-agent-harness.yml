@@ -6,7 +6,8 @@ on:
     paths:
       - "tests/**"
       - "tools/setup-shared-aliases.sh"
-      - ".opencode/plugins/temper.ts"
+      - "agents/opencode/plugins/**"
+      - "agents/skills/**"
       - "flake.nix"
       - "flake.lock"
       - ".github/workflows/test-agent-harness.yml"
@@ -14,7 +15,8 @@ on:
     paths:
       - "tests/**"
       - "tools/setup-shared-aliases.sh"
-      - ".opencode/plugins/temper.ts"
+      - "agents/opencode/plugins/**"
+      - "agents/skills/**"
       - "flake.nix"
       - "flake.lock"
       - ".github/workflows/test-agent-harness.yml"
@@ -51,4 +53,4 @@ jobs:
           BD_SKIP_SETUP: "true"
           SKIP_AGENT_SETUP: "true"
           HARNESS_DEBUG: "1"
-        run: nix develop .#default --command bash -c "bun install --cwd tests && bun test ./tests/test-agent-harness.test.ts ./tests/test-mojo-edit-nudge.test.ts"
+        run: nix develop .#opencode --command bash -c "bun install --cwd tests && bun test ./agents/opencode/plugins/*.test.ts ./tests/test-agent-harness.test.ts"

@@ -2,10 +2,12 @@ export type MojoFacts = {
   dirty: boolean;
   head: string;
   ahead: number;
+  branchCommits: number;
   hasPr: boolean;
   prHead?: string;
   merged?: boolean;
   authorApprovalRequired?: boolean;
+  reviewDecision?: string;
 };
 
 type MojoEvent =
@@ -23,10 +25,25 @@ const dirty = ({ event }: { event: MojoEvent }) =>
   event.type === "idle.elapsed" && event.facts.dirty;
 
 const needsPr = ({ event }: { event: MojoEvent }) =>
-  event.type === "idle.elapsed" && !event.facts.dirty && event.facts.ahead > 0 && !event.facts.hasPr;
+  event.type === "idle.elapsed" && !event.facts.dirty && event.facts.branchCommits > 0 && !event.facts.hasPr;
 
 const needsPush = ({ event }: { event: MojoEvent }) =>
   event.type === "idle.elapsed" && !event.facts.dirty && event.facts.ahead > 0 && event.facts.hasPr;
+
+const awaitingAuthor = ({ event }: { event: MojoEvent }) =>
+  "facts" in event && event.facts.hasPr && !event.facts.dirty && event.facts.ahead === 0 && event.facts.authorApprovalRequired === true;
+
+const awaitingTeam = ({ event }: { event: MojoEvent }) =>
+  "facts" in event && event.facts.hasPr && !event.facts.dirty && event.facts.ahead === 0 && !event.facts.authorApprovalRequired;
+
+const publishedForAuthor = ({ event }: { event: MojoEvent }) =>
+  event.type === "tool.finished" && event.after.hasPr && !event.after.dirty && event.after.ahead === 0 && event.after.authorApprovalRequired === true;
+
+const publishedForTeam = ({ event }: { event: MojoEvent }) =>
+  event.type === "tool.finished" && event.after.hasPr && !event.after.dirty && event.after.ahead === 0 && !event.after.authorApprovalRequired;
+
+const feedback = ({ event }: { event: MojoEvent }) =>
+  event.type === "external.chat" && event.facts.reviewDecision === "CHANGES_REQUESTED";
 
 const createMachine = (setup: typeof import("xstate").setup) => setup({
   types: {
@@ -35,7 +52,7 @@ const createMachine = (setup: typeof import("xstate").setup) => setup({
   actions: {
     "temper.renderSkills": (_args: unknown, _params: { skills: string[]; reply?: boolean }) => {},
   },
-  guards: { isEdit, observedCleanCommit, dirty, needsPr, needsPush },
+  guards: { isEdit, observedCleanCommit, dirty, needsPr, needsPush, awaitingAuthor, awaitingTeam, publishedForAuthor, publishedForTeam, feedback },
 }).createMachine({
   id: "mojo",
   initial: "active",
@@ -72,6 +89,8 @@ const createMachine = (setup: typeof import("xstate").setup) => setup({
             target: "publicationRequested",
             actions: { type: "temper.renderSkills", params: { skills: ["mojo-update-pull-request"], reply: true } },
           },
+          { guard: "awaitingAuthor", target: "awaitingAuthorApproval" },
+          { guard: "awaitingTeam", target: "awaitingTeamFeedback" },
         ],
       },
     },
@@ -106,8 +125,30 @@ const createMachine = (setup: typeof import("xstate").setup) => setup({
     },
     publicationRequested: {
       on: {
-        "tool.finished": { guard: "isEdit", target: "changeInProgress" },
+        "tool.finished": [
+          { guard: "isEdit", target: "changeInProgress" },
+          { guard: "publishedForAuthor", target: "awaitingAuthorApproval" },
+          { guard: "publishedForTeam", target: "awaitingTeamFeedback" },
+        ],
         "external.chat": { target: "active" },
+      },
+    },
+    awaitingAuthorApproval: {
+      on: {
+        "tool.finished": { guard: "publishedForTeam", target: "awaitingTeamFeedback" },
+        "external.chat": [
+          { guard: "feedback", target: "active", actions: { type: "temper.renderSkills", params: { skills: ["mojo-review-response"] } } },
+          { target: "active" },
+        ],
+      },
+    },
+    awaitingTeamFeedback: {
+      on: {
+        "tool.finished": { guard: "isEdit", target: "changeInProgress" },
+        "external.chat": [
+          { guard: "feedback", target: "active", actions: { type: "temper.renderSkills", params: { skills: ["mojo-review-response"] } } },
+          { target: "active" },
+        ],
       },
     },
   },

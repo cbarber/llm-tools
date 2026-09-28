@@ -18,7 +18,7 @@ run_setup() {
     _ "$TEST_WORK" "$TEST_HOME" "$TEST_BIN" \
     "/nix/store/new-opencode-cursor-0.9.0/lib/opencode-cursor/dist/plugin/index.js" \
     "file:///nix/store/new-opencode-cursor-0.9.0/lib/opencode-cursor/dist/provider/index.js" \
-    "${TEST_ROOT}/missing-plugins" "$SETUP_CONFIG_SCRIPT"
+    "${1:-${TEST_ROOT}/missing-plugins}" "$SETUP_CONFIG_SCRIPT"
 }
 
 @test "configures the pinned native Cursor plugin idempotently" {
@@ -93,4 +93,18 @@ EOF
     .provider.anthropic.models.claude.name == "Claude"
   ' "${TEST_WORK}/opencode.json"
   [ "$status" -eq 0 ]
+}
+
+@test "upgrades an existing TypeScript Temper installation without loading both entrypoints" {
+  mkdir -p "${TEST_ROOT}/plugins" "${TEST_WORK}/.opencode/plugins"
+  printf '{"plugin": []}\n' > "${TEST_WORK}/opencode.json"
+  printf 'old\n' > "${TEST_WORK}/.opencode/plugins/temper.ts"
+  printf 'new\n' > "${TEST_ROOT}/plugins/temper.js"
+  run_setup "${TEST_ROOT}/plugins"
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$output" >&2
+  fi
+  [ "$status" -eq 0 ]
+  [ ! -e "${TEST_WORK}/.opencode/plugins/temper.ts" ]
+  [ "$(<"${TEST_WORK}/.opencode/plugins/temper.js")" = new ]
 }

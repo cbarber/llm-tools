@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test-agent-harness.ts"
+    "test": "bun test test-agent-harness.test.ts"
   },
   "dependencies": {
     "llm-mock-server": "^1.0.8"

@@ -4,12 +4,17 @@
  * Loaded automatically via opencode.json configuration.
  * Injects workflow context at session start and tool execution boundaries.
  */
-import type { Plugin, PluginInput } from "@opencode-ai/plugin";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
+import { appendFile, chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createOpencodeClient as createV2Client } from "@opencode-ai/sdk/v2/client";
+import { setup } from "xstate";
+import { WorkflowRuntime, type WorkflowDefinition } from "./workflow-runtime";
 
 type OpencodeClient = PluginInput["client"];
+const importWorkflow = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
 
 type TriggerAction = "inject" | "reset" | "fail";
 
@@ -204,27 +209,24 @@ async function evalWhen($: PluginInput["$"], when: string, cwd: string): Promise
   }
 }
 
-// Execute the first bash code block in content, substitute its stdout output
-// in place of the block, and return the result. Remaining content follows.
-// Mirrors the execute_bash_block logic in tools/temper.
 async function executeBashBlock($: PluginInput["$"], content: string, cwd: string): Promise<string> {
-  const bashBlockRe = /^```bash \{exec\}\n([\s\S]*?)^```/m;
-  const match = content.match(bashBlockRe);
-  if (!match) return content;
-
-  const code = match[1];
-  const result = await $.cwd(cwd)`bash -c ${code}`.nothrow().quiet();
-  const stdout = result.stdout.toString().trim();
-
-  let output = stdout || "";
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim();
-    output += `\n\n⚠️ **Command execution failed (exit code: ${result.exitCode})**`;
-    if (stderr) output += `\n\n**Error output:**\n\`\`\`\n${stderr}\n\`\`\``;
-    output += "\n\n*Note: Workflow context may be incomplete.*";
+  const bashBlockRe = /^```bash \{exec\}\n([\s\S]*?)^```/gm;
+  let rendered = "";
+  let offset = 0;
+  for (const match of content.matchAll(bashBlockRe)) {
+    rendered += content.slice(offset, match.index);
+    const result = await $.cwd(cwd)`bash -c ${match[1]}`.nothrow().quiet();
+    let output = result.stdout.toString().trim();
+    if (result.exitCode !== 0) {
+      const stderr = result.stderr.toString().trim();
+      output += `\n\nCommand execution failed (exit code: ${result.exitCode})`;
+      if (stderr) output += `\n\nError output:\n\`\`\`\n${stderr}\n\`\`\``;
+      output += "\n\nWorkflow context may be incomplete.";
+    }
+    rendered += output;
+    offset = match.index + match[0].length;
   }
-
-  return content.replace(match[0], output);
+  return rendered + content.slice(offset);
 }
 
 async function injectSkill(
@@ -268,6 +270,40 @@ type SessionState = {
   hydration?: Promise<SessionState>;
 };
 
+type WorkflowFacts = {
+  dirty: boolean;
+  head: string;
+  ahead: number;
+  branchCommits: number;
+  hasPr: boolean;
+  prHead?: string;
+  merged?: boolean;
+  authorApprovalRequired?: boolean;
+  reviewDecision?: string;
+};
+
+type ActiveWorkflow = {
+  definition: WorkflowDefinition;
+  runtime: WorkflowRuntime;
+  source: string;
+  sourceHash: string;
+  queue: Promise<void>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  idleDeadline?: number;
+  skipSkillOnce?: string;
+  lastFacts: WorkflowFacts;
+};
+
+type WorkflowEnvelope = {
+  workflowId: string;
+  version: number;
+  source: string;
+  sourceHash: string;
+  directory: string;
+  snapshot: unknown;
+  idleDeadline?: number;
+};
+
 const sessionStore = new Map<string, SessionState>();
 
 const BASH_GIT_INSTRUCTIONS = `
@@ -306,6 +342,279 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   // client.app.skills() is only available on the v2 SDK client.
   // The plugin-injected client uses the legacy SDK, so we instantiate v2 directly.
   const v2 = createV2Client({ baseUrl: serverUrl.toString() });
+  const workflows = new Map<string, ActiveWorkflow>();
+  const toolFacts = new Map<string, { active: ActiveWorkflow; facts: WorkflowFacts }>();
+  const providerFacts = new Map<string, { active: ActiveWorkflow; facts: WorkflowFacts }>();
+  const stateRoot = join(process.env.XDG_STATE_HOME ?? join(process.env.HOME ?? directory, ".local", "state"), "opencode", "temper");
+
+  function sessionFile(sessionID: string, extension: string): string {
+    return join(stateRoot, `${createHash("sha256").update(sessionID).digest("hex")}.${extension}`);
+  }
+
+  async function ensureStateRoot(): Promise<void> {
+    await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+    await chmod(stateRoot, 0o700);
+  }
+
+  async function trace(sessionID: string, record: Record<string, unknown>): Promise<void> {
+    await ensureStateRoot();
+    const path = sessionFile(sessionID, "jsonl");
+    const redacted = JSON.parse(JSON.stringify(record, (key, value) => {
+      if (/(?:token|secret|password|authorization|api.?key)/i.test(key)) return "<REDACTED>";
+      if (typeof value !== "string") return value;
+      return value
+        .replace(/(bearer\s+)[^\s"']+/gi, "$1<REDACTED>")
+        .replace(/((?:token|secret|password|api[_-]?key)\s*[=:]\s*)[^\s"']+/gi, "$1<REDACTED>");
+    }));
+    await appendFile(path, `${JSON.stringify({ timestamp: new Date().toISOString(), sessionID, ...redacted })}\n`, { mode: 0o600 });
+    await chmod(path, 0o600);
+  }
+
+  async function sampleFacts(): Promise<WorkflowFacts> {
+    const status = await $.cwd(directory)`git status --porcelain`.nothrow().text();
+    const head = (await $.cwd(directory)`git rev-parse HEAD`.nothrow().text()).trim();
+    const aheadText = (await $.cwd(directory)`git rev-list --count @{upstream}..HEAD`.nothrow().text()).trim();
+    const remoteHead = (await $.cwd(directory)`git symbolic-ref refs/remotes/origin/HEAD`.nothrow().text()).trim();
+    const main = (await $.cwd(directory)`git show-ref --verify refs/remotes/origin/main`.nothrow().text()).trim();
+    const master = (await $.cwd(directory)`git show-ref --verify refs/remotes/origin/master`.nothrow().text()).trim();
+    const defaultBranch = remoteHead || (main ? "refs/remotes/origin/main" : master ? "refs/remotes/origin/master" : "");
+    const branchCommitsText = defaultBranch
+      ? (await $.cwd(directory)`git rev-list --count ${defaultBranch}..HEAD`.nothrow().text()).trim()
+      : "0";
+    const prStatus = await $.cwd(directory)`forge pr status`.nothrow().text();
+    const prNumber = prStatus.match(/PR #(\d+)/)?.[1];
+    const prJson = prNumber
+      ? (await $.cwd(directory)`forge pr view ${prNumber} --json number,state,headRefOid,reviewDecision`.nothrow().text()).trim()
+      : "";
+    let pr: { number?: number; state?: string; headRefOid?: string; reviewDecision?: string } = {};
+    try { pr = JSON.parse(prJson); } catch {}
+    const prAheadText = pr.headRefOid && /^[0-9a-f]{40}$/.test(pr.headRefOid)
+      ? (await $.cwd(directory)`git rev-list --count ${pr.headRefOid}..HEAD`.nothrow().text()).trim()
+      : "";
+    const upstream = (await $.cwd(directory)`git rev-parse @{upstream}`.nothrow().text()).trim();
+    const commitBodies = defaultBranch
+      ? (await $.cwd(directory)`git log --format=%B%x00 ${defaultBranch}..HEAD`.nothrow().text()).split("\0")
+      : [];
+    return {
+      dirty: status.trim().length > 0,
+      head,
+      ahead: Math.max(Number.parseInt(aheadText, 10) || 0, Number.parseInt(prAheadText, 10) || 0),
+      branchCommits: Number.parseInt(branchCommitsText, 10) || 0,
+      hasPr: typeof pr.number === "number" || Boolean(prNumber),
+      prHead: pr.headRefOid || upstream || undefined,
+      merged: pr.state === "MERGED" || /merged PR/.test(prStatus),
+      authorApprovalRequired: commitBodies.some((body) => /^Authored-By:/im.test(body) && !/^Reviewed-By:/im.test(body)),
+      reviewDecision: pr.reviewDecision,
+    };
+  }
+
+  async function discoveredSkills() {
+    const response = await v2.app.skills({ directory });
+    return (response.data ?? []).filter((skill) => skill.location !== "<built-in>");
+  }
+
+  async function renderWorkflowSkills(sessionID: string, names: string[], reply: boolean): Promise<void> {
+    const skills = await discoveredSkills();
+    const rendered: string[] = [];
+    const active = workflows.get(sessionID);
+    for (const name of names) {
+      if (active?.skipSkillOnce === name) {
+        active.skipSkillOnce = undefined;
+        continue;
+      }
+      const skill = skills.find((candidate) => candidate.name === name);
+      if (!skill) throw new Error(`Workflow skill not found: ${name}`);
+      const raw = await readFile(skill.location, "utf8");
+      rendered.push(await executeBashBlock($, parseFrontmatter(raw).body, directory));
+    }
+    if (workflows.get(sessionID) !== active) return;
+    await client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        noReply: !reply,
+        parts: [{ type: "text", text: rendered.join("\n\n"), synthetic: true }],
+      },
+    });
+  }
+
+  async function persistWorkflow(sessionID: string, active: ActiveWorkflow, snapshot: unknown): Promise<void> {
+    await ensureStateRoot();
+    if (workflows.get(sessionID) !== active) return;
+    const envelope: WorkflowEnvelope = {
+      workflowId: active.definition.id,
+      version: active.definition.version,
+      source: active.source,
+      sourceHash: active.sourceHash,
+      directory,
+      snapshot,
+      idleDeadline: active.idleDeadline,
+    };
+    const path = sessionFile(sessionID, "json");
+    const temporary = `${path}.tmp`;
+    await writeFile(temporary, JSON.stringify(envelope), { mode: 0o600 });
+    if (workflows.get(sessionID) !== active) {
+      await unlink(temporary).catch(() => {});
+      return;
+    }
+    await rename(temporary, path);
+    await chmod(path, 0o600);
+  }
+
+  async function loadDefinition(source: string, expectedHash?: string): Promise<{ definition: WorkflowDefinition; sourceHash: string }> {
+    const code = await readFile(source, "utf8");
+    const sourceHash = createHash("sha256").update(code).digest("hex");
+    if (expectedHash && expectedHash !== sourceHash) throw new Error("Workflow definition changed");
+    const module = await importWorkflow(`${pathToFileURL(source).href}?v=${sourceHash}`) as {
+      workflow?: { id: string; version: number; createMachine: (factory: typeof setup) => WorkflowDefinition["machine"] };
+    };
+    if (!module.workflow || typeof module.workflow.createMachine !== "function") {
+      throw new Error(`Invalid workflow definition: ${source}`);
+    }
+    return {
+      definition: {
+        id: module.workflow.id,
+        version: module.workflow.version,
+        machine: module.workflow.createMachine(setup),
+      },
+      sourceHash,
+    };
+  }
+
+  async function installWorkflow(
+    sessionID: string,
+    source: string,
+    snapshot?: unknown,
+    expected?: Pick<WorkflowEnvelope, "workflowId" | "version" | "sourceHash">,
+    skipSkillOnce?: string,
+    idleDeadline?: number,
+  ): Promise<ActiveWorkflow> {
+    const loaded = await loadDefinition(source, expected?.sourceHash);
+    if (expected && (loaded.definition.id !== expected.workflowId || loaded.definition.version !== expected.version)) {
+      throw new Error("Workflow definition metadata changed");
+    }
+    const facts = await sampleFacts();
+    const previous = workflows.get(sessionID);
+    if (previous?.idleTimer) clearTimeout(previous.idleTimer);
+    previous?.runtime.stop();
+    if (previous) {
+      workflows.delete(sessionID);
+      await previous.queue;
+    }
+
+    let active: ActiveWorkflow;
+    const runtime = new WorkflowRuntime(loaded.definition, {
+      persist: async (value) => persistWorkflow(sessionID, active, value),
+      renderSkills: async (skills, reply) => {
+        if (workflows.get(sessionID) === active) await renderWorkflowSkills(sessionID, skills, reply);
+      },
+    }, snapshot);
+    active = {
+      definition: loaded.definition,
+      runtime,
+      source,
+      sourceHash: loaded.sourceHash,
+      queue: Promise.resolve(),
+      skipSkillOnce,
+      lastFacts: facts,
+      idleDeadline,
+    };
+    workflows.set(sessionID, active);
+    active.queue = runtime.start();
+    await active.queue;
+    if (idleDeadline) armIdle(sessionID, active);
+    await trace(sessionID, { event: snapshot === undefined ? "workflow.started" : "workflow.restored", workflowId: active.definition.id });
+    return active;
+  }
+
+  async function activateWorkflow(sessionID: string, skillName: string, nativeAlreadyRendered = false): Promise<boolean> {
+    const skills = await discoveredSkills();
+    const skill = skills.find((candidate) => candidate.name === skillName);
+    if (!skill) return false;
+    const source = join(dirname(skill.location), "workflow.ts");
+    if (!(await stat(source).catch(() => undefined))?.isFile()) return false;
+    await installWorkflow(sessionID, source, undefined, undefined, nativeAlreadyRendered ? skillName : undefined);
+    return true;
+  }
+
+  async function restoreWorkflow(sessionID: string): Promise<ActiveWorkflow | undefined> {
+    if (workflows.has(sessionID)) return workflows.get(sessionID);
+    try {
+      const envelope = JSON.parse(await readFile(sessionFile(sessionID, "json"), "utf8")) as WorkflowEnvelope;
+      if (envelope.directory !== directory) throw new Error("Workflow directory changed");
+      const skills = await discoveredSkills();
+      const allowed = skills.some((skill) => join(dirname(skill.location), "workflow.ts") === envelope.source);
+      if (!allowed) throw new Error("Workflow source is no longer discovered");
+      return await installWorkflow(sessionID, envelope.source, envelope.snapshot, envelope, undefined, envelope.idleDeadline);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        await trace(sessionID, { event: "workflow.restore-failed", error: String(error) });
+        await unlink(sessionFile(sessionID, "json")).catch(() => {});
+      }
+      return undefined;
+    }
+  }
+
+  function enqueueWorkflow(sessionID: string, operation: (active: ActiveWorkflow) => Promise<void>): Promise<void> {
+    const active = workflows.get(sessionID);
+    if (!active) return Promise.resolve();
+    active.queue = active.queue.then(async () => {
+      if (workflows.get(sessionID) !== active) return;
+      await operation(active);
+      if (!active.lastFacts.merged || workflows.get(sessionID) !== active) return;
+      if (active.idleTimer) clearTimeout(active.idleTimer);
+      active.runtime.stop();
+      workflows.delete(sessionID);
+      await unlink(sessionFile(sessionID, "json")).catch(() => {});
+      await trace(sessionID, { event: "workflow.merged", workflowId: active.definition.id });
+    }).catch(async (error) => {
+      await trace(sessionID, { event: "workflow.error", error: String(error) });
+    });
+    return active.queue;
+  }
+
+  async function cancelIdle(sessionID: string, persist = true): Promise<void> {
+    const active = workflows.get(sessionID);
+    if (!active) return;
+    if (active.idleTimer) clearTimeout(active.idleTimer);
+    active.idleTimer = undefined;
+    active.idleDeadline = undefined;
+    if (persist) await persistWorkflow(sessionID, active, active.runtime.getPersistedSnapshot());
+  }
+
+  function armIdle(sessionID: string, active: ActiveWorkflow): void {
+    const delay = Math.max(0, (active.idleDeadline ?? Date.now()) - Date.now());
+    active.idleTimer = setTimeout(() => {
+      active.idleTimer = undefined;
+      active.idleDeadline = undefined;
+      void enqueueWorkflow(sessionID, async (current) => {
+        const facts = await sampleFacts();
+        current.lastFacts = facts;
+        await trace(sessionID, { event: "idle.elapsed", facts });
+        await current.runtime.send({ type: "idle.elapsed", facts });
+      });
+    }, delay);
+  }
+
+  async function scheduleIdle(sessionID: string): Promise<void> {
+    const active = workflows.get(sessionID);
+    if (!active) return;
+    await cancelIdle(sessionID, false);
+    active.idleDeadline = Date.now() + 5_000;
+    await persistWorkflow(sessionID, active, active.runtime.getPersistedSnapshot());
+    armIdle(sessionID, active);
+  }
+
+  async function stopWorkflow(sessionID: string): Promise<boolean> {
+    const active = workflows.get(sessionID);
+    if (!active) return false;
+    if (active.idleTimer) clearTimeout(active.idleTimer);
+    active.runtime.stop();
+    workflows.delete(sessionID);
+    await active.queue;
+    await unlink(sessionFile(sessionID, "json")).catch(() => {});
+    await trace(sessionID, { event: "workflow.stopped", workflowId: active.definition.id });
+    return true;
+  }
 
   async function hydrateSession(sessionID: string): Promise<SessionState> {
     const state = sessionStore.get(sessionID)!;
@@ -474,6 +783,16 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   }
 
   return {
+    tool: {
+      temper_workflow_stop: tool({
+        description: "Stop the active Temper workflow for this session.",
+        args: {},
+        execute: async (_args, context) => await stopWorkflow(context.sessionID)
+          ? "Stopped the active Temper workflow."
+          : "No active Temper workflow.",
+      }),
+    },
+
     "tool.definition": async (input, output) => {
       if (input.toolID !== "bash") return;
       if (!output.description.includes(BASH_GIT_INSTRUCTIONS)) {
@@ -490,8 +809,26 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (input.sessionID) output.env.OPENCODE_SESSION_ID = input.sessionID;
     },
 
-    "chat.message": async (input, _output) => {
+    "command.execute.before": async (input, output) => {
+      await cancelIdle(input.sessionID);
+      if (await activateWorkflow(input.sessionID, input.command)) {
+        output.parts.splice(0);
+      }
+    },
+
+    "chat.message": async (input, output) => {
       const { sessionID } = input;
+      if (output?.parts?.length > 0 && output.parts.every((part) => part.type === "text" && part.synthetic)) return;
+      await cancelIdle(sessionID);
+      const workflow = await restoreWorkflow(sessionID);
+      if (workflow) {
+        const facts = await sampleFacts();
+        await enqueueWorkflow(sessionID, async (active) => {
+          active.lastFacts = facts;
+          await trace(sessionID, { event: "external.chat", facts });
+          await active.runtime.send({ type: "external.chat", facts });
+        });
+      }
       if (sessionStore.has(sessionID)) {
         await dispatchEvent(sessionID, { event: "chat.message" });
         return;
@@ -509,6 +846,14 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     "tool.execute.before": async (input, _output) => {
       await logEvent(client, "tool.execute.before", { tool: input.tool });
+      await cancelIdle(input.sessionID);
+      if (input.tool === "skill" && typeof _output.args?.name === "string") {
+        await activateWorkflow(input.sessionID, _output.args.name, true);
+      }
+      const active = workflows.get(input.sessionID);
+      if (active) {
+        toolFacts.set(input.callID, { active, facts: await sampleFacts() });
+      }
       const command: string = input.tool === "bash" ? (_output.args?.command ?? "") : "";
       await dispatchEvent(input.sessionID, { event: "tool.execute.before", tool: input.tool, command });
     },
@@ -517,6 +862,26 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const command: string = input.tool === "bash" ? (input.args?.command ?? "") : "";
       const filePaths = changedFilePaths(input.tool, input.args, directory);
       await logEvent(client, "tool.execute.after", { tool: input.tool, command, filePaths });
+      const pending = toolFacts.get(input.callID);
+      toolFacts.delete(input.callID);
+      if (pending && workflows.get(input.sessionID) === pending.active) {
+        const before = pending.facts;
+        const after = await sampleFacts();
+        await enqueueWorkflow(input.sessionID, async (active) => {
+          active.lastFacts = after;
+          await trace(input.sessionID, {
+            event: "tool.finished",
+            callID: input.callID,
+            tool: input.tool,
+            command,
+            output: output.output,
+            exit: output.metadata?.exit,
+            before,
+            after,
+          });
+          await active.runtime.send({ type: "tool.finished", tool: input.tool, before, after });
+        });
+      }
       if (input.tool === "bash" && output.metadata?.exit !== 0) {
         await logEvent(client, "dispatch-skip", { tool: input.tool, command, reason: "command-failed" });
         return;
@@ -547,12 +912,14 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       }
       if (event.type === "session.status") {
         const { sessionID } = event.properties;
+        if (event.properties.status?.type === "busy") await cancelIdle(sessionID);
         if (!sessionStore.has(sessionID)) return;
         if (sessionStore.get(sessionID)?.phase !== "pending-restore") return;
         await hydrateSession(sessionID);
       }
       if (event.type === "session.idle") {
         const { sessionID } = event.properties;
+        if (await restoreWorkflow(sessionID)) await scheduleIdle(sessionID);
         let state = sessionStore.get(sessionID);
         if (state?.phase === "pending-restore") state = await hydrateSession(sessionID);
         if (state?.phase === "pending-restore") state = await hydrateSession(sessionID);
@@ -568,6 +935,28 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (event.type === "message.part.updated") {
         const { part } = event.properties;
         if (part.type !== "tool") return;
+        if (part.metadata?.providerExecuted) {
+          const key = `${part.sessionID}:${part.messageID}:${part.callID}`;
+          const active = workflows.get(part.sessionID);
+          if (part.state.status === "running" && active && !providerFacts.has(key)) {
+            providerFacts.set(key, { active, facts: await sampleFacts() });
+          }
+          if (part.state.status === "completed" || part.state.status === "error") {
+            const pending = providerFacts.get(key);
+            const before = pending && pending.active === active ? pending.facts : active?.lastFacts;
+            providerFacts.delete(key);
+            const state = sessionStore.get(part.sessionID);
+            if (active && before && state?.phase !== "pending-restore" && state?.providerTools.update(part)) {
+              const after = await sampleFacts();
+              await enqueueWorkflow(part.sessionID, async (current) => {
+                current.lastFacts = after;
+                await trace(part.sessionID, { event: "tool.finished", callID: part.callID, tool: part.tool, before, after });
+                await current.runtime.send({ type: "tool.finished", tool: part.tool, before, after });
+              });
+              return;
+            }
+          }
+        }
         const state = sessionStore.get(part.sessionID);
         if (!state) return;
         if (state.phase === "pending-restore") {
@@ -582,6 +971,20 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         const { sessionID, todos } = event.properties;
         await logEvent(client, "todo.updated", { sessionID, todos });
       }
+      if (event.type === "session.deleted") {
+        const { id: sessionID } = event.properties.info;
+        await stopWorkflow(sessionID);
+        sessionStore.delete(sessionID);
+      }
+    },
+
+    dispose: async () => {
+      for (const [sessionID, active] of workflows) {
+        if (active.idleTimer) clearTimeout(active.idleTimer);
+        active.runtime.stop();
+        workflows.delete(sessionID);
+      }
+      _registeredDirs.delete(directory);
     },
   };
 };

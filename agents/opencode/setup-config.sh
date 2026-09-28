@@ -135,8 +135,14 @@ configure_cursor_provider() {
 configure_cursor_provider "$ACTIVE_CONFIG"
 
 if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
-  TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
-  TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
+  if [[ -f "${OPENCODE_PLUGIN_DIR}/temper.js" ]]; then
+    TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.js"
+    TEMPER_DEST="${PLUGINS_DIR}/temper.js"
+    rm -f "${PLUGINS_DIR}/temper.ts"
+  else
+    TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
+    TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
+  fi
 
   if [[ ! -f "$TEMPER_DEST" ]]; then
     mkdir -p "$PLUGINS_DIR"

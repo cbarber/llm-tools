@@ -6,11 +6,6 @@
  * Starts opencode in server mode against llm-mock-server (in-process), sends
  * a scripted prompt, and asserts on what arrives at the model API boundary.
  *
- * Primary regression: mojo-commit double-fire (fixed in commit 9a9d417).
- * Before that fix, the git() bash alias also called `temper commit`, causing
- * a second injection alongside the one from temper.ts. Reverting 9a9d417
- * causes the mojo-commit assertion to fail.
- *
  * Usage:
  *   cd tools && bun test test-agent-harness.test.ts
  *
@@ -46,12 +41,13 @@ beforeAll(async () => {
   // Title generator requests have no tools — return a title and move on
   mock.when((req) => req.toolNames.length === 0).reply("Test session title");
 
-  // Task requests: scripted three-turn workflow
-  //   Turn 1: model calls todowrite (mark task in_progress)
-  //   Turn 2: model calls bash with git add + git commit
-  //            → triggers mojo-commit via tool.execute.after
-  //   Turn 3: model replies with plain text (done)
+  // Task requests: explicitly activate Mojo, then complete one change cycle.
   mock.when((req) => req.toolNames.length > 0).replySequence([
+    {
+      reply: {
+        tools: [{ name: "skill", args: { name: "mojo-init" } }],
+      },
+    },
     {
       reply: {
         tools: [{
@@ -112,14 +108,14 @@ afterAll(async () => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("temper plugin — mojo-init", () => {
-  it("injects exactly once on session.created", () => {
+describe("temper plugin — Mojo workflow", () => {
+  it("injects init exactly once after explicit activation", () => {
     const tasks = taskRequests(history);
     expect(tasks.length).toBeGreaterThanOrEqual(1);
 
     const messages = tasks[tasks.length - 1].request.messages;
     const mojoInitMessages = messages.filter(
-      (m) => m.role === "user" && m.content.includes("# mojo-init")
+      (m) => m.content.includes("# mojo-init")
     );
     const count = mojoInitMessages.length;
     if (count !== 1) {
@@ -130,37 +126,13 @@ describe("temper plugin — mojo-init", () => {
     }
     expect(count).toBe(1);
   });
-});
-
-describe("temper plugin — mojo-commit (9a9d417 regression)", () => {
-  it("injects exactly once as a synthetic user message after git commit", () => {
+  it("injects fresh edit guidance after the clean commit", () => {
     const tasks = taskRequests(history);
-    expect(tasks.length).toBeGreaterThanOrEqual(2);
-
-    let syntheticCount = 0;
-    for (let i = 1; i < tasks.length; i++) {
-      for (const m of tasks[i].request.messages) {
-        if (m.role === "user" && m.content.includes("# mojo-commit")) syntheticCount++;
-      }
-    }
-    expect(syntheticCount).toBe(1);
-  });
-
-  it("does not appear in tool result messages (pre-9a9d417 alias double-fire)", () => {
-    // The pre-fix git() alias called `temper commit`, whose stdout was captured
-    // as the bash tool result. That output starts with "📋 Commit Format:" —
-    // the header printed by the temper CLI before the skill body.
-    // Post-fix: only temper.ts injects the skill as a synthetic user message.
-    const tasks = taskRequests(history);
-    expect(tasks.length).toBeGreaterThanOrEqual(2);
-
-    let aliasInToolResult = 0;
-    for (let i = 1; i < tasks.length; i++) {
-      for (const m of tasks[i].request.messages) {
-        if (m.role === "tool" && m.content.includes("📋 Commit Format:")) aliasInToolResult++;
-      }
-    }
-    expect(aliasInToolResult).toBe(0);
+    const messages = tasks[tasks.length - 1].request.messages;
+    const editGuidance = messages.filter(
+      (m) => m.role === "user" && m.content.includes("# mojo-edit-nudge")
+    );
+    expect(editGuidance).toHaveLength(2);
   });
 });
 
@@ -168,11 +140,12 @@ describe("temper plugin — regex fix (todowrite must not trigger mojo-commit)",
   it("does not inject mojo-commit after a todowrite tool call", () => {
     // Before anchoring to ^(edit|write)$, "edit|write" matched "todowrite"
     // as a substring, causing mojo-commit to inject on every todo update.
-    // Turn 1 is todowrite; Turn 2 is the request after it completes.
+    // Turn 1 activates the workflow; Turn 2 follows the skill result; Turn 3
+    // follows todowrite and must not contain commit guidance.
     // mojo-commit must not appear in Turn 2's messages.
     const tasks = taskRequests(history);
     expect(tasks.length).toBeGreaterThanOrEqual(2);
-    const afterTodowrite = tasks[1].request.messages;
+    const afterTodowrite = tasks[2].request.messages;
     const hasMojoCommitAfterTodowrite = afterTodowrite.some(
       (m) => m.role === "user" && m.content.includes("# mojo-commit")
     );

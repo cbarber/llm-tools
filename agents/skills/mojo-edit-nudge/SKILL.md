@@ -1,11 +1,6 @@
 ---
 name: mojo-edit-nudge
 description: Minimal-editing instruction injected at the first edit of each commit cycle
-once: true
-triggers:
-  - event: tool.execute.after
-    tool: bash
-    command: "git commit"
 ---
 
 # mojo-edit-nudge

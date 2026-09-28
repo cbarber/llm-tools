@@ -12,6 +12,7 @@ let
   temper-acp = pkgs.callPackage ./temper-acp { };
   toad = pkgs.callPackage ./toad.nix { };
   opencode-cursor = pkgs.callPackage ./opencode-cursor.nix { };
+  opencode-temper = pkgs.callPackage ../agents/opencode/plugins/package.nix { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.stdenv.mkDerivation {
@@ -51,6 +52,7 @@ in
     temper-acp
     toad
     opencode-cursor
+    opencode-temper
     temper
     forge
     git-agent-sequence-editor

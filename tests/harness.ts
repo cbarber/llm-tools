@@ -1,6 +1,6 @@
 import type { MockServer } from "llm-mock-server";
 import { ChildProcessByStdio, execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, copyFile, cp } from "node:fs/promises";
+import { access, mkdtemp, mkdir, writeFile, copyFile, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -159,8 +159,20 @@ async function createTempHome(skipTemperInstall: boolean) {
   if (!skipTemperInstall) {
     const pluginsDir = join(tempHome, ".config", "opencode", "plugins");
     await mkdir(pluginsDir, { recursive: true });
-    const temperSrc = join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
-    await copyFile(temperSrc, join(pluginsDir, "temper.ts"));
+    const packaged = join(process.env.OPENCODE_PLUGIN_DIR ?? "", "temper.js");
+    if (process.env.OPENCODE_PLUGIN_DIR && await access(packaged).then(() => true, () => false)) {
+      await copyFile(packaged, join(pluginsDir, "temper.js"));
+    } else {
+      const temperSrc = join(import.meta.dir, "..", "agents", "opencode", "plugins", "temper.ts");
+      const build = await Bun.build({
+        entrypoints: [temperSrc],
+        target: "bun",
+        format: "esm",
+        outdir: pluginsDir,
+        naming: "temper.js",
+      });
+      if (!build.success) throw new Error(build.logs.join("\n"));
+    }
   }
 
   // Symlink skills from the real HOME so v2.app.skills() returns them.
