@@ -1,10 +1,10 @@
 ---
 id: TASK-42.2
 title: Integrate XState v5 skill workflows into OpenCode Temper
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-25 20:15'
-updated_date: '2026-09-28 20:05'
+updated_date: '2026-09-28 20:26'
 labels: []
 dependencies: []
 references:
@@ -49,4 +49,6 @@ Use buildNpmPackage to produce a Bun-bundled Temper entrypoint while keeping xst
 Research completed 2026-09-25. Pin xstate 5.33.2; graph utilities are provided by xstate/graph, not @xstate/graph. Restrict the first implementation to synchronous event-driven machines: no invoke, spawned actors, or XState after delays. Dynamic TypeScript imports are an explicit trust boundary. Entry-source hashing does not cover imported dependency changes, so workflow authors must bump the explicit version.
 
 2026-09-28 XState v5 unit-test research: use initialTransition/transition for side-effect-free ordered named custom-action intents and snapshot assertions; supply explicit per-case guard facts and event payloads. Traverse xstate/graph with bounded, fixture-aware shortest/simple paths; test active nonfinal dead ends against enumerated valid events. Test actor.getPersistedSnapshot JSON round-trip and createActor(machine, { snapshot }) restoration separately: actions do not replay, but invocations restart. Send back-to-back tool request events separately from result delivery, correlating by call ID; issuing an intent does not imply delivery. Keep the first implementation invocation-free as scoped above. Docs: https://stately.ai/docs/pure-transitions https://stately.ai/docs/graph https://stately.ai/docs/persistence https://stately.ai/docs/inspection
+
+2026-09-28 first slice: added the versioned Mojo workflow definition and shared production WorkflowRuntime, with persistence-before-effect ordering and behavioral tests for activation, change-cycle anti-spam, clean-commit guidance, publication, and restore without replay.
 <!-- SECTION:NOTES:END -->
