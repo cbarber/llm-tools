@@ -4,7 +4,7 @@ title: Integrate XState v5 skill workflows into OpenCode Temper
 status: In Progress
 assignee: []
 created_date: '2026-09-25 20:15'
-updated_date: '2026-09-28 21:05'
+updated_date: '2026-09-28 21:44'
 labels: []
 dependencies: []
 references:
@@ -53,4 +53,6 @@ Research completed 2026-09-25. Pin xstate 5.33.2; graph utilities are provided b
 2026-09-28 first slice: added the versioned Mojo workflow definition and shared production WorkflowRuntime, with persistence-before-effect ordering and behavioral tests for activation, change-cycle anti-spam, clean-commit guidance, publication, and restore without replay.
 
 2026-09-28 integration slice: wired explicit slash/model-skill activation, one workflow per session, serialized tool facts by call ID, five-second idle scheduling, version/hash/directory snapshot envelopes, 0700/0600 state storage, manual stop, bundled Nix packaging, trigger-frontmatter removal, skill decomposition, and migrated production-adapter/E2E coverage. Remaining acceptance work includes graph validation, complete review/merge behavior, trace redaction, durable idle-deadline restoration, and broader mismatch/failure tests.
+
+2026-09-28 correctness review of commits 80ed6b1..d526bf2 passed existing gates but found release-blocking defects. Follow-up is tracked in TASK-42.2.1 (effect execution, secure traces, persistence lifecycle), TASK-42.2.2 (provider events and durable idle), TASK-42.2.3 (graph validation and complete Mojo behavior), and TASK-42.2.4 (plugin migration and CI coverage). Keep this parent open until those children and all acceptance criteria are complete.
 <!-- SECTION:NOTES:END -->
