@@ -4,7 +4,7 @@ title: Integrate XState v5 skill workflows into OpenCode Temper
 status: To Do
 assignee: []
 created_date: '2026-09-25 20:15'
-updated_date: '2026-09-28 17:35'
+updated_date: '2026-09-28 20:05'
 labels: []
 dependencies: []
 references:
@@ -22,7 +22,7 @@ ordinal: 66000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Add an OpenCode-specific XState v5 workflow runtime to Temper. A trusted workflow.ts adjacent to a discovered SKILL.md activates when that skill is loaded, with at most one active workflow per OpenCode session. Preserve existing trigger dispatch while adding validated transitions, rendered skill effects, restart-safe snapshots, secure traces, idle continuation, and manual stop.
+Add an OpenCode-specific XState v5 workflow runtime to Temper. A trusted workflow.ts adjacent to a discovered SKILL.md activates when that skill is loaded, with at most one active workflow per OpenCode session. Replace existing trigger dispatch with validated transitions, rendered skill effects, restart-safe snapshots, secure traces, idle continuation, and manual stop.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,16 +31,16 @@ Add an OpenCode-specific XState v5 workflow runtime to Temper. A trusted workflo
 - [ ] #2 Pin XState v5 and validate each machine with xstate/graph using bounded traversal and representative events before activation.
 - [ ] #3 Allow one active workflow per session, serialize session events, implement a cancellable five-second host-owned idle timer, and provide a temper_workflow_stop tool.
 - [ ] #4 Implement a named transition effect that resolves, renders, concatenates, and injects skills in order, including all bash {exec} blocks.
-- [ ] #5 Persist actor snapshots outside the repository with a versioned envelope containing workflow ID, version, source hash, and directory; discard incompatible or malformed snapshots.
+- [ ] #5 Persist actor snapshots outside the repository with a versioned envelope containing workflow ID, version, source hash, and directory before executing asynchronous host effects; discard incompatible or malformed snapshots.
 - [ ] #6 Write redacted per-session JSONL traces under the OpenCode state directory with directories mode 0700 and files mode 0600.
 - [ ] #7 Package XState reproducibly in Nix, make it resolvable by Bun-loaded workflow files, and retain the one-file installed Temper entrypoint.
-- [ ] #8 Cover discovery, graph rejection, exclusivity, idle cancellation, effects, restore mismatch, permissions, manual stop, and cleanup in tests.
+- [ ] #8 Cover the real Mojo workflow through the production runtime with behavioral scenarios, plus discovery, graph rejection, exclusivity, idle cancellation, effects, restore mismatch, permissions, manual stop, and cleanup tests.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use buildNpmPackage to produce a Bun-bundled Temper entrypoint while keeping xstate external and available through NODE_PATH. Add focused workflow runtime and store modules behind temper.ts. Use machine.provide() to capture temper.renderSkills actions synchronously, process effects after actor.send(), then atomically persist actor.getPersistedSnapshot(). Restore with createActor(machine, { snapshot }) only after envelope validation.
+Use buildNpmPackage to produce a Bun-bundled Temper entrypoint while keeping xstate external and available through NODE_PATH. Add focused workflow runtime and store modules behind temper.ts. Use machine.provide() to capture temper.renderSkills actions synchronously, atomically persist actor.getPersistedSnapshot() after actor.send(), then process asynchronous host effects so a failed effect cannot replay the transition after restoration. Exercise the real Mojo workflow and fixture workflows through this same production runtime. Restore with createActor(machine, { snapshot }) only after envelope validation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
