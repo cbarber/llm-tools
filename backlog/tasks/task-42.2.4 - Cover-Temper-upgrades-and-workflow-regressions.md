@@ -1,9 +1,10 @@
 ---
 id: TASK-42.2.4
 title: Cover Temper upgrades and workflow regressions
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-28 21:44'
+updated_date: '2026-09-29 18:43'
 labels: []
 dependencies: []
 references:
@@ -22,7 +23,16 @@ Prevent duplicate plugin loading during the temper.ts-to-temper.js migration and
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Installing temper.js removes or disables an obsolete temper.ts entrypoint so OpenCode loads one Temper plugin.
-- [ ] #2 Setup-config tests cover upgrades from an existing TypeScript plugin installation.
+- [x] #1 Installing temper.js removes or disables an obsolete temper.ts entrypoint so OpenCode loads one Temper plugin.
+- [x] #2 Setup-config tests cover upgrades from an existing TypeScript plugin installation.
 - [ ] #3 CI runs workflow runtime, adapter, provider, restore, graph rejection, permissions, stop, cleanup, and mismatch tests.
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-29 18:43
+---
+Setup-config removes the obsolete temper.ts when temper.js is installed; Bats covers this upgrade. CI includes plugin tests, but fixture and OpenCode E2E coverage for restore mismatch, permissions, cleanup, and idle remain incomplete.
+---
+<!-- COMMENTS:END -->

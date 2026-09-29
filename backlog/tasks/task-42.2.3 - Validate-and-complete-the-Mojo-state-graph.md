@@ -1,9 +1,10 @@
 ---
 id: TASK-42.2.3
 title: Validate and complete the Mojo state graph
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-28 21:44'
+updated_date: '2026-09-29 18:43'
 labels: []
 dependencies: []
 references:
@@ -26,3 +27,12 @@ Finish machine validation and the review/approval/merge behavior required by the
 - [ ] #2 The Mojo machine handles publication, approval, review feedback, head updates, and merge completion.
 - [ ] #3 Malformed persisted XState internals are rejected before createActor restoration.
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-29 18:43
+---
+Mojo has author/team waiting and review-response transitions plus merge cleanup, and the runtime rejects basic malformed persisted snapshots and unreachable/dead-end/delayed states. xstate/graph traversal, unsupported spawn/invoke cases, and representative review/merge paths remain.
+---
+<!-- COMMENTS:END -->

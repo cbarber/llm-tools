@@ -4,7 +4,7 @@ title: Integrate XState v5 skill workflows into OpenCode Temper
 status: In Progress
 assignee: []
 created_date: '2026-09-25 20:15'
-updated_date: '2026-09-28 21:44'
+updated_date: '2026-09-29 18:43'
 labels: []
 dependencies: []
 references:
@@ -56,3 +56,12 @@ Research completed 2026-09-25. Pin xstate 5.33.2; graph utilities are provided b
 
 2026-09-28 correctness review of commits 80ed6b1..d526bf2 passed existing gates but found release-blocking defects. Follow-up is tracked in TASK-42.2.1 (effect execution, secure traces, persistence lifecycle), TASK-42.2.2 (provider events and durable idle), TASK-42.2.3 (graph validation and complete Mojo behavior), and TASK-42.2.4 (plugin migration and CI coverage). Keep this parent open until those children and all acceptance criteria are complete.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-29 18:43
+---
+2026-09-29 review follow-up was autosquashed into b81d1fd. Partial behavior fixes and regression tests are in place; TASK-42.2.1 through .4 remain open for trace redaction, lifecycle/idle races, full graph validation, and adapter/E2E coverage. PR polling is outside this task scope.
+---
+<!-- COMMENTS:END -->
