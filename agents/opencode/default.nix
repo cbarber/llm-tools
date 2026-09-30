@@ -7,13 +7,14 @@ pkgs.mkShell {
     with pkgs;
     [
       opencode
+      cursor-cli
+      coreutils
       findutils
       gh
       tea
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
       iproute2
-      coreutils
     ]
     ++ tools.all;
 
@@ -26,7 +27,9 @@ pkgs.mkShell {
     export FENCE_PATH="${tools.fence}/bin/fence"
     export IRON_PROXY_PATH="${tools.iron-proxy}/bin/iron-proxy"
     export AGENTS_SKILLS_DIR="${../../agents/skills}"
-    export OPENCODE_PLUGIN_DIR="${./plugins}"
+    export OPENCODE_PLUGIN_DIR="${tools.opencode-temper}/lib/temper"
+    export OPENCODE_CURSOR_PLUGIN_ENTRY="${tools.opencode-cursor}/lib/opencode-cursor/dist/plugin/index.js"
+    export OPENCODE_CURSOR_PROVIDER_NPM="file://${tools.opencode-cursor}/lib/opencode-cursor/dist/provider/index.js"
 
     source ${./setup-shell.sh}
   '';

@@ -1,0 +1,5 @@
+{
+  "extends": "../../opencode/plugins/tsconfig.json",
+  "compilerOptions": { "types": [] },
+  "include": ["workflow.ts"]
+}

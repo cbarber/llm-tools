@@ -1,10 +1,6 @@
 ---
 name: mojo-rebase
 description: Interactive rebase, fixup, and commit message rewriting patterns
-triggers:
-  - event: tool.execute.before
-    tool: bash
-    command: "git rebase"
 ---
 
 # mojo-rebase

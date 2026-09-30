@@ -16,7 +16,17 @@ nix develop github:cbarber/llm-tools#claude-code
 nix develop github:cbarber/llm-tools#opencode
 ```
 
-Both agents include:
+### Cursor CLI
+
+```bash
+nix develop github:cbarber/llm-tools#cursor-cli
+```
+
+The Cursor environment launches Toad over a Symposium ACP conductor with a
+Temper proxy in front of `cursor-agent acp`. Invoke a discovered starter skill,
+such as `/mojo-init`, to enable trigger dispatch for that session.
+
+All agents include:
 
 - Sandboxed execution (bubblewrap on Linux, sandbox-exec on macOS)
 - Auto-detected language servers (Nix via nil)
@@ -56,6 +66,6 @@ Set `ANTHROPIC_API_KEY` in `.env` for API auth. Set `AUTO_LAUNCH=false` to skip 
 
 ## Structure
 
-- `agents/` - Agent environments (claude-code, opencode)
+- `agents/` - Agent environments (claude-code, cursor-cli, opencode)
 - `tools/` - Shared MCP servers, scripts, and sandbox
 - `flake.nix` - Root configuration

@@ -9,6 +9,10 @@ let
 
   fence = pkgs.callPackage ./fence { };
   iron-proxy = pkgs.callPackage ./iron-proxy { };
+  temper-acp = pkgs.callPackage ./temper-acp { };
+  toad = pkgs.callPackage ./toad.nix { };
+  opencode-cursor = pkgs.callPackage ./opencode-cursor.nix { };
+  opencode-temper = pkgs.callPackage ../agents/opencode/plugins/package.nix { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
   forge = pkgs.stdenv.mkDerivation {
@@ -45,6 +49,10 @@ in
     git-absorb
     fence
     iron-proxy
+    temper-acp
+    toad
+    opencode-cursor
+    opencode-temper
     temper
     forge
     git-agent-sequence-editor

@@ -3,6 +3,8 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": { "xstate": ["./node_modules/xstate"] },
     "types": ["bun-types"],
     "strict": true,
     "noEmit": true

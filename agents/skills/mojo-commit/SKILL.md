@@ -1,17 +1,6 @@
 ---
 name: mojo-commit
 description: Atomic commit workflow with conventional commit format
-triggers:
-  - event: tool.execute.after
-    tool: "^(apply_patch|edit|write)$"
-    worktree: true
-  - event: tool.execute.after
-    tool: bash
-    command: "git add"
-  - event: tool.execute.after
-    tool: bash
-    command: "git commit"
-    action: reset
 ---
 
 # mojo-commit
@@ -71,12 +60,3 @@ Linux sandbox script only mounted legacy file, breaking XDG-only users.
 
 Authored-By: claude-code (claude-3.7-sonnet)
 ```
-
-When all commits are clean and work is complete: push and create a PR — do not ask for confirmation.
-
-```bash
-git push -u origin <branch>
-forge pr create --title "..." --body "..."
-```
-
-- Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present

@@ -1,0 +1,67 @@
+---
+id: TASK-42.2
+title: Integrate XState v5 skill workflows into OpenCode Temper
+status: In Progress
+assignee: []
+created_date: '2026-09-25 20:15'
+updated_date: '2026-09-29 18:43'
+labels: []
+dependencies: []
+references:
+  - agents/opencode/plugins/temper.ts
+  - agents/opencode/setup-config.sh
+  - agents/opencode/default.nix
+  - tools/setup-sandbox-paths.sh
+  - 'https://stately.ai/docs/graph'
+  - 'https://stately.ai/docs/persistence'
+parent_task_id: TASK-42
+priority: medium
+ordinal: 66000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Add an OpenCode-specific XState v5 workflow runtime to Temper. A trusted workflow.ts adjacent to a discovered SKILL.md activates when that skill is loaded, with at most one active workflow per OpenCode session. Replace existing trigger dispatch with validated transitions, rendered skill effects, restart-safe snapshots, secure traces, idle continuation, and manual stop.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 Use app.skills({ directory }) as the authoritative source for project and global skill discovery, and dynamically import only the activated skill's adjacent workflow.ts.
+- [ ] #2 Pin XState v5 and validate each machine with xstate/graph using bounded traversal and representative events before activation.
+- [ ] #3 Allow one active workflow per session, serialize session events, implement a cancellable five-second host-owned idle timer, and provide a temper_workflow_stop tool.
+- [ ] #4 Implement a named transition effect that resolves, renders, concatenates, and injects skills in order, including all bash {exec} blocks.
+- [ ] #5 Persist actor snapshots outside the repository with a versioned envelope containing workflow ID, version, source hash, and directory before executing asynchronous host effects; discard incompatible or malformed snapshots.
+- [ ] #6 Write redacted per-session JSONL traces under the OpenCode state directory with directories mode 0700 and files mode 0600.
+- [ ] #7 Package XState reproducibly in Nix, make it resolvable by Bun-loaded workflow files, and retain the one-file installed Temper entrypoint.
+- [ ] #8 Cover the real Mojo workflow through the production runtime with behavioral scenarios, plus discovery, graph rejection, exclusivity, idle cancellation, effects, restore mismatch, permissions, manual stop, and cleanup tests.
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Use buildNpmPackage to produce a Bun-bundled Temper entrypoint while keeping xstate external and available through NODE_PATH. Add focused workflow runtime and store modules behind temper.ts. Use machine.provide() to capture temper.renderSkills actions synchronously, atomically persist actor.getPersistedSnapshot() after actor.send(), then process asynchronous host effects so a failed effect cannot replay the transition after restoration. Exercise the real Mojo workflow and fixture workflows through this same production runtime. Restore with createActor(machine, { snapshot }) only after envelope validation.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Research completed 2026-09-25. Pin xstate 5.33.2; graph utilities are provided by xstate/graph, not @xstate/graph. Restrict the first implementation to synchronous event-driven machines: no invoke, spawned actors, or XState after delays. Dynamic TypeScript imports are an explicit trust boundary. Entry-source hashing does not cover imported dependency changes, so workflow authors must bump the explicit version.
+
+2026-09-28 XState v5 unit-test research: use initialTransition/transition for side-effect-free ordered named custom-action intents and snapshot assertions; supply explicit per-case guard facts and event payloads. Traverse xstate/graph with bounded, fixture-aware shortest/simple paths; test active nonfinal dead ends against enumerated valid events. Test actor.getPersistedSnapshot JSON round-trip and createActor(machine, { snapshot }) restoration separately: actions do not replay, but invocations restart. Send back-to-back tool request events separately from result delivery, correlating by call ID; issuing an intent does not imply delivery. Keep the first implementation invocation-free as scoped above. Docs: https://stately.ai/docs/pure-transitions https://stately.ai/docs/graph https://stately.ai/docs/persistence https://stately.ai/docs/inspection
+
+2026-09-28 first slice: added the versioned Mojo workflow definition and shared production WorkflowRuntime, with persistence-before-effect ordering and behavioral tests for activation, change-cycle anti-spam, clean-commit guidance, publication, and restore without replay.
+
+2026-09-28 integration slice: wired explicit slash/model-skill activation, one workflow per session, serialized tool facts by call ID, five-second idle scheduling, version/hash/directory snapshot envelopes, 0700/0600 state storage, manual stop, bundled Nix packaging, trigger-frontmatter removal, skill decomposition, and migrated production-adapter/E2E coverage. Remaining acceptance work includes graph validation, complete review/merge behavior, trace redaction, durable idle-deadline restoration, and broader mismatch/failure tests.
+
+2026-09-28 correctness review of commits 80ed6b1..d526bf2 passed existing gates but found release-blocking defects. Follow-up is tracked in TASK-42.2.1 (effect execution, secure traces, persistence lifecycle), TASK-42.2.2 (provider events and durable idle), TASK-42.2.3 (graph validation and complete Mojo behavior), and TASK-42.2.4 (plugin migration and CI coverage). Keep this parent open until those children and all acceptance criteria are complete.
+<!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-29 18:43
+---
+2026-09-29 review follow-up was autosquashed into b81d1fd. Partial behavior fixes and regression tests are in place; TASK-42.2.1 through .4 remain open for trace redaction, lifecycle/idle races, full graph validation, and adapter/E2E coverage. PR polling is outside this task scope.
+---
+<!-- COMMENTS:END -->

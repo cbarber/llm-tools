@@ -62,6 +62,12 @@ EOF
   esac
 fi
 
+if [[ "$CONFIG_LOCATION" == "global" ]]; then
+  ACTIVE_CONFIG="$GLOBAL_CONFIG"
+else
+  ACTIVE_CONFIG="$PROJECT_CONFIG"
+fi
+
 # ---------------------------------------------------------------------------
 # Temper plugin install
 # ---------------------------------------------------------------------------
@@ -96,9 +102,47 @@ assert_share_disabled() {
 [[ -f "$PROJECT_CONFIG" ]] && assert_share_disabled "$PROJECT_CONFIG"
 [[ -f "$GLOBAL_CONFIG" ]] && assert_share_disabled "$GLOBAL_CONFIG"
 
+configure_cursor_provider() {
+  local config="$1"
+  local plugin="file://${OPENCODE_CURSOR_PLUGIN_ENTRY}"
+  local provider_npm="${OPENCODE_CURSOR_PROVIDER_NPM}"
+  local tmp
+
+  tmp=$(mktemp)
+  jq --arg plugin "$plugin" --arg provider_npm "$provider_npm" '
+    .plugin = (((.plugin // []) | map(select(
+      (type != "string") or (
+        (startswith("@rama_nigg/open-cursor@") or
+         startswith("@stablekernel/opencode-cursor@") or
+         test("/[^/]+-open-cursor-[^/]+/lib/open-cursor/dist/plugin-entry\\.js$") or
+         test("/[^/]+-opencode-cursor-[^/]+/lib/opencode-cursor/dist/plugin/index\\.js$")) | not
+      )
+    ))) + [$plugin]) |
+    .provider //= {} |
+    del(.provider["cursor-acp"]) |
+    .provider.cursor //= {} |
+    .provider.cursor.npm = $provider_npm
+  ' "$config" > "$tmp"
+
+  if cmp -s "$config" "$tmp"; then
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$config"
+    echo "Configured Cursor provider in ${config}"
+  fi
+}
+
+configure_cursor_provider "$ACTIVE_CONFIG"
+
 if [[ -n "${OPENCODE_PLUGIN_DIR:-}" ]] && [[ -d "$OPENCODE_PLUGIN_DIR" ]]; then
-  TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
-  TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
+  if [[ -f "${OPENCODE_PLUGIN_DIR}/temper.js" ]]; then
+    TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.js"
+    TEMPER_DEST="${PLUGINS_DIR}/temper.js"
+    rm -f "${PLUGINS_DIR}/temper.ts"
+  else
+    TEMPER_SRC="${OPENCODE_PLUGIN_DIR}/temper.ts"
+    TEMPER_DEST="${PLUGINS_DIR}/temper.ts"
+  fi
 
   if [[ ! -f "$TEMPER_DEST" ]]; then
     mkdir -p "$PLUGINS_DIR"
