@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -24,15 +24,18 @@ const skillNames = [
   "mojo-create-pull-request",
   "mojo-update-pull-request",
 ];
+const legacySkill = join(root, "mojo-complete", "SKILL.md");
+await mkdir(join(root, "mojo-complete"));
+await writeFile(legacySkill, '---\nname: mojo-complete\ntriggers:\n  - event: session.idle\n    when: "true"\n---\n# mojo-complete\n');
 const server = Bun.serve({
   port: 0,
   fetch(request) {
     if (new URL(request.url).pathname === "/skill") {
-      return Response.json(skillNames.map((name) => ({
+      return Response.json([...skillNames.map((name) => ({
         name,
         description: name,
         location: join(skillsRoot, name, "SKILL.md"),
-      })));
+      })), { name: "mojo-complete", description: "legacy completion", location: legacySkill }]);
     }
     return Response.json([]);
   },
@@ -44,6 +47,73 @@ afterAll(async () => {
 });
 
 describe("Temper workflow adapter", () => {
+  test("records legacy skill injection in the session trace", async () => {
+    const previousStateHome = process.env.XDG_STATE_HOME;
+    const legacyHome = join(root, "legacy-state");
+    process.env.XDG_STATE_HOME = legacyHome;
+    const sessionID = "legacy-session";
+    const prompts: string[] = [];
+    const client = {
+      app: { log: async () => ({}) },
+      session: { prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
+        prompts.push(body.parts[0].text);
+        return {};
+      } },
+    };
+    try {
+      const hooks = await TemperPlugin({ client, $: Bun.$, directory, serverUrl: server.url } as never);
+      await hooks.event!({ event: { type: "session.created", properties: { info: { id: sessionID } } } } as never);
+      await hooks.event!({ event: { type: "session.idle", properties: { sessionID } } } as never);
+      expect(prompts[0]).toContain("# mojo-complete");
+      const hash = createHash("sha256").update(sessionID).digest("hex");
+      const trace = (await readFile(join(legacyHome, "opencode", "temper", `${hash}.jsonl`), "utf8"))
+        .trim().split("\n").map((line) => JSON.parse(line));
+      expect(trace).toContainEqual(expect.objectContaining({ event: "skills.injected", source: "legacy", skills: ["mojo-complete"], reply: false }));
+      await hooks.dispose?.();
+    } finally {
+      if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousStateHome;
+    }
+  });
+
+  test("rejects a mismatched restore and permits fresh activation", async () => {
+    const previousStateHome = process.env.XDG_STATE_HOME;
+    const restoreHome = join(root, "restore-state");
+    process.env.XDG_STATE_HOME = restoreHome;
+    const sessionID = "mismatched-workflow";
+    const hash = createHash("sha256").update(sessionID).digest("hex");
+    const file = join(restoreHome, "opencode", "temper", `${hash}.json`);
+    const prompts: string[] = [];
+    const client = {
+      app: { log: async () => ({}) },
+      session: { prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
+        prompts.push(body.parts[0].text);
+        return {};
+      } },
+    };
+    try {
+      const original = await TemperPlugin({ client, $: Bun.$, directory, serverUrl: server.url } as never);
+      await original["command.execute.before"]!({ command: "mojo-init", sessionID, arguments: "" }, { parts: [] } as never);
+      const envelope = JSON.parse(await readFile(file, "utf8"));
+      envelope.sourceHash = "outdated";
+      await writeFile(file, JSON.stringify(envelope));
+      await original.dispose?.();
+
+      const restored = await TemperPlugin({ client, $: Bun.$, directory, serverUrl: server.url } as never);
+      await restored["chat.message"]!({ sessionID } as never, { parts: [{ type: "text", text: "hello" }] } as never);
+      expect(prompts).toHaveLength(1);
+      expect(await stat(file).catch(() => undefined)).toBeUndefined();
+      const trace = (await readFile(file.replace(/\.json$/, ".jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      expect(trace).toContainEqual(expect.objectContaining({ event: "workflow.restore-failed", error: "Error: Workflow definition changed" }));
+      await restored["command.execute.before"]!({ command: "mojo-init", sessionID, arguments: "" }, { parts: [] } as never);
+      expect(prompts).toHaveLength(2);
+      await restored.dispose?.();
+    } finally {
+      if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousStateHome;
+    }
+  });
+
   test("activates, replaces, persists, and stops the Mojo workflow", async () => {
     const previousStateHome = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = stateHome;
@@ -112,5 +182,45 @@ describe("Temper workflow adapter", () => {
     await hooks.dispose?.();
     if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
     else process.env.XDG_STATE_HOME = previousStateHome;
+  });
+
+  test("uses the project workflow, traces rendered skills, and suppresses legacy completion", async () => {
+    const previousStateHome = process.env.XDG_STATE_HOME;
+    const localStateHome = join(root, "project-state");
+    process.env.XDG_STATE_HOME = localStateHome;
+    const localSource = join(directory, "agents", "skills", "mojo-init", "workflow.ts");
+    const sessionID = "project-workflow";
+    const hash = createHash("sha256").update(sessionID).digest("hex");
+    const prompts: string[] = [];
+    const client = {
+      app: { log: async () => ({}) },
+      session: { prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
+        prompts.push(body.parts[0].text);
+        return {};
+      } },
+    };
+    await mkdir(join(directory, "agents", "skills", "mojo-init"), { recursive: true });
+    await writeFile(localSource, await readFile(join(skillsRoot, "mojo-init", "workflow.ts")));
+    try {
+      const hooks = await TemperPlugin({ client, $: Bun.$, directory, serverUrl: server.url } as never);
+      await hooks["tool.execute.before"]!({ tool: "skill", sessionID, callID: "activate" }, { args: { name: "mojo-init" } });
+      const statePath = join(localStateHome, "opencode", "temper", `${hash}.json`);
+      expect(JSON.parse(await readFile(statePath, "utf8")).source).toBe(localSource);
+      const tracePath = join(localStateHome, "opencode", "temper", `${hash}.jsonl`);
+      const trace = (await readFile(tracePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      expect(trace).toContainEqual(expect.objectContaining({ event: "skills.injected", source: "workflow", skills: ["mojo-edit-nudge"], reply: false }));
+      await hooks.event!({ event: { type: "session.created", properties: { info: { id: sessionID } } } } as never);
+      await Promise.all(Array.from({ length: 12 }, () => hooks["chat.message"]!(
+        { sessionID } as never, { parts: [{ type: "text", text: "hello" }] } as never,
+      )));
+      expect(JSON.parse(await readFile(statePath, "utf8")).workflowId).toBe("mojo");
+      await hooks.event!({ event: { type: "session.idle", properties: { sessionID } } } as never);
+      expect(prompts).toHaveLength(1);
+      await hooks.dispose?.();
+    } finally {
+      await rm(join(directory, "agents"), { recursive: true, force: true });
+      if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previousStateHome;
+    }
   });
 });

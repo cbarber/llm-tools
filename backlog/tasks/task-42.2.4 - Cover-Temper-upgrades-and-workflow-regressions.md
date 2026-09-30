@@ -4,7 +4,7 @@ title: Cover Temper upgrades and workflow regressions
 status: In Progress
 assignee: []
 created_date: '2026-09-28 21:44'
-updated_date: '2026-09-29 18:43'
+updated_date: '2026-09-30 21:37'
 labels: []
 dependencies: []
 references:
@@ -34,5 +34,10 @@ Prevent duplicate plugin loading during the temper.ts-to-temper.js migration and
 created: 2026-09-29 18:43
 ---
 Setup-config removes the obsolete temper.ts when temper.js is installed; Bats covers this upgrade. CI includes plugin tests, but fixture and OpenCode E2E coverage for restore mismatch, permissions, cleanup, and idle remain incomplete.
+---
+
+created: 2026-09-30 21:37
+---
+Restore-hash mismatch is covered at the adapter seam; stale state is removed and fresh activation succeeds. The Mojo workflow integration also records delivered skills, prefers the project workflow, and avoids legacy completion and unrelated dirty-state prompts. Criterion #3 remains in progress.
 ---
 <!-- COMMENTS:END -->

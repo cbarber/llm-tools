@@ -61,6 +61,31 @@ describe("Mojo workflow runtime", () => {
     expect(deliveries.at(-1)).toEqual(["mojo-create-pull-request"]);
   });
 
+  test("ignores pre-existing dirt and publishes commits with unrelated untracked files", async () => {
+    const deliveries: string[][] = [];
+    const runtime = new WorkflowRuntime(workflow, {
+      persist: async () => {},
+      renderSkills: async (skills) => { deliveries.push(skills); },
+    });
+    const unrelated = { ...clean, dirty: true, hasPr: true };
+    await runtime.start();
+    await runtime.send({ type: "idle.elapsed", facts: unrelated });
+    expect(deliveries).toHaveLength(1);
+
+    await runtime.send({ type: "tool.finished", tool: "apply_patch", before: unrelated, after: unrelated });
+    await runtime.send({ type: "idle.elapsed", facts: unrelated });
+    expect(deliveries.at(-1)).toEqual(["mojo-commit"]);
+
+    const committed = { ...unrelated, head: "b", ahead: 1, branchCommits: 1 };
+    await runtime.send({ type: "tool.finished", tool: "bash", before: unrelated, after: committed });
+    await runtime.send({ type: "idle.elapsed", facts: committed });
+    expect(deliveries.at(-1)).toEqual(["mojo-update-pull-request"]);
+
+    const published = { ...committed, ahead: 0 };
+    await runtime.send({ type: "tool.finished", tool: "bash", before: committed, after: published });
+    expect(runtime.getSnapshot().value).toBe("awaitingTeamFeedback");
+  });
+
   test("waits for author approval and responds to review feedback", async () => {
     const deliveries: string[][] = [];
     const runtime = new WorkflowRuntime(workflow, {
@@ -92,6 +117,7 @@ describe("Mojo workflow runtime", () => {
     const published = { ...clean, hasPr: true, branchCommits: 1 };
     await runtime.send({ type: "idle.elapsed", facts: published });
     await runtime.send({ type: "external.chat", facts: published });
+    await runtime.send({ type: "tool.finished", tool: "apply_patch", before: published, after: { ...published, dirty: true } });
     await runtime.send({ type: "idle.elapsed", facts: { ...published, dirty: true } });
     expect(deliveries.at(-1)).toEqual(["mojo-commit"]);
   });

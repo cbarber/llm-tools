@@ -47,6 +47,9 @@ jobs:
       - name: Warm nix .#opencode cache
         run: nix build .#opencode
 
+      - name: Typecheck Mojo workflow
+        run: nix develop .#default --command bash -c "bun install --cwd agents/opencode/plugins --frozen-lockfile && tsc -p agents/skills/mojo-init"
+
       - name: Run agent harness tests
         env:
           AUTO_LAUNCH: "false"

@@ -1,3 +1,5 @@
+import type { setup as xstateSetup } from "xstate";
+
 export type MojoFacts = {
   dirty: boolean;
   head: string;
@@ -19,7 +21,7 @@ const isEdit = ({ event }: { event: MojoEvent }) =>
   event.type === "tool.finished" && ["apply_patch", "edit", "write"].includes(event.tool);
 
 const observedCleanCommit = ({ event }: { event: MojoEvent }) =>
-  event.type === "tool.finished" && event.before.head !== event.after.head && !event.after.dirty;
+  event.type === "tool.finished" && event.before.head !== event.after.head;
 
 const dirty = ({ event }: { event: MojoEvent }) =>
   event.type === "idle.elapsed" && event.facts.dirty;
@@ -28,24 +30,24 @@ const needsPr = ({ event }: { event: MojoEvent }) =>
   event.type === "idle.elapsed" && !event.facts.dirty && event.facts.branchCommits > 0 && !event.facts.hasPr;
 
 const needsPush = ({ event }: { event: MojoEvent }) =>
-  event.type === "idle.elapsed" && !event.facts.dirty && event.facts.ahead > 0 && event.facts.hasPr;
+  event.type === "idle.elapsed" && event.facts.ahead > 0 && event.facts.hasPr;
 
 const awaitingAuthor = ({ event }: { event: MojoEvent }) =>
-  "facts" in event && event.facts.hasPr && !event.facts.dirty && event.facts.ahead === 0 && event.facts.authorApprovalRequired === true;
+  "facts" in event && event.facts.hasPr && event.facts.ahead === 0 && event.facts.authorApprovalRequired === true;
 
 const awaitingTeam = ({ event }: { event: MojoEvent }) =>
-  "facts" in event && event.facts.hasPr && !event.facts.dirty && event.facts.ahead === 0 && !event.facts.authorApprovalRequired;
+  "facts" in event && event.facts.hasPr && event.facts.ahead === 0 && !event.facts.authorApprovalRequired;
 
 const publishedForAuthor = ({ event }: { event: MojoEvent }) =>
-  event.type === "tool.finished" && event.after.hasPr && !event.after.dirty && event.after.ahead === 0 && event.after.authorApprovalRequired === true;
+  event.type === "tool.finished" && event.after.hasPr && event.after.ahead === 0 && event.after.authorApprovalRequired === true;
 
 const publishedForTeam = ({ event }: { event: MojoEvent }) =>
-  event.type === "tool.finished" && event.after.hasPr && !event.after.dirty && event.after.ahead === 0 && !event.after.authorApprovalRequired;
+  event.type === "tool.finished" && event.after.hasPr && event.after.ahead === 0 && !event.after.authorApprovalRequired;
 
 const feedback = ({ event }: { event: MojoEvent }) =>
   event.type === "external.chat" && event.facts.reviewDecision === "CHANGES_REQUESTED";
 
-const createMachine = (setup: typeof import("xstate").setup) => setup({
+const createMachine = (setup: typeof xstateSetup) => setup({
   types: {
     events: {} as MojoEvent,
   },
@@ -74,11 +76,6 @@ const createMachine = (setup: typeof import("xstate").setup) => setup({
           { guard: "isEdit", target: "changeInProgress" },
         ],
         "idle.elapsed": [
-          {
-            guard: "dirty",
-            target: "commitRequested",
-            actions: { type: "temper.renderSkills", params: { skills: ["mojo-commit"], reply: true } },
-          },
           {
             guard: "needsPr",
             target: "publicationRequested",

@@ -6,7 +6,7 @@
  */
 import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin";
 import { appendFile, chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createOpencodeClient as createV2Client } from "@opencode-ai/sdk/v2/client";
@@ -416,6 +416,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
   async function renderWorkflowSkills(sessionID: string, names: string[], reply: boolean): Promise<void> {
     const skills = await discoveredSkills();
     const rendered: string[] = [];
+    const renderedNames: string[] = [];
     const active = workflows.get(sessionID);
     for (const name of names) {
       if (active?.skipSkillOnce === name) {
@@ -426,6 +427,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       if (!skill) throw new Error(`Workflow skill not found: ${name}`);
       const raw = await readFile(skill.location, "utf8");
       rendered.push(await executeBashBlock($, parseFrontmatter(raw).body, directory));
+      renderedNames.push(name);
     }
     if (workflows.get(sessionID) !== active) return;
     await client.session.prompt({
@@ -435,6 +437,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         parts: [{ type: "text", text: rendered.join("\n\n"), synthetic: true }],
       },
     });
+    await trace(sessionID, { event: "skills.injected", source: "workflow", skills: renderedNames, reply });
   }
 
   async function persistWorkflow(sessionID: string, active: ActiveWorkflow, snapshot: unknown): Promise<void> {
@@ -450,7 +453,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       idleDeadline: active.idleDeadline,
     };
     const path = sessionFile(sessionID, "json");
-    const temporary = `${path}.tmp`;
+    const temporary = `${path}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(envelope), { mode: 0o600 });
     if (workflows.get(sessionID) !== active) {
       await unlink(temporary).catch(() => {});
@@ -530,7 +533,9 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
     const skills = await discoveredSkills();
     const skill = skills.find((candidate) => candidate.name === skillName);
     if (!skill) return false;
-    const source = join(dirname(skill.location), "workflow.ts");
+    const projectSource = join(directory, "agents", "skills", skillName, "workflow.ts");
+    const source = (await stat(projectSource).catch(() => undefined))?.isFile()
+      ? projectSource : join(dirname(skill.location), "workflow.ts");
     if (!(await stat(source).catch(() => undefined))?.isFile()) return false;
     await installWorkflow(sessionID, source, undefined, undefined, nativeAlreadyRendered ? skillName : undefined);
     return true;
@@ -542,7 +547,10 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
       const envelope = JSON.parse(await readFile(sessionFile(sessionID, "json"), "utf8")) as WorkflowEnvelope;
       if (envelope.directory !== directory) throw new Error("Workflow directory changed");
       const skills = await discoveredSkills();
-      const allowed = skills.some((skill) => join(dirname(skill.location), "workflow.ts") === envelope.source);
+      const allowed = skills.some((skill) => [
+        join(dirname(skill.location), "workflow.ts"),
+        join(directory, "agents", "skills", skill.name, "workflow.ts"),
+      ].includes(envelope.source));
       if (!allowed) throw new Error("Workflow source is no longer discovered");
       return await installWorkflow(sessionID, envelope.source, envelope.snapshot, envelope, undefined, envelope.idleDeadline);
     } catch (error) {
@@ -711,6 +719,7 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
 
     let injected = false;
     for (const { skill, trigger } of matches) {
+      if (workflows.has(sessionID) && skill.name === "mojo-complete") continue;
       const action: TriggerAction = trigger.action ?? "inject";
 
       // reset action: clear firedOnce for this skill — no injection.
@@ -775,7 +784,9 @@ export const TemperPlugin: Plugin = async ({ client, $, directory, serverUrl }) 
         throw new Error(rendered);
       } else {
         await logEvent(client, "dispatch-inject", { sessionID, skill: skill.name });
-        await injectSkill(client, $, directory, sessionID, skill.content, deferReply || ctx.event !== "session.idle");
+        const reply = !deferReply && ctx.event === "session.idle";
+        await injectSkill(client, $, directory, sessionID, skill.content, !reply);
+        await trace(sessionID, { event: "skills.injected", source: "legacy", skills: [skill.name], reply });
         injected = true;
       }
     }
