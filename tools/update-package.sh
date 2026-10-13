@@ -8,10 +8,13 @@
 #   ./tools/update-package.sh claude-code 2.1.3
 #   ./tools/update-package.sh opencode          # Uses latest from GitHub/npm
 #
-# This script:
+# For opencode this script:
 #   1. Fetches the new src hash using nix-prefetch
 #   2. Attempts to build to discover FOD hashes
 #   3. Outputs the values to update in overlays/default.nix
+#
+# For claude-code it refreshes overlays/manifest.zst.json, which pins the
+# version and the per-platform binary checksums on its own.
 
 set -euo pipefail
 
@@ -37,7 +40,7 @@ Usage: $(basename "$0") <package> [version]
 
 Packages:
   opencode      - Update opencode (fetches from GitHub)
-  claude-code   - Update claude-code (fetches from npm)
+  claude-code   - Update claude-code (fetches the release manifest)
 
 If version is omitted, fetches the latest version.
 
@@ -55,10 +58,13 @@ get_latest_opencode_version() {
     grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/'
 }
 
-# Get latest claude-code version from npm
+# Anthropic's release CDN, which serves both the version pointer and the
+# per-version manifest that nixpkgs's claude-code derivation consumes.
+CLAUDE_CODE_BASE_URL="https://downloads.claude.ai/claude-code-releases"
+
+# Get latest claude-code version from the release CDN
 get_latest_claude_code_version() {
-  curl -sL "https://registry.npmjs.org/@anthropic-ai/claude-code/latest" | \
-    grep -o '"version":"[^"]*"' | head -1 | sed 's/"version":"//;s/"//'
+  curl -fsSL "$CLAUDE_CODE_BASE_URL/latest"
 }
 
 # Prefetch GitHub source and get hash
@@ -67,17 +73,6 @@ prefetch_github() {
   info "Prefetching $owner/$repo v$version from GitHub..."
   local nix32_hash
   nix32_hash=$(nix-prefetch-url --unpack "https://github.com/$owner/$repo/archive/refs/tags/v$version.tar.gz" 2>/dev/null)
-  nix hash convert --hash-algo sha256 --from nix32 "$nix32_hash"
-}
-
-# Prefetch npm tarball and get hash
-prefetch_npm() {
-  local package="$1" version="$2"
-  info "Prefetching $package@$version from npm..."
-  local url
-  url="https://registry.npmjs.org/$package/-/$(echo "$package" | sed 's/@.*\///')-$version.tgz"
-  local nix32_hash
-  nix32_hash=$(nix-prefetch-url --unpack "$url" 2>/dev/null)
   nix hash convert --hash-algo sha256 --from nix32 "$nix32_hash"
 }
 
@@ -143,15 +138,12 @@ update_overlay() {
   # Create backup
   cp "$OVERLAY_FILE" "$OVERLAY_FILE.bak"
   
-  # Update the overlay using sed
+  # Update the overlay using sed. claude-code is not handled here: it carries
+  # no version or hash in the overlay, only overlays/manifest.zst.json.
   if [[ "$package" == "opencode" ]]; then
     sed -i "/opencode = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
     sed -i "/opencode = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$escaped_src_hash\";/" "$OVERLAY_FILE"
     sed -i "/opencode = {/,/};/ s/nodeModulesHash = \"[^\"]*\";/nodeModulesHash = \"$escaped_fod_hash\";/" "$OVERLAY_FILE"
-  elif [[ "$package" == "claude-code" ]]; then
-    sed -i "/claude-code = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
-    sed -i "/claude-code = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$escaped_src_hash\";/" "$OVERLAY_FILE"
-    sed -i "/claude-code = {/,/};/ s/npmDepsHash = \"[^\"]*\";/npmDepsHash = \"$escaped_fod_hash\";/" "$OVERLAY_FILE"
   fi
   
   success "Updated $OVERLAY_FILE"
@@ -218,43 +210,13 @@ update_opencode() {
   warn "Please verify the build works: nix build .#opencode"
 }
 
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-
-# Generate package-lock.json for claude-code by unpacking the npm tarball and
-# running `npm install --package-lock-only` inside it.
-# This mirrors the approach used by nixpkgs's nix-update --generate-lockfile:
-# https://github.com/Mic92/nix-update/blob/main/nix_update/lockfile.py
-generate_npm_lockfile() {
-  local version="$1"
-  local dest="$2"
-  local tarball_url
-  tarball_url="https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz"
-
-  info "Generating package-lock.json via npm install --package-lock-only..."
-
-  # Unpack tarball (npm tarballs use a package/ prefix)
-  curl -sL "$tarball_url" | tar -xz -C "$tmpdir"
-  local src_dir="${tmpdir}/package"
-
-  # Remove any existing lock so npm resolves fresh
-  rm -f "${src_dir}/package-lock.json"
-
-  # Run npm in a nix shell that provides nodejs. Matches nixpkgs update.sh pattern:
-  #   nix shell .#cacert .#nodejs ... --command bash
-  AUTHORIZED=1 nix shell nixpkgs#nodejs --command \
-    npm install --package-lock-only --prefix "$src_dir" 2>/dev/null
-
-  if [[ ! -f "${src_dir}/package-lock.json" ]]; then
-    error "npm failed to generate package-lock.json"
-    return 1
-  fi
-
-  cp "${src_dir}/package-lock.json" "$dest"
-  success "Generated package-lock.json at ${dest}"
-}
-
 # Update claude-code
+#
+# Upstream nixpkgs no longer builds claude-code from the npm tarball; it
+# installs Anthropic's prebuilt binaries described by a per-release manifest.
+# That manifest carries the version and the per-platform checksums, so there is
+# no source to prefetch and no FOD hash to discover — updating claude-code is
+# just refreshing overlays/manifest.zst.json.
 update_claude_code() {
   local version="${1:-}"
 
@@ -263,74 +225,49 @@ update_claude_code() {
     version=$(get_latest_claude_code_version)
   fi
 
+  if [[ -z "$version" ]]; then
+    error "Failed to determine the latest claude-code version"
+    exit 1
+  fi
+
   info "Updating claude-code to version $version"
 
-  # Step 1: prefetch src hash
-  local src_hash
-  src_hash=$(prefetch_npm "@anthropic-ai/claude-code" "$version")
+  local manifest_file="${REPO_ROOT}/overlays/manifest.zst.json"
+  local manifest_url="${CLAUDE_CODE_BASE_URL}/${version}/manifest.zst.json"
 
-  if [[ -z "$src_hash" ]]; then
-    error "Failed to prefetch source"
+  info "Fetching $manifest_url"
+  if ! curl -fsSL "$manifest_url" --output "${manifest_file}.tmp"; then
+    error "Failed to fetch the manifest for version $version"
+    rm -f "${manifest_file}.tmp"
     exit 1
   fi
-  success "Source hash: $src_hash"
 
-  # Step 2: generate package-lock.json (needed for nixpkgs buildNpmPackage)
-  local lock_file="${REPO_ROOT}/overlays/claude-code-package-lock.json"
-  generate_npm_lockfile "$version" "$lock_file"
+  # Guard against a CDN error page or a manifest for an unexpected version.
+  local manifest_version
+  manifest_version=$(nix eval --raw --impure --expr \
+    "(builtins.fromJSON (builtins.readFile \"${manifest_file}.tmp\")).version" 2>/dev/null || true)
 
-  # Step 3: write overlay with empty npmDepsHash so the build fails with the
-  # correct hash in the error output (same trick used by nixpkgs update.sh)
-  cp "$OVERLAY_FILE" "$OVERLAY_FILE.bak"
-  update_overlay "claude-code" "$version" "$src_hash" ""
-
-  # Step 4: build to discover npmDepsHash from Nix FOD error.
-  # Build the npmDeps FOD directly with an empty outputHash so nix reports
-  # the correct hash. We construct the expression inline with the new src and
-  # postPatch so the result is independent of the overlay file's current state.
-  info "Attempting build to discover npmDepsHash (this will fail, that's expected)..."
-  local lock_file_nix_path
-  lock_file_nix_path=$(nix-store --add "$lock_file")
-  local nix_output npm_deps_hash
-  nix_output=$(nix build --impure --no-link --expr \
-    "let pkgs = import (builtins.getFlake \"nixpkgs\").outPath { system = builtins.currentSystem; config.allowUnfree = true; }; in
-     (pkgs.claude-code.npmDeps.overrideAttrs (_: {
-       src = pkgs.fetchzip {
-         url = \"https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz\";
-         hash = \"${src_hash}\";
-       };
-       postPatch = ''
-         cp ${lock_file_nix_path} package-lock.json
-         substituteInPlace cli.js --replace-fail '#!/bin/sh' '#!/usr/bin/env sh'
-       '';
-       outputHash = \"\";
-       outputHashAlgo = \"sha256\";
-     }))" \
-    2>&1 || true)
-  npm_deps_hash=$(echo "$nix_output" | grep -oE 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]+' | sed 's/got:[[:space:]]*//' | tail -1)
-
-  if [[ -z "$npm_deps_hash" ]]; then
-    error "Failed to extract npmDepsHash from build output"
-    mv "$OVERLAY_FILE.bak" "$OVERLAY_FILE"
+  if [[ "$manifest_version" != "$version" ]]; then
+    error "Manifest version mismatch: asked for $version, got '${manifest_version:-unparseable JSON}'"
+    rm -f "${manifest_file}.tmp"
     exit 1
   fi
-  success "npmDepsHash: $npm_deps_hash"
 
-  # Step 5: write final overlay with correct hash
-  update_overlay "claude-code" "$version" "$src_hash" "$npm_deps_hash"
-  rm -f "$OVERLAY_FILE.bak"
+  mv "${manifest_file}.tmp" "$manifest_file"
+  success "Wrote $manifest_file"
+
+  # The flake only sees git-tracked files, so a new manifest has to be staged
+  # before nix can read it.
+  git -C "$REPO_ROOT" add "$manifest_file"
 
   echo ""
   success "Successfully updated claude-code to version $version"
   echo ""
   echo "Changes made:"
-  echo "  ${OVERLAY_FILE}"
-  echo "    version:     $version"
-  echo "    srcHash:     $src_hash"
-  echo "    npmDepsHash: $npm_deps_hash"
-  echo "  ${lock_file}"
+  echo "  ${manifest_file}"
+  echo "    version: $manifest_version"
   echo ""
-  warn "Verify the build: nix build .#claude-code"
+  warn "Verify the build: nix build .#devShells.\$(nix eval --raw --impure --expr builtins.currentSystem).pkgs.claude-code"
 }
 
 # Main

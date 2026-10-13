@@ -16,16 +16,6 @@ let
     srcHash = "sha256-WKG/lts+wzDjYJ5pOZ0X4Kb0rJ1TzYQzQgjyQBY+bxs=";
     nodeModulesHash = "sha256-dGASaxZnxzJZY1PuDeqQCnYgMm2gEf5HZQsWOnt2JaU=";
   };
-
-  # ============================================================================
-  # CLAUDE-CODE
-  # ============================================================================
-  claude-code = {
-    version = "2.1.91";
-    srcHash = "sha256-u7jdM6hTYN05ZLPz630Yj7gI0PeCSArg4O6ItQRAMy4=";
-    npmDepsHash = "sha256-0ppKP+XMgTzVVZtL7GDsOjgvSPUDrUa7SoG048RLaNg=";
-  };
-
 in
 {
   # Apply opencode override if version is set
@@ -73,30 +63,12 @@ in
     else
       prev.opencode;
 
-  # Apply claude-code override if version is set
-  claude-code =
-    if claude-code.version != null then
-      prev.claude-code.overrideAttrs (old: rec {
-        version = claude-code.version;
-        src = prev.fetchzip {
-          url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${version}.tgz";
-          hash = claude-code.srcHash;
-        };
-        # nixpkgs vendors a package-lock.json pinned to its own version.
-        # Override postPatch to substitute our version-matched lock file.
-        postPatch = ''
-          cp ${./claude-code-package-lock.json} package-lock.json
-          substituteInPlace cli.js \
-            --replace-fail '#!/bin/sh' '#!/usr/bin/env sh'
-        '';
-        # buildNpmPackage bakes npmDeps (a fetchNpmDeps FOD) at evaluation time
-        # using the original finalAttrs src. overrideAttrs does not re-evaluate
-        # it, so we must explicitly re-derive it from our new src + postPatch.
-        npmDeps = old.npmDeps.overrideAttrs {
-          inherit src postPatch;
-          outputHash = claude-code.npmDepsHash;
-        };
-      })
-    else
-      prev.claude-code;
+  # claude-code is built from Anthropic's prebuilt binaries described by a
+  # release manifest, which upstream exposes as an overridable argument. The
+  # manifest pins the version and the per-platform checksums, so pointing it at
+  # our vendored copy is the whole override — there is no version or hash to
+  # track here. Refresh it with ./tools/update-package.sh claude-code [version].
+  claude-code = prev.claude-code.override {
+    manifest = prev.lib.importJSON ./manifest.zst.json;
+  };
 }
