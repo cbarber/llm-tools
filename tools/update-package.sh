@@ -8,13 +8,11 @@
 #   ./tools/update-package.sh claude-code 2.1.3
 #   ./tools/update-package.sh opencode          # Uses latest from GitHub/npm
 #
-# For opencode this script:
-#   1. Fetches the new src hash using nix-prefetch
-#   2. Attempts to build to discover FOD hashes
-#   3. Outputs the values to update in overlays/default.nix
-#
-# For claude-code it refreshes overlays/manifest.zst.json, which pins the
+# For claude-code this refreshes overlays/manifest.zst.json, which pins the
 # version and the per-platform binary checksums on its own.
+#
+# For opencode it aligns the plugin SDKs with the packaged opencode. opencode
+# itself is not pinned in the overlay, so moving it means `nix flake update`.
 
 set -euo pipefail
 
@@ -39,15 +37,16 @@ usage() {
 Usage: $(basename "$0") <package> [version]
 
 Packages:
-  opencode      - Update opencode (fetches from GitHub)
+  opencode      - Align the plugin SDKs with the packaged opencode
   claude-code   - Update claude-code (fetches the release manifest)
 
-If version is omitted, fetches the latest version.
+If version is omitted, claude-code takes the latest release and opencode
+takes whatever the pinned nixpkgs provides.
 
 Examples:
-  $(basename "$0") opencode 1.1.12
   $(basename "$0") claude-code 2.1.3
-  $(basename "$0") opencode  # Latest version
+  $(basename "$0") claude-code  # Latest release
+  $(basename "$0") opencode     # Match the packaged opencode
 EOF
   exit 1
 }
@@ -67,147 +66,55 @@ get_latest_claude_code_version() {
   curl -fsSL "$CLAUDE_CODE_BASE_URL/latest"
 }
 
-# Prefetch GitHub source and get hash
-prefetch_github() {
-  local owner="$1" repo="$2" version="$3"
-  info "Prefetching $owner/$repo v$version from GitHub..."
-  local nix32_hash
-  nix32_hash=$(nix-prefetch-url --unpack "https://github.com/$owner/$repo/archive/refs/tags/v$version.tar.gz" 2>/dev/null)
-  nix hash convert --hash-algo sha256 --from nix32 "$nix32_hash"
-}
-
-# Build the opencode node_modules FOD directly with a sentinel hash and
-# --option substitute false to force a local build. Nix will report the
-# correct hash in its "hash mismatch" error regardless of lockfile issues.
-compute_opencode_node_modules_hash() {
-  local version="$1" src_hash="$2"
-  info "Computing nodeModulesHash (building FOD with substitute disabled, this may take a while)..."
-
-  # Sentinel value: valid SRI format but wrong — forces nix to build and report
-  local sentinel="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-
-  local flake_src
-  flake_src=$(nix eval --raw --impure --expr \
-    "(builtins.fetchTree { type = \"git\"; url = \"file://${REPO_ROOT}\"; }).outPath" 2>/dev/null)
-
-  local output
-  output=$(nix build --impure --no-link --expr "
-    let
-      flake = builtins.getFlake \"path:${flake_src}\";
-      pkgs = import (flake.inputs.nixpkgs) {
-        system = builtins.currentSystem;
-        config.allowUnfree = true;
-        overlays = [ (import ${REPO_ROOT}/overlays) ];
-      };
-      src = pkgs.fetchFromGitHub {
-        owner = \"anomalyco\";
-        repo  = \"opencode\";
-        tag   = \"v${version}\";
-        hash  = \"${src_hash}\";
-      };
-    in
-    pkgs.opencode.node_modules.overrideAttrs (_: {
-      inherit src;
-      version        = \"${version}\";
-      outputHash     = \"${sentinel}\";
-      outputHashAlgo = \"sha256\";
-      outputHashMode = \"recursive\";
-    })
-  " 2>&1 || true)
-
-  local hash
-  hash=$(echo "$output" | grep -oE 'got:[[:space:]]*sha256-[A-Za-z0-9+/=]+' | sed 's/got:[[:space:]]*//' | tail -1)
-
-  if [[ -n "$hash" ]]; then
-    echo "$hash"
-  else
-    # Surface the raw output so the caller can diagnose
-    echo "$output" >&2
-    echo ""
-  fi
-}
-
-# Update overlay file with new values
-update_overlay() {
-  local package="$1" version="$2" src_hash="$3" fod_hash="$4"
-  local escaped_src_hash="${src_hash//\//\\/}"
-  local escaped_fod_hash="${fod_hash//\//\\/}"
-  
-  info "Updating $OVERLAY_FILE..."
-  
-  # Create backup
-  cp "$OVERLAY_FILE" "$OVERLAY_FILE.bak"
-  
-  # Update the overlay using sed. claude-code is not handled here: it carries
-  # no version or hash in the overlay, only overlays/manifest.zst.json.
-  if [[ "$package" == "opencode" ]]; then
-    sed -i "/opencode = {/,/};/ s/version = \"[^\"]*\";/version = \"$version\";/" "$OVERLAY_FILE"
-    sed -i "/opencode = {/,/};/ s/srcHash = \"[^\"]*\";/srcHash = \"$escaped_src_hash\";/" "$OVERLAY_FILE"
-    sed -i "/opencode = {/,/};/ s/nodeModulesHash = \"[^\"]*\";/nodeModulesHash = \"$escaped_fod_hash\";/" "$OVERLAY_FILE"
-  fi
-  
-  success "Updated $OVERLAY_FILE"
-  info "Backup saved to $OVERLAY_FILE.bak"
-}
-
 # Update opencode
+#
+# The overlay no longer pins opencode: it tracks whatever the pinned nixpkgs
+# provides and carries only a local patch, so moving opencode itself means
+# `nix flake update`. What this aligns is the plugin SDK pair, which has to
+# match the opencode the shell actually runs — a mismatch there breaks the
+# temper plugin against the running server.
 update_opencode() {
-  local version="${1:-}"
+  local system packaged latest version
+  system=$(nix eval --raw --impure --expr builtins.currentSystem)
+  packaged=$(nix eval --raw "${REPO_ROOT}#devShells.${system}.pkgs.opencode.version" 2>/dev/null || true)
 
-  if [[ -z "$version" ]]; then
-    info "Fetching latest opencode version..."
-    version=$(get_latest_opencode_version)
-  fi
-
-  info "Updating opencode to version $version"
-
-  # Get src hash
-  local src_hash
-  src_hash=$(prefetch_github "anomalyco" "opencode" "$version")
-
-  if [[ -z "$src_hash" ]]; then
-    error "Failed to prefetch source"
+  if [[ -z "$packaged" ]]; then
+    error "Could not read the packaged opencode version from the flake"
     exit 1
   fi
 
-  success "Source hash: $src_hash"
+  version="${1:-$packaged}"
+  info "nixpkgs provides opencode $packaged"
 
-  # Compute the node_modules FOD hash by building with substitute disabled
-  local node_modules_hash
-  node_modules_hash=$(compute_opencode_node_modules_hash "$version" "$src_hash")
-
-  if [[ -z "$node_modules_hash" ]]; then
-    error "Failed to compute nodeModulesHash — see output above for details"
-    exit 1
+  if [[ "$version" != "$packaged" ]]; then
+    warn "Requested $version but the shell runs $packaged; the SDKs will not match the server."
   fi
 
-  success "Node modules hash: $node_modules_hash"
+  latest=$(get_latest_opencode_version 2>/dev/null || true)
+  if [[ -n "$latest" && "$latest" != "$packaged" ]]; then
+    warn "Upstream latest is $latest. Run 'nix flake update' to move nixpkgs, or"
+    warn "add a version override to $OVERLAY_FILE to get ahead of it."
+  fi
 
-  # Update overlay with the correct hash
-  update_overlay "opencode" "$version" "$src_hash" "$node_modules_hash"
-
-  # Remove backup
-  rm -f "$OVERLAY_FILE.bak"
-
-  # Bump @opencode-ai/plugin and @opencode-ai/sdk in plugins package.json
   local plugins_pkg="$REPO_ROOT/agents/opencode/plugins/package.json"
-  if [[ -f "$plugins_pkg" ]]; then
-    info "Updating SDK versions in $plugins_pkg..."
-    sed -i "s/\"@opencode-ai\/plugin\": \"[^\"]*\"/\"@opencode-ai\/plugin\": \"$version\"/" "$plugins_pkg"
-    sed -i "s/\"@opencode-ai\/sdk\": \"[^\"]*\"/\"@opencode-ai\/sdk\": \"$version\"/" "$plugins_pkg"
-    bun install --cwd "$REPO_ROOT/agents/opencode/plugins" 2>/dev/null
-    success "Updated SDK versions to $version in $plugins_pkg"
+  if [[ ! -f "$plugins_pkg" ]]; then
+    error "Missing $plugins_pkg"
+    exit 1
   fi
 
+  info "Aligning plugin SDKs with opencode $version..."
+  sed -i "s/\"@opencode-ai\/plugin\": \"[^\"]*\"/\"@opencode-ai\/plugin\": \"$version\"/" "$plugins_pkg"
+  sed -i "s/\"@opencode-ai\/sdk\": \"[^\"]*\"/\"@opencode-ai\/sdk\": \"$version\"/" "$plugins_pkg"
+  bun install --cwd "$REPO_ROOT/agents/opencode/plugins"
+
   echo ""
-  success "Successfully updated opencode to version $version"
+  success "Plugin SDKs aligned with opencode $version"
   echo ""
-  echo "Changes made to $OVERLAY_FILE:"
-  echo "  version: $version"
-  echo "  srcHash: $src_hash"
-  echo "  nodeModulesHash: $node_modules_hash"
+  echo "Changes made:"
+  echo "  ${plugins_pkg}"
+  echo "  $(dirname "$plugins_pkg")/bun.lock"
   echo ""
-  warn "Please verify the build works: nix build .#opencode"
+  warn "Verify the build: nix build .#devShells.${system}.pkgs.opencode"
 }
 
 # Update claude-code
