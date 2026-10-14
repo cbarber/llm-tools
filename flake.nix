@@ -44,7 +44,6 @@
               with pkgs;
               [
                 typescript
-                typescript-language-server
                 vtsls
                 bun
                 tools.spr
