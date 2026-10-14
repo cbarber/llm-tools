@@ -50,14 +50,14 @@
                 tools.spr
                 shellcheck
                 markdownlint-cli2
-                nixfmt-rfc-style
+                nixfmt
                 pre-commit
                 bats
                 opencode
                 tools.backlog
                 tools.fence
               ]
-              ++ lib.optionals stdenv.isLinux [ bubblewrap ];
+              ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ];
           };
         };
       }
