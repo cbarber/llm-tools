@@ -183,6 +183,7 @@ NIXSMITH_SECRETS_ENV=""
 NIXSMITH_DERIVED_ENV=""
 NIXSMITH_GITEA_HOST=""
 NIXSMITH_OPENCODE_OAUTH_PROVIDERS="[]"
+NIXSMITH_CLAUDE_OAUTH="false"
 
 set_scoped_secrets() {
   local selected_scope="$1"
@@ -191,20 +192,25 @@ set_scoped_secrets() {
 
   if ! jq -e '
     type == "object" and
-    ([to_entries[] | select(.key != "_opencodeAuth") |
+    ([to_entries[] | select(.key != "_opencodeAuth" and .key != "_claudeAuth") |
       (.key | test("^[A-Za-z_][A-Za-z0-9_]*$")) and (.value | type == "string")] | all) and
     (if has("_opencodeAuth") then
       (._opencodeAuth | type == "object" and
         ((.oauthProviders // []) | type == "array" and all(.[]; type == "string" and length > 0)))
+    else true end) and
+    (if has("_claudeAuth") then
+      (._claudeAuth | type == "object" and
+        ((.oauth // false) | type == "boolean"))
     else true end)
   ' <<< "$selected_scope" >/dev/null; then
-    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment keys must be variable names, values must be strings, and _opencodeAuth.oauthProviders must be an array of provider IDs." >&2
+    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment keys must be variable names, values must be strings, _opencodeAuth.oauthProviders must be an array of provider IDs, and _claudeAuth.oauth must be a boolean." >&2
     return 1
   fi
 
-  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth" and .key != "GITEA_INSTANCE_URL") | "\(.key)=\(.value)"' <<< "$selected_scope")
+  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth" and .key != "_claudeAuth" and .key != "GITEA_INSTANCE_URL") | "\(.key)=\(.value)"' <<< "$selected_scope")
   [[ -z "$NIXSMITH_SECRETS_ENV" ]] || NIXSMITH_SECRETS_ENV+=$'\n'
   NIXSMITH_OPENCODE_OAUTH_PROVIDERS=$(jq -c '._opencodeAuth.oauthProviders // [] | unique' <<< "$selected_scope")
+  NIXSMITH_CLAUDE_OAUTH=$(jq -r 'if ._claudeAuth.oauth == true then "true" else "false" end' <<< "$selected_scope")
 
   if jq -e 'has("GITEA_TOKEN")' <<< "$selected_scope" >/dev/null; then
     repo_url=$(extract_repo_url 2>/dev/null || true)
@@ -254,7 +260,8 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
   unset _secrets_valid
 fi
 
-export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST
+export NIXSMITH_OPENCODE_OAUTH_PROVIDERS NIXSMITH_CLAUDE_OAUTH
 unset -f set_scoped_secrets
 
 if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
