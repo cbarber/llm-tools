@@ -34,7 +34,7 @@ elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
   if declare -f sandboxed-claude >/dev/null 2>&1; then
     echo "Launching Claude Code in sandbox (disable with AGENT_SANDBOX=false)..."
     # Equivalent to sandboxed-claude, but exec'able: a function cannot be exec'd.
-    exec "$AGENT_SANDBOX_SCRIPT" claude
+    exec "$AGENT_SANDBOX_SCRIPT" claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --add-dir "$HOME/.agents/skills/"
   else
     exec claude
   fi
