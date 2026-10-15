@@ -20,7 +20,7 @@ export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 # uids from the user namespace fence already created. Matches sandboxed-opencode.
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
   sandboxed-claude() {
-    agent-sandbox claude "$@"
+    agent-sandbox claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --add-dir "$HOME/.agents/skills/" "$@"
   }
   export -f sandboxed-claude
 fi
@@ -34,7 +34,7 @@ elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
   if declare -f sandboxed-claude >/dev/null 2>&1; then
     echo "Launching Claude Code in sandbox (disable with AGENT_SANDBOX=false)..."
     # Equivalent to sandboxed-claude, but exec'able: a function cannot be exec'd.
-    exec "$AGENT_SANDBOX_SCRIPT" claude
+    exec "$AGENT_SANDBOX_SCRIPT" claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --add-dir "$HOME/.agents/skills/"
   else
     exec claude
   fi
