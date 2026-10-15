@@ -1,5 +1,18 @@
 # Shared work state and interview handoff
 
+## Historical research; use the selected implementation documents
+
+This document preserves the earlier research and interview state. Later grilling
+selected a smaller continuation contract: one home-directory `work.json` with
+progress, human gate, correction round, branch, artifact links, and agent/tool/
+session IDs. No pane reference, commit ranges, or transcript paths are stored.
+
+Read [decisions](decisions.md), [architecture](architecture.md), and
+[program design](program-design.md) for the current implementation target.
+The field inventory and open questions below are historical candidates, not
+additional fields or requirements to implement. Later selections supersede the
+older unresolved authority, correction-loop, and continuation questions.
+
 ## Desired continuity
 
 Bounded and design-bearing work need one shared thread across skills, agents,

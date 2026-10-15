@@ -1,4 +1,4 @@
-# Idea-to-PR workflow research
+# Idea-to-PR workflow
 
 ## Purpose
 
@@ -8,8 +8,23 @@ commits, and final human code review. Matt Pocock and Dex Horthy are the
 closest references. Poteto's stability checks are useful; hands-off decision
 authority is not the desired default.
 
-This collection records source rules and the decisions reached in the interview.
-It does not yet specify an executable workflow.
+This collection records source research and the workflow selected through grilling.
+The implementation documents below define the target; runtime integration has not
+yet been implemented or validated.
+
+## Implementation documents
+
+Read these first when implementing the selected Claude Code workflow:
+
+| Document | Purpose |
+| --- | --- |
+| [Decisions](workflow/decisions.md) | Selected behavior, source adaptations, and rejected alternatives |
+| [Architecture](workflow/architecture.md) | Engineering flow, roles, human gates, and context boundaries |
+| [Program design](workflow/program-design.md) | Native skills, small state record, continuation/renewal seams, and checks |
+
+These documents supersede earlier open interview questions where a selection is
+now recorded. The source summaries remain attribution/research, not independent
+runtime requirements. [Mojo policy](workflow/mojo.md) remains binding.
 
 ## Read the collection
 
@@ -17,7 +32,7 @@ It does not yet specify an executable workflow.
 | --- | --- |
 | [Patterns](workflow/patterns.md) | Small common statements, supporting authors, and disagreements |
 | [Mojo policy](workflow/mojo.md) | Binding editing, history, review, and publication rules |
-| [Session state](workflow/session-state.md) | Handoff requirements, current decisions, and storage questions |
+| [Session state](workflow/session-state.md) | Historical continuity requirements and storage research |
 | [Uncategorized](workflow/uncategorized.md) | Source statements awaiting classification or selection |
 | [Matt Pocock](workflow/sources/matt-pocock.md) | Interview, spec, tickets, implementation, and context rules |
 | [Dex Horthy](workflow/sources/dex-horthy.md) | Product/system/program design and vertical slices |
@@ -57,8 +72,9 @@ decisions. Pause frequency, decision authority, and verification depth are separ
 
 Sources qualify these costs but provide no calibrated threshold. File count,
 line count, or agent confidence alone does not establish risk. Classification
-can change when investigation or implementation exposes new facts; who approves
-that change remains part of the authority policy to settle.
+can change when investigation or implementation exposes new facts. Consequential
+unresolved decisions and overrides of approved design return to the human, as
+specified in the [selected decisions](workflow/decisions.md).
 
 Long-term maintenance tracking is outside this collection. Experiment and
 course-correct; a concrete concern can become a follow-up ticket linked to the
