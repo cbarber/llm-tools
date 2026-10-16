@@ -12,7 +12,7 @@ You are running in a sandboxed environment by default. The sandbox isolates file
 
 **Check repository state and pick work:**
 
-```bash {exec}
+```!
 if [[ -n "${OPENCODE:-}" ]]; then
   echo "Agent: OpenCode"
 elif [[ -n "${CLAUDE_CODE:-}" ]]; then
