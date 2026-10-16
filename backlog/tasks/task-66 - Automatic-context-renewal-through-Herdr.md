@@ -4,6 +4,7 @@ title: Automatic context renewal through Herdr
 status: To Do
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 18:50'
 labels:
   - workflow
 dependencies:
@@ -30,3 +31,9 @@ When context renewal is needed, request a reasoned handoff, confirm readiness, l
 - [ ] #3 Current-pane handoff, compact, and resume restores the interrupted permitted action
 - [ ] #4 Stop continuation and renewal never issue competing commands
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From TASK-65 review: Herdr's submitted /mojo-resume and the SessionStart compact hook's prompt must not both invoke mojo-resume in one renewal — the second render sees the consumed (stale) handoff and pauses. Readiness check before renewal: `work-record handoff` prints current.
+<!-- SECTION:NOTES:END -->
