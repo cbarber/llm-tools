@@ -4,6 +4,17 @@
     "BASH_MAX_TIMEOUT_MS": "600000"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "compact-resume"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

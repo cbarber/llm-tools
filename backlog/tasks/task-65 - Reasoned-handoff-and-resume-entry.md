@@ -1,9 +1,10 @@
 ---
 id: TASK-65
 title: Reasoned handoff and resume entry
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 18:30'
 labels:
   - workflow
 dependencies:
@@ -26,6 +27,12 @@ The coordinator writes a reasoned handoff tied to the current work and links it 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 After a manual /compact, the resume entry restores the interrupted permitted action
-- [ ] #2 A pending human gate remains pending after resume
-- [ ] #3 A missing or stale handoff for the current work pauses for the user
+- [x] #2 A pending human gate remains pending after resume
+- [x] #3 A missing or stale handoff for the current work pauses for the user
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC1 needs a live manual /compact in Claude Code: the SessionStart compact hook output and the mojo-resume rendering are verified by simulation (bats, bun), but delivery of additionalContext after a real /compact and the agent restoring the interrupted action have not been observed.
+<!-- SECTION:NOTES:END -->

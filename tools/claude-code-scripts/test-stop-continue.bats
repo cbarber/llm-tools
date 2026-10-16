@@ -155,6 +155,29 @@ allowed() {
   blocked
 }
 
+@test "a current handoff allows the stop until context is renewed" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  echo "Next: implement TASK-1" >"$SCRATCH/handoff.md"
+  work-record --cwd "$A" handoff "$SCRATCH/handoff.md" >/dev/null
+  stop "$A"
+  allowed
+  [ -z "$output" ]
+  stop "$A" true
+  allowed
+  [ -z "$output" ]
+}
+
+@test "a stale handoff nudges as before" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  echo "Next: implement TASK-1" >"$SCRATCH/handoff.md"
+  work-record --cwd "$A" handoff "$SCRATCH/handoff.md" >/dev/null
+  work-record --cwd "$A" record '.next_action = "review TASK-1 round 0"' >/dev/null
+  [ "$(work-record --cwd "$A" handoff)" = stale ]
+  stop "$A"
+  blocked
+  [[ "$(jq -r '.reason' <<<"$output")" == *"review TASK-1 round 0"* ]]
+}
+
 @test "the template runs stop-continue beside notify in one Stop group" {
   run jq -c '[.hooks.Stop[] | select(.matcher == "") | .hooks[].command]' "$TEMPLATE"
   [ "$output" = '["notify","stop-continue"]' ]

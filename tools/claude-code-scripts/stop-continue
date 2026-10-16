@@ -37,6 +37,10 @@ case "$status" in
 esac
 [[ "$outcome" == continue ]] || allow_stop
 
+# A current handoff means the coordinator handed off and is waiting for
+# context renewal; any later record write makes it stale and nudging resumes.
+[[ "$(work-record --cwd "$cwd" handoff 2>/dev/null)" != current ]] || allow_stop
+
 record_path=$(work-record --cwd "$cwd" path)
 record=$(work-record --cwd "$cwd" read)
 

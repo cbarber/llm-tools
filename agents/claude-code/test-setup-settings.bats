@@ -270,3 +270,16 @@ stop_groups() {
   run jq -c '[.hooks.Stop[] | [.hooks[].command]]' "$SETTINGS"
   [ "$output" = '[["notify","stop-continue"]]' ]
 }
+
+@test "the real template adds the compact resume hook to existing settings" {
+  jq 'del(.hooks.SessionStart)' "$REAL_TEMPLATE" >"$TEMPLATE"
+  run_setup
+  run jq -e '.hooks | has("SessionStart") | not' "$SETTINGS"
+  [ "$status" -eq 0 ]
+  cp "$REAL_TEMPLATE" "$TEMPLATE"
+
+  run_setup
+  [ "$status" -eq 0 ]
+  run jq -c '[.hooks.SessionStart[] | {matcher, commands: [.hooks[].command]}]' "$SETTINGS"
+  [ "$output" = '[{"matcher":"compact","commands":["compact-resume"]}]' ]
+}
