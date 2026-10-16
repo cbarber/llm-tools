@@ -1,9 +1,10 @@
 ---
 id: TASK-61
 title: Coordinator runs approved tickets in sequence
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 04:03'
 labels:
   - workflow
 dependencies:
@@ -25,9 +26,9 @@ An implementation entry skill (adapted from Pocock's implement-spec with sequent
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each ticket is executed by a fresh implementer that receives pointers rather than pasted conversation
-- [ ] #2 Implementer instructions arrive before editing without a custom renderer
-- [ ] #3 The coordinator advances only after reconciling the report with Git and records progress in the work record
-- [ ] #4 Tickets are closed in the commit that completes their work
-- [ ] #5 Execution stops at final human review when no unblocked tickets remain
+- [x] #1 Each ticket is executed by a fresh implementer that receives pointers rather than pasted conversation
+- [x] #2 Implementer instructions arrive before editing without a custom renderer
+- [x] #3 The coordinator advances only after reconciling the report with Git and records progress in the work record
+- [x] #4 Tickets are closed in the commit that completes their work
+- [x] #5 Execution stops at final human review when no unblocked tickets remain
 <!-- AC:END -->

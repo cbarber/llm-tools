@@ -70,6 +70,10 @@ call trees, and responsibility views to make those decisions reviewable.
 Specifications and tickets reference the agreed design instead of reproducing it.
 Do not create a second decomposition in a Dex structure outline.
 
+The human invokes `/to-spec` and `/to-tickets`; neither runs automatically.
+Coordination (`/mojo-implement`) begins only after the human approves the ticket
+breakdown, and runs only the approved tickets.
+
 Implementation can reveal new facts. Update the coherent design and obtain focused
 human re-review before overriding an agreed decision. Preserve unaffected approvals.
 
