@@ -1,10 +1,10 @@
 ---
 id: TASK-59
 title: 'Claude-native initialization for mojo-init, mojo-commit, and mojo-pull-request'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-16 02:42'
-updated_date: '2026-10-16 03:24'
+updated_date: '2026-10-16 03:29'
 labels:
   - workflow
 dependencies: []
@@ -24,9 +24,9 @@ Shared Mojo skills render their initialization context through Claude's native `
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Invoking each of the three skills in Claude runs its initialization commands before the model reads the instructions, with output reflecting the assigned checkout
-- [ ] #2 The same skills still render their initialization under OpenCode via temper
-- [ ] #3 Session initialization no longer runs forge pr status or forge pr next-action
-- [ ] #4 Ordinary code examples in the skills are not executed
-- [ ] #5 Temper's CLI and OpenCode plugin execute `!` blocks with the same output and failure reporting they give `bash {exec}` blocks today
+- [x] #1 Invoking each of the three skills in Claude runs its initialization commands before the model reads the instructions, with output reflecting the assigned checkout
+- [x] #2 The same skills still render their initialization under OpenCode via temper
+- [x] #3 Session initialization no longer runs forge pr status or forge pr next-action
+- [x] #4 Ordinary code examples in the skills are not executed
+- [x] #5 Temper's CLI and OpenCode plugin execute `!` blocks with the same output and failure reporting they give `bash {exec}` blocks today
 <!-- AC:END -->
