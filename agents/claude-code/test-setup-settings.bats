@@ -1,10 +1,15 @@
 #!/usr/bin/env bats
 
 SETUP_SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/setup-settings.sh"
-REPO_TEMPLATE="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/settings.template.json"
+REAL_TEMPLATE="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/settings.template.json"
 
 setup() {
   TEST_REPO=$(mktemp -d)
+  # Merge cases describe changes relative to a template whose only Stop hook
+  # is notify, whatever else the real template gains.
+  REPO_TEMPLATE="$TEST_REPO/repo-template.json"
+  jq '.hooks.Stop |= map(.hooks |= map(select(.command == "notify")))' \
+    "$REAL_TEMPLATE" >"$REPO_TEMPLATE"
   TEMPLATE="$TEST_REPO/template.json"
   SETTINGS="$TEST_REPO/.claude/settings.local.json"
   cp "$REPO_TEMPLATE" "$TEMPLATE"
