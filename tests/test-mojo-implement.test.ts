@@ -9,7 +9,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -46,6 +46,14 @@ async function repo(name: string, backlog = true): Promise<string> {
 
 async function record(cwd: string, filter: string, ...args: string[]) {
   await sh(cwd, "work-record", "record", filter, ...args);
+}
+
+// Runs the skill's own "Record the dispatch" commands for a ticket.
+async function dispatch(cwd: string, ticket: string) {
+  const skill = await readFile(join(root, "agents", "skills", "mojo-implement", "SKILL.md"), "utf8");
+  const block = skill.match(/\*\*Record the dispatch\.\*\*[\s\S]*?```bash\n([\s\S]*?)```/);
+  if (!block) throw new Error("dispatch commands not found in SKILL.md");
+  await sh(cwd, "bash", "-euo", "pipefail", "-c", block[1].replaceAll("TASK-N", ticket));
 }
 
 beforeAll(async () => {
@@ -141,5 +149,46 @@ describe("approved ticket progression", () => {
     await sh(path, "backlog", "task", "create", "Waits on unrelated", "--dep", "task-1");
     await record(path, ".artifacts.tickets += [\"TASK-4\"]");
     expect(await render(path)).toContain("Next ticket: none; remaining tickets are blocked or missing: TASK-4");
+  });
+});
+
+describe("review scope", () => {
+  let path: string;
+  let base: string;
+
+  beforeAll(async () => {
+    path = await repo("review-scope");
+    await sh(path, "backlog", "task", "create", "Greeting");
+    await sh(path, "work-record", "init", '.next_action = "select next ticket" | .artifacts.tickets = $t', "--argjson", "t", '["TASK-1"]');
+    base = (await sh(path, "git", "rev-parse", "HEAD")).trim();
+  });
+
+  it("has none before a ticket is dispatched", async () => {
+    expect(await render(path)).toContain("Review scope:\n  none\n");
+  });
+
+  it("starts the dispatched ticket at HEAD with no correction rounds", async () => {
+    await dispatch(path, "TASK-1");
+    const out = await render(path);
+    expect(out).toContain(`TASK-1: base ${base} (0 commits to HEAD)`);
+    expect(out).toContain("Correction round: 0");
+  });
+
+  it("keeps the base and round when the same ticket is re-dispatched", async () => {
+    await sh(path, "git", "commit", "-q", "--allow-empty", "-m", "greeting");
+    await record(path, ".correction_round = 2");
+    await dispatch(path, "TASK-1");
+    const out = await render(path);
+    expect(out).toContain(`TASK-1: base ${base} (1 commits to HEAD)`);
+    expect(out).toContain("Correction round: 2");
+  });
+
+  it("asks for a base the report does not record or Git cannot resolve", async () => {
+    const report = JSON.parse(await sh(path, "work-record", "read")).artifacts.reports["TASK-1"];
+    await writeFile(report, "implementer report\n");
+    expect(await render(path)).toContain("TASK-1: no review base recorded");
+
+    await writeFile(report, "Base: 0000000000000000000000000000000000000000\n");
+    expect(await render(path)).toContain("does not resolve; reconcile before reviewing");
   });
 });

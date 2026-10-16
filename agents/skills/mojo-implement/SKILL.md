@@ -82,6 +82,30 @@ else
       end
   ' <<<"$tasks" || echo "Ticket selection failed; inspect the work record and backlog."
 fi
+
+echo ""
+echo "Review scope:"
+# The base lives in the scope's report, not the record, so it survives
+# context renewal without the record holding a commit range.
+if ! record=$(work-record read 2>/dev/null); then
+  echo "  none: the work record is missing or inconsistent."
+elif ! scope=$(jq -r '
+    if .current_ticket then [.current_ticket, (.artifacts.reports[.current_ticket] // "")]
+    else empty end | @tsv' <<<"$record") || [[ -z "$scope" ]]; then
+  echo "  none"
+else
+  IFS=$'\t' read -r name report <<<"$scope"
+  round=$(jq -r '.correction_round' <<<"$record")
+  base=$(sed -n 's/^Base: //p' "$report" 2>/dev/null | head -n 1)
+  if [[ -z "$base" ]]; then
+    echo "  $name: no review base recorded${report:+ in $report}; establish it before reviewing."
+  elif ! git rev-parse -q --verify "$base^{commit}" >/dev/null; then
+    echo "  $name: base $base does not resolve; reconcile before reviewing."
+  else
+    echo "  $name: base $base ($(git rev-list --count "$base..HEAD") commits to HEAD)"
+  fi
+  echo "  Correction round: $round"
+fi
 ```
 
 ## Start or resume
@@ -109,11 +133,19 @@ fi
 1. **Select.** Take the `Next ticket` line. For a current ticket, inspect
    `git log` and `git status` for an earlier implementer's work first; if an
    implementer is still running, wait for it rather than dispatching another.
-2. **Record the dispatch.** Note `git rev-parse HEAD` as the base, then:
+2. **Record the dispatch.** The ticket's report, beside the record, starts
+   with its review base; the record links the report, never the base. Both
+   commands keep an existing base and correction round, so re-dispatching
+   unfinished work on the same ticket neither moves the base nor resets the
+   round:
 
    ```bash
-   work-record record '.current_ticket = $t | .next_action = $a | .correction_round = 0' \
-     --arg t TASK-N --arg a "reconcile TASK-N implementer report"
+   report="$(dirname "$(work-record path)")/reports/TASK-N.md"
+   mkdir -p "$(dirname "$report")"
+   grep -q '^Base: ' "$report" 2>/dev/null || printf 'Base: %s\n' "$(git rev-parse HEAD)" >"$report"
+   work-record record '.correction_round = (if .current_ticket == $t then .correction_round else 0 end)
+     | .current_ticket = $t | .next_action = $a | .artifacts.reports[$t] = $r' \
+     --arg t TASK-N --arg a "reconcile TASK-N implementer report" --arg r "$report"
    ```
 
 3. **Choose pointers.** The ticket's references, spec/design links from the
@@ -136,19 +168,18 @@ fi
      thin or surprising. Unproven items and concerns are weighed, not skipped.
    - Ordinary unfinished work within the ticket's scope: dispatch a fresh
      implementer with the brief plus a pointer to the earlier report and the
-     gap. A needed decision outside the approved scope: record a
-     `human_gate` and stop.
+     gap, recorded with step 2's commands. A needed decision outside the
+     approved scope: record a `human_gate` and stop.
 6. **Review.** The fresh review and correction loop slots in here once it
    exists; until then a reconciled ticket advances directly.
-7. **Record the outcome and advance.** Save the report beside the record and
-   link it, then reload this skill to select the next ticket:
+7. **Record the outcome and advance.** Append the implementer's report and
+   your reconciliation to the ticket's report below its `Base:` line, then
+   reload this skill to select the next ticket:
 
    ```bash
-   report="$(dirname "$(work-record path)")/reports/TASK-N.md"
-   mkdir -p "$(dirname "$report")"   # then write the report to $report
    work-record record '.current_ticket = null | .next_action = "select next ticket"
-     | .artifacts.reports[$t] = $r | .agents += [{role: "implementer", ticket: $t, id: $id}]' \
-     --arg t TASK-N --arg r "$report" --arg id "<agent id, if reported>"
+     | .agents += [{role: "implementer", ticket: $t, id: $id}]' \
+     --arg t TASK-N --arg id "<agent id, if reported>"
    ```
 
 Continue through the approved tickets without asking permission to proceed.
