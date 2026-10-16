@@ -4,6 +4,7 @@ title: Fresh review and correction loop
 status: To Do
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 04:08'
 labels:
   - workflow
 dependencies:
@@ -30,3 +31,11 @@ A reviewer entry built on the code-review skill reviews each ticket's commits, a
 - [ ] #4 Minor findings are reported without extending the correction loop
 - [ ] #5 Final retained history has accepted fixups folded into their owning commits
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From TASK-61 review: mojo-implement's Stop section sets complete=true directly; add the final integrated review step there, not only at the per-ticket seam (step 6).
+
+From TASK-61 review: re-dispatching unfinished work on the same ticket must not reset correction_round or move the review base; the base is not stored in the record, so define how review scope survives context renewal (coordinate with TASK-65).
+<!-- SECTION:NOTES:END -->
