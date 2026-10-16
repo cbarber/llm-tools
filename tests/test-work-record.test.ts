@@ -187,6 +187,41 @@ describe("missing or inconsistent record", () => {
   });
 });
 
+describe("revision", () => {
+  const revision = async (cwd: string) => JSON.parse((await run(cwd, "read")).stdout).revision;
+
+  it("is bumped by init and every record write, but not by linking a handoff", async () => {
+    const cwd = await repo("revision-bump");
+    await init(cwd);
+    expect(await revision(cwd)).toBe(1);
+    expect((await run(cwd, "record", ".")).code).toBe(0);
+    expect(await revision(cwd)).toBe(2);
+    // The helper owns the counter; a filter cannot set it.
+    expect(JSON.parse((await run(cwd, "record", ".revision = 40")).stdout).revision).toBe(3);
+    await writeFile(join(cwd, "handoff.md"), "Next: implement TASK-1\n");
+    expect((await run(cwd, "handoff", "handoff.md")).code).toBe(0);
+    expect(await revision(cwd)).toBe(3);
+  });
+
+  it("accepts a record written before the counter existed and starts counting", async () => {
+    const cwd = await repo("revision-legacy");
+    const record = await init(cwd);
+    const { revision: _, ...legacy } = JSON.parse(readFileSync(record, "utf8"));
+    await writeFile(record, JSON.stringify(legacy));
+    expect((await run(cwd, "check")).stdout.trim()).toBe("continue");
+    expect(JSON.parse((await run(cwd, "record", ".")).stdout).revision).toBe(1);
+  });
+
+  it("reports a malformed revision", async () => {
+    const cwd = await repo("revision-malformed");
+    const record = await init(cwd);
+    await writeFile(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), revision: "one" }));
+    const result = await run(cwd, "read");
+    expect(result.code).toBe(4);
+    expect(result.stderr).toContain("revision must be a non-negative integer");
+  });
+});
+
 describe("continuation check", () => {
   const cases: [string, string, string][] = [
     ["continue", "remaining work", ".human_gate = null"],
@@ -202,4 +237,100 @@ describe("continuation check", () => {
       expect(await run(cwd, "check")).toMatchObject({ code: 0, stdout: `${outcome}\n` });
     });
   }
+});
+
+describe("reasoned handoff", () => {
+  const state = async (cwd: string) => (await run(cwd, "handoff")).stdout.trim();
+
+  it("is missing until a handoff is linked, and current while the record is unchanged", async () => {
+    const cwd = await repo("handoff-current");
+    await init(cwd);
+    expect(await state(cwd)).toBe("missing");
+
+    await writeFile(join(cwd, "handoff.md"), "Next: implement TASK-1\n");
+    const linked = await run(cwd, "handoff", "handoff.md");
+    expect(linked.code).toBe(0);
+    expect(JSON.parse(linked.stdout).artifacts.handoff.path).toBe(join(cwd, "handoff.md"));
+    expect(await run(cwd, "handoff")).toMatchObject({ code: 0, stdout: "current\n" });
+  });
+
+  it("goes stale once the record moves on, and current again when relinked", async () => {
+    const cwd = await repo("handoff-stale");
+    await init(cwd);
+    await writeFile(join(cwd, "handoff.md"), "Next: implement TASK-1\n");
+    await run(cwd, "handoff", "handoff.md");
+    for (const filter of [".next_action = \"review TASK-1 round 0\"", ".human_gate = \"design approval\""]) {
+      expect((await run(cwd, "record", filter)).code).toBe(0);
+      expect(await state(cwd)).toBe("stale");
+      await run(cwd, "handoff", "handoff.md");
+      expect(await state(cwd)).toBe("current");
+    }
+  });
+
+  it("goes stale on a write that sets unchanged values", async () => {
+    const cwd = await repo("handoff-same-values");
+    await init(cwd);
+    await writeFile(join(cwd, "handoff.md"), "Next: implement TASK-1\n");
+    await run(cwd, "handoff", "handoff.md");
+    // A same-ticket re-dispatch rewrites the fields it already holds.
+    expect((await run(cwd, "record", '.current_ticket = "TASK-1" | .next_action = "implement TASK-1"')).code).toBe(0);
+    expect(await state(cwd)).toBe("stale");
+  });
+
+  it("is current when linked on a record written before the revision counter", async () => {
+    const cwd = await repo("handoff-legacy");
+    const record = await init(cwd);
+    const { revision: _, ...legacy } = JSON.parse(readFileSync(record, "utf8"));
+    await writeFile(record, JSON.stringify(legacy));
+    await writeFile(join(cwd, "handoff.md"), "Next: implement TASK-1\n");
+    expect((await run(cwd, "handoff", "handoff.md")).code).toBe(0);
+    expect(await state(cwd)).toBe("current");
+    expect((await run(cwd, "record", ".")).code).toBe(0);
+    expect(await state(cwd)).toBe("stale");
+  });
+
+  it("is missing when the linked file is gone or empty", async () => {
+    const cwd = await repo("handoff-gone");
+    await init(cwd);
+    const file = join(cwd, "handoff.md");
+    await writeFile(file, "Next: implement TASK-1\n");
+    await run(cwd, "handoff", "handoff.md");
+    await writeFile(file, "");
+    expect(await state(cwd)).toBe("missing");
+    await rm(file);
+    expect(await state(cwd)).toBe("missing");
+  });
+
+  it("refuses to link an absent or empty file", async () => {
+    const cwd = await repo("handoff-refused");
+    await init(cwd);
+    await writeFile(join(cwd, "empty.md"), "");
+    for (const file of ["absent.md", "empty.md"]) {
+      expect((await run(cwd, "handoff", file)).code).toBe(2);
+    }
+    expect(await state(cwd)).toBe("missing");
+  });
+
+  for (const filter of ["del(.artifacts)", ".artifacts = null"]) {
+    it(`stays current after linking when the record starts with ${filter}`, async () => {
+      const cwd = await repo(`handoff-${filter.replace(/\W+/g, "-")}`);
+      expect((await run(cwd, "init", `.next_action = "a" | ${filter}`)).code).toBe(0);
+      await writeFile(join(cwd, "handoff.md"), "Next: a\n");
+      expect((await run(cwd, "handoff", "handoff.md")).code).toBe(0);
+      expect(await run(cwd, "handoff")).toMatchObject({ code: 0, stdout: "current\n" });
+    });
+  }
+
+  it("reads non-object artifacts as missing and refuses to link over them", async () => {
+    const cwd = await repo("handoff-array-artifacts");
+    expect((await run(cwd, "init", '.next_action = "a" | .artifacts = []')).code).toBe(0);
+    expect(await run(cwd, "handoff")).toMatchObject({ code: 0, stdout: "missing\n", stderr: "" });
+    await writeFile(join(cwd, "handoff.md"), "Next: a\n");
+    expect((await run(cwd, "handoff", "handoff.md")).code).toBe(2);
+    expect(JSON.parse((await run(cwd, "read")).stdout).artifacts).toEqual([]);
+  });
+
+  it("reports a missing record rather than a handoff state", async () => {
+    expect(await run(await repo("handoff-no-record"), "handoff")).toMatchObject({ code: 3, stdout: "" });
+  });
 });

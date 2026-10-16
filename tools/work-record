@@ -27,6 +27,9 @@ Commands:
                          work-record record '.next_action = \$a' --arg a "review TASK-1"
   check                Print continue | wait-for-human | complete
                        (a pending human_gate wins over complete)
+  handoff [FILE]       With FILE, link it as the reasoned handoff for the
+                       record as it stands; without, print current | stale |
+                       missing (stale after any record write since linking)
 
 Options:
   --cwd DIR            Resolve the checkout from DIR instead of \$PWD
@@ -43,6 +46,10 @@ Record fields the helper interprets:
   human_gate         Reason the workflow waits for a human, or null
   correction_round   Correction rounds spent on the current ticket/review
   complete           true once all approved agent work is done
+  revision           Write counter: every init and record write bumps it
+                     (set by the helper), so any write stales a handoff
+  artifacts.handoff  {path, record}: the handoff and the record state it
+                     describes (set by handoff FILE)
 Other fields (artifacts, agents, ...) are stored as given.
 
 Exit codes:
@@ -94,6 +101,8 @@ problems() {
       (if (.next_action | . == null or (type == "string" and length > 0)) | not then "next_action must be null or a non-empty string" else empty end),
       (if (.correction_round | type == "number" and . >= 0 and . == floor) | not then "correction_round must be a non-negative integer" else empty end),
       (if (.complete | type == "boolean") | not then "complete must be a boolean" else empty end),
+      # Absent in records written before the counter existed.
+      (if (.revision | . == null or (type == "number" and . >= 0 and . == floor)) | not then "revision must be a non-negative integer" else empty end),
       (if .complete != true and .human_gate == null and .next_action == null then "no next_action, human_gate, or completion recorded" else empty end)
     end
   ' 2>/dev/null || echo "record is not valid JSON"
@@ -125,11 +134,16 @@ with_lock() {
 }
 
 # Applies FILTER [JQ_ARGS...] to CONTENT and atomically replaces the record:
-# readers see the old or the new file, never a partial write.
+# readers see the old or the new file, never a partial write. The helper
+# owns revision: each write bumps it by REVISION_STEP, so even a write that
+# sets unchanged values is distinguishable from no write.
+REVISION_STEP=1
 apply_and_replace() {
-  local filter="${1:-.}" updated tmp found
+  local filter="${1:-.}" updated tmp found revision
   shift || true
-  updated=$(jq --arg __checkout "$CHECKOUT" "$@" "($filter) | .checkout = \$__checkout" <<<"$CONTENT" 2>&1) ||
+  revision=$(jq --argjson step "$REVISION_STEP" '(.revision // 0) + $step' <<<"$CONTENT")
+  updated=$(jq --arg __checkout "$CHECKOUT" --argjson __revision "$revision" "$@" \
+    "($filter) | .checkout = \$__checkout | .revision = \$__revision" <<<"$CONTENT" 2>&1) ||
     die "$EXIT_USAGE" "filter failed: $updated"
   found=$(problems <<<"$updated")
   [[ -z "$found" ]] || die "$EXIT_USAGE" "update rejected:"$'\n'"$found"
@@ -149,6 +163,7 @@ do_init() {
     human_gate: null,
     correction_round: 0,
     complete: false,
+    revision: 0,
     artifacts: {},
     agents: []
   }')
@@ -158,6 +173,42 @@ do_init() {
 do_record() {
   load_consistent
   apply_and_replace "$@"
+}
+
+# Identifies the record state a handoff describes. The link itself is left
+# out, and absent, null, and empty artifacts count as the same state, so
+# linking (which creates artifacts) does not change it.
+handoff_fingerprint() {
+  # A record written before the counter existed is linked at revision 0.
+  jq -cS '
+    .revision //= 0
+    | if (.artifacts | type) == "object" then .artifacts |= del(.handoff) else . end
+    | if .artifacts == null or .artifacts == {} then del(.artifacts) else . end
+  ' <<<"$CONTENT" | git hash-object --stdin
+}
+
+do_link_handoff() {
+  load_consistent
+  jq -e '.artifacts | . == null or type == "object"' <<<"$CONTENT" >/dev/null ||
+    die "$EXIT_USAGE" "artifacts must be an object to link a handoff"
+  # Linking describes the record state rather than changing it, so it keeps
+  # the revision the fingerprint was taken at.
+  REVISION_STEP=0
+  # shellcheck disable=SC2016 # jq variables, not shell
+  apply_and_replace '.artifacts.handoff = {path: $path, record: $record}' \
+    --arg path "$1" --arg record "$(handoff_fingerprint)"
+}
+
+handoff_state() {
+  local path
+  path=$(jq -r '.artifacts | objects | .handoff | objects | .path | strings' <<<"$CONTENT")
+  if [[ -z "$path" || ! -s "$path" ]]; then
+    echo missing
+  elif [[ "$(jq -r '.artifacts.handoff.record | strings' <<<"$CONTENT")" != "$(handoff_fingerprint)" ]]; then
+    echo stale
+  else
+    echo current
+  fi
 }
 
 main() {
@@ -208,6 +259,17 @@ main() {
       elif .complete then "complete"
       else "continue" end
     ' <<<"$CONTENT"
+    ;;
+  handoff)
+    if [[ $# -eq 0 ]]; then
+      load_consistent
+      handoff_state
+      return
+    fi
+    [[ -f "$1" && -s "$1" ]] || die "$EXIT_USAGE" "handoff is missing or empty: $1"
+    local file
+    file="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
+    with_lock do_link_handoff "$file"
     ;;
   *) die "$EXIT_USAGE" "unknown command: $command (see work-record --help)" ;;
   esac
