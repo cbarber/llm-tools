@@ -11,6 +11,10 @@
           {
             "type": "command",
             "command": "notify"
+          },
+          {
+            "type": "command",
+            "command": "stop-continue"
           }
         ]
       }
