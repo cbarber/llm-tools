@@ -4,6 +4,7 @@ title: Stop hook continuation
 status: To Do
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 18:16'
 labels:
   - workflow
 dependencies:
@@ -31,3 +32,9 @@ A Stop hook reads the current checkout's work record and, during approved execut
 - [ ] #4 A stop in one checkout never consults another checkout's record
 - [ ] #5 notify still fires
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From TASK-63: add the Stop hook inside the existing "" Stop group beside notify in settings.template.json. setup-settings.sh collapses same-matcher groups and keys hooks by command, so it reaches existing settings. It won't reach a checkout whose user deleted the whole Stop event/group (TASK-83).
+<!-- SECTION:NOTES:END -->
