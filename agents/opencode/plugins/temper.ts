@@ -138,7 +138,7 @@ async function evalWhen($: PluginInput["$"], when: string, cwd: string): Promise
 // in place of the block, and return the result. Remaining content follows.
 // Mirrors the execute_bash_block logic in tools/temper.
 async function executeBashBlock($: PluginInput["$"], content: string, cwd: string): Promise<string> {
-  const bashBlockRe = /^```bash \{exec\}\n([\s\S]*?)^```/m;
+  const bashBlockRe = /^```(?:bash \{exec\}|!)\n([\s\S]*?)^```/m;
   const match = content.match(bashBlockRe);
   if (!match) return content;
 
