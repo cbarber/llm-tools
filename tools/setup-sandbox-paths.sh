@@ -118,6 +118,7 @@ for ro_path in \
 done
 
 mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
+mkdir -p "$HOME/.local/state/work-record" 2>/dev/null || true
 
 mkdir -p "$HOME/.config/nixsmith/iron-proxy" 2>/dev/null || true
 
@@ -145,6 +146,7 @@ for rw_path in \
   "$HOME/.local/share/opentui" \
   "$HOME/.local/share/pnpm" \
   "$HOME/.local/state/opencode" \
+  "$HOME/.local/state/work-record" \
   "$HOME/.m2" \
   "$HOME/.mix" \
   "$HOME/.npm" \

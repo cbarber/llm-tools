@@ -197,6 +197,11 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
+@test "work record store is writable" {
+  run "$SANDBOX_SCRIPT" bash -c 'touch ~/.local/state/work-record/sandbox-test.txt && rm ~/.local/state/work-record/sandbox-test.txt'
+  [ "$status" -eq 0 ]
+}
+
 @test "canonical OpenCode credentials are unreadable and unwritable" {
   local test_home
   test_home=$(mktemp -d)
