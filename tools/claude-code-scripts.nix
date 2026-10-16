@@ -28,6 +28,7 @@ stdenv.mkDerivation {
     # Copy scripts to bin directory
     cp ${./claude-code-scripts}/notify $out/bin/
     cp ${./claude-code-scripts}/stop-continue $out/bin/
+    cp ${./claude-code-scripts}/compact-resume $out/bin/
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
     cp ${./claude-code-scripts}/git-to-bare-worktree $out/bin/
 
@@ -35,7 +36,7 @@ stdenv.mkDerivation {
     chmod +x $out/bin/*
 
     # Wrap scripts with runtime dependencies
-    for script in notify stop-continue; do
+    for script in notify stop-continue compact-resume; do
       wrapProgram $out/bin/$script \
         --prefix PATH : ${
           lib.makeBinPath [
