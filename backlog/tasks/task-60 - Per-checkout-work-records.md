@@ -1,9 +1,10 @@
 ---
 id: TASK-60
 title: Per-checkout work records
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-16 02:42'
+updated_date: '2026-10-16 03:55'
 labels:
   - workflow
 dependencies: []
@@ -23,9 +24,9 @@ A packaged helper creates, reads, and updates the small work record (current tic
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Two agents in different directories each resolve and update only their own record
-- [ ] #2 Writes are atomic: a concurrent reader never observes a partially written record
-- [ ] #3 A missing or inconsistent record is reported rather than inventing progress
-- [ ] #4 The continuation check distinguishes continue, pending human gate, and agent work complete
-- [ ] #5 The helper is available and can write its store from inside the agent sandbox
+- [x] #1 Two agents in different directories each resolve and update only their own record
+- [x] #2 Writes are atomic: a concurrent reader never observes a partially written record
+- [x] #3 A missing or inconsistent record is reported rather than inventing progress
+- [x] #4 The continuation check distinguishes continue, pending human gate, and agent work complete
+- [x] #5 The helper is available and can write its store from inside the agent sandbox
 <!-- AC:END -->

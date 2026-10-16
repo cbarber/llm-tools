@@ -6,6 +6,7 @@ on:
     paths:
       - "tests/**"
       - "tools/setup-shared-aliases.sh"
+      - "tools/work-record"
       - ".opencode/plugins/temper.ts"
       - "flake.nix"
       - "flake.lock"
@@ -14,6 +15,7 @@ on:
     paths:
       - "tests/**"
       - "tools/setup-shared-aliases.sh"
+      - "tools/work-record"
       - ".opencode/plugins/temper.ts"
       - "flake.nix"
       - "flake.lock"
@@ -51,4 +53,4 @@ jobs:
           BD_SKIP_SETUP: "true"
           SKIP_AGENT_SETUP: "true"
           HARNESS_DEBUG: "1"
-        run: nix develop .#default --command bash -c "bun install --cwd tests && bun install --cwd agents/opencode/plugins && bun test ./tests/test-agent-harness.test.ts ./tests/test-mojo-edit-nudge.test.ts ./tests/test-temper-exec.test.ts"
+        run: nix develop .#default --command bash -c "bun install --cwd tests && bun install --cwd agents/opencode/plugins && bun test ./tests/test-agent-harness.test.ts ./tests/test-mojo-edit-nudge.test.ts ./tests/test-temper-exec.test.ts ./tests/test-work-record.test.ts"

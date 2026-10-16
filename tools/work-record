@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Durable outside any checkout so a record survives worktree removal and is
+# reachable from every agent shell.
+STORE="${WORK_RECORD_HOME:-$HOME/.local/state/work-record}"
+
+EXIT_USAGE=2
+EXIT_MISSING=3
+EXIT_INCONSISTENT=4
+
+show_help() {
+  cat <<EOF
+work-record - Coordinator's per-checkout work record (work.json)
+
+Usage: work-record [--cwd DIR] COMMAND [ARGS]
+
+Commands:
+  path                 Print the record file for the checkout
+  init [FILTER [JQ_ARGS...]]
+                       Create the record (fails if one exists); FILTER must
+                       set next_action or human_gate
+  read                 Print the record after checking it is consistent
+  record FILTER [JQ_ARGS...]
+                       Apply a jq FILTER to the record and replace it
+                       atomically; an inconsistent result is rejected, e.g.
+                         work-record record '.next_action = \$a' --arg a "review TASK-1"
+  check                Print continue | wait-for-human | complete
+                       (a pending human_gate wins over complete)
+
+Options:
+  --cwd DIR            Resolve the checkout from DIR instead of \$PWD
+
+The checkout is the git top-level of DIR (or DIR itself outside git), so
+each clone or worktree resolves its own record. Only the coordinator writes;
+workers return reports.
+
+Record fields the helper interprets:
+  checkout           Absolute checkout path (set by the helper)
+  branch             Branch the work lives on (set by init)
+  current_ticket     Ticket in progress, or null
+  next_action        What the coordinator does next, or null
+  human_gate         Reason the workflow waits for a human, or null
+  correction_round   Correction rounds spent on the current ticket/review
+  complete           true once all approved agent work is done
+Other fields (artifacts, agents, ...) are stored as given.
+
+Exit codes:
+  0  success
+  2  usage error or a rejected update
+  3  no record for this checkout
+  4  record is inconsistent; reconcile before continuing
+EOF
+}
+
+die() {
+  local code="$1"
+  shift
+  echo "work-record: $*" >&2
+  exit "$code"
+}
+
+resolve_checkout() {
+  local dir="$1" top
+  [[ -d "$dir" ]] || die "$EXIT_USAGE" "no such directory: $dir"
+  if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
+    (cd "$top" && pwd -P)
+  else
+    (cd "$dir" && pwd -P)
+  fi
+}
+
+current_branch() {
+  git -C "$CHECKOUT" symbolic-ref --short -q HEAD 2>/dev/null || true
+}
+
+# The basename keeps the store browsable; the hash keeps same-named
+# checkouts apart. The record's own checkout field catches collisions.
+record_dir() {
+  local hash
+  hash=$(printf '%s' "$CHECKOUT" | git hash-object --stdin)
+  echo "${STORE}/$(basename "$CHECKOUT")-${hash:0:12}"
+}
+
+# Prints one problem per line for the JSON on stdin; empty means consistent.
+problems() {
+  jq -rs --arg checkout "$CHECKOUT" '
+    if length != 1 or (.[0] | type) != "object" then "record must be a single JSON object" else .[0] |
+      (if .checkout != $checkout then "checkout is \(.checkout | tojson), expected \($checkout | tojson)" else empty end),
+      # Not compared with HEAD: rebases detach it, and the work may live on a
+      # worker branch while the coordinator stays put.
+      (if (.branch | . == null or (type == "string" and length > 0)) | not then "branch must be null or a non-empty string" else empty end),
+      (if (.human_gate | . == null or (type == "string" and length > 0)) | not then "human_gate must be null or a non-empty string" else empty end),
+      (if (.next_action | . == null or (type == "string" and length > 0)) | not then "next_action must be null or a non-empty string" else empty end),
+      (if (.correction_round | type == "number" and . >= 0 and . == floor) | not then "correction_round must be a non-negative integer" else empty end),
+      (if (.complete | type == "boolean") | not then "complete must be a boolean" else empty end),
+      (if .complete != true and .human_gate == null and .next_action == null then "no next_action, human_gate, or completion recorded" else empty end)
+    end
+  ' 2>/dev/null || echo "record is not valid JSON"
+}
+
+# Reads the record once into CONTENT so callers act on exactly what was
+# validated even if the coordinator replaces it meanwhile.
+load_consistent() {
+  [[ -f "$RECORD" ]] || die "$EXIT_MISSING" "no record for $CHECKOUT ($RECORD)"
+  CONTENT=$(<"$RECORD")
+  local found
+  found=$(problems <<<"$CONTENT")
+  [[ -z "$found" ]] || die "$EXIT_INCONSISTENT" "inconsistent record $RECORD:"$'\n'"$found"
+}
+
+# mkdir is atomic everywhere (flock is not on macOS); serializes writers so
+# read-modify-write updates are not lost.
+with_lock() {
+  local lock="${RECORD_DIR}/.lock" tries=0
+  until mkdir "$lock" 2>/dev/null; do
+    ((++tries > 100)) && die 1 "timed out waiting for $lock (remove it if no writer is running)"
+    sleep 0.05
+  done
+  # shellcheck disable=SC2064 # expand now; $lock is local
+  trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  "$@"
+  rmdir "$lock"
+  trap - EXIT
+}
+
+# Applies FILTER [JQ_ARGS...] to CONTENT and atomically replaces the record:
+# readers see the old or the new file, never a partial write.
+apply_and_replace() {
+  local filter="${1:-.}" updated tmp found
+  shift || true
+  updated=$(jq --arg __checkout "$CHECKOUT" "$@" "($filter) | .checkout = \$__checkout" <<<"$CONTENT" 2>&1) ||
+    die "$EXIT_USAGE" "filter failed: $updated"
+  found=$(problems <<<"$updated")
+  [[ -z "$found" ]] || die "$EXIT_USAGE" "update rejected:"$'\n'"$found"
+  tmp=$(mktemp "${RECORD_DIR}/.work.json.XXXXXX")
+  printf '%s\n' "$updated" >"$tmp"
+  mv -f "$tmp" "$RECORD"
+  printf '%s\n' "$updated"
+}
+
+do_init() {
+  [[ ! -e "$RECORD" ]] || die "$EXIT_USAGE" "record already exists: $RECORD"
+  CONTENT=$(jq -n --arg checkout "$CHECKOUT" --arg branch "$(current_branch)" '{
+    checkout: $checkout,
+    branch: (if $branch == "" then null else $branch end),
+    current_ticket: null,
+    next_action: null,
+    human_gate: null,
+    correction_round: 0,
+    complete: false,
+    artifacts: {},
+    agents: []
+  }')
+  apply_and_replace "$@"
+}
+
+do_record() {
+  load_consistent
+  apply_and_replace "$@"
+}
+
+main() {
+  local dir="$PWD"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --cwd)
+      [[ $# -ge 2 ]] || die "$EXIT_USAGE" "--cwd needs a directory"
+      dir="$2"
+      shift 2
+      ;;
+    -h | --help | help)
+      show_help
+      return
+      ;;
+    *) break ;;
+    esac
+  done
+  [[ $# -gt 0 ]] || {
+    show_help >&2
+    exit "$EXIT_USAGE"
+  }
+
+  CHECKOUT=$(resolve_checkout "$dir")
+  RECORD_DIR=$(record_dir)
+  RECORD="${RECORD_DIR}/work.json"
+
+  local command="$1"
+  shift
+  case "$command" in
+  path) echo "$RECORD" ;;
+  init)
+    mkdir -p "$RECORD_DIR"
+    with_lock do_init "$@"
+    ;;
+  read)
+    load_consistent
+    printf '%s\n' "$CONTENT"
+    ;;
+  record)
+    [[ $# -ge 1 ]] || die "$EXIT_USAGE" "record needs a jq filter"
+    with_lock do_record "$@"
+    ;;
+  check)
+    load_consistent
+    jq -r '
+      if .human_gate != null then "wait-for-human"
+      elif .complete then "complete"
+      else "continue" end
+    ' <<<"$CONTENT"
+    ;;
+  *) die "$EXIT_USAGE" "unknown command: $command (see work-record --help)" ;;
+  esac
+}
+
+main "$@"
