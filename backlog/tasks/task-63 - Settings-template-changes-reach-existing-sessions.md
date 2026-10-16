@@ -1,9 +1,10 @@
 ---
 id: TASK-63
 title: Settings template changes reach existing sessions
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-16 02:43'
+updated_date: '2026-10-16 04:30'
 labels:
   - workflow
 dependencies: []
@@ -23,7 +24,7 @@ Shell setup merges hook and setting changes from the Claude Code settings templa
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new template hook appears in an existing generated settings file after re-entering the shell
-- [ ] #2 Local edits to the generated settings survive the merge
-- [ ] #3 Re-entering the shell repeatedly is idempotent
+- [x] #1 A new template hook appears in an existing generated settings file after re-entering the shell
+- [x] #2 Local edits to the generated settings survive the merge
+- [x] #3 Re-entering the shell repeatedly is idempotent
 <!-- AC:END -->
