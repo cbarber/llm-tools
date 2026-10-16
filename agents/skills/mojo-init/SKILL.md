@@ -32,9 +32,12 @@ echo ""
 echo "Git status:"
 git status --short --branch
 
-forge pr status
-
-forge pr next-action
+# A failing command aborts Claude's skill load, so skip repos without a backlog.
+if command -v backlog >/dev/null && [[ -f "$(git rev-parse --show-toplevel)/backlog/config.yml" ]]; then
+  echo ""
+  echo "Active work:"
+  backlog task list --status "In Progress" --plain
+fi
 ```
 
 **Change only what is necessary.** Edit the minimum code required to accomplish the task. Do not rename variables, restructure functions, reformat blocks, or add comments unless that is the explicit goal.
