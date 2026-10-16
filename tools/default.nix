@@ -11,6 +11,7 @@ let
   iron-proxy = pkgs.callPackage ./iron-proxy { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
+  work-record = pkgs.writeShellScriptBin "work-record" (builtins.readFile ./work-record);
   forge = pkgs.stdenv.mkDerivation {
     pname = "forge";
     version = "0.1.0";
@@ -46,6 +47,7 @@ in
     fence
     iron-proxy
     temper
+    work-record
     forge
     git-agent-sequence-editor
     git-agent-editor
@@ -62,6 +64,7 @@ in
     fence
     iron-proxy
     temper
+    work-record
     forge
     git-agent-sequence-editor
     git-agent-editor
