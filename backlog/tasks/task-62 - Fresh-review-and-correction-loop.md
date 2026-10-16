@@ -1,10 +1,10 @@
 ---
 id: TASK-62
 title: Fresh review and correction loop
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-16 02:43'
-updated_date: '2026-10-16 04:08'
+updated_date: '2026-10-16 04:17'
 labels:
   - workflow
 dependencies:
@@ -25,11 +25,11 @@ A reviewer entry built on the code-review skill reviews each ticket's commits, a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A rejected proposal leaves the active implementation checkout unchanged
-- [ ] #2 Accepted proposals are verified and independently re-reviewed
-- [ ] #3 The round count survives context renewal and unresolved blocking findings stop at the third round
-- [ ] #4 Minor findings are reported without extending the correction loop
-- [ ] #5 Final retained history has accepted fixups folded into their owning commits
+- [x] #1 A rejected proposal leaves the active implementation checkout unchanged
+- [x] #2 Accepted proposals are verified and independently re-reviewed
+- [x] #3 The round count survives context renewal and unresolved blocking findings stop at the third round
+- [x] #4 Minor findings are reported without extending the correction loop
+- [x] #5 Final retained history has accepted fixups folded into their owning commits
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -38,4 +38,6 @@ A reviewer entry built on the code-review skill reviews each ticket's commits, a
 From TASK-61 review: mojo-implement's Stop section sets complete=true directly; add the final integrated review step there, not only at the per-ticket seam (step 6).
 
 From TASK-61 review: re-dispatching unfinished work on the same ticket must not reset correction_round or move the review base; the base is not stored in the record, so define how review scope survives context renewal (coordinate with TASK-65).
+
+Review scope across renewal: each scope's report beside the work record starts with a `Base: <sha>` line (ticket reports at dispatch; the integrated scope uses the first approved ticket's base). The record links the report, never the base. Dispatch and final-review entry keep an existing base and correction_round, and mojo-implement initialization prints the scope, base, and round.
 <!-- SECTION:NOTES:END -->
