@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Claude Code Stop hook: continues approved work from the checkout's work
+# record instead of letting the coordinator stop prematurely.
+
+set -euo pipefail
+
+# Nudges allowed while the record stays unchanged within one run of
+# hook-driven continuations; beyond this the stop is let through.
+MAX_NUDGES=3
+
+input=$(cat)
+cwd=$(jq -r '.cwd // empty' <<<"$input")
+cwd=${cwd:-$PWD}
+
+allow_stop() {
+  exit 0
+}
+
+# A running background agent wakes the session when it finishes; nudging
+# now could dispatch duplicate work.
+if jq -e '[.background_tasks[]? | select(.status == "running" and (has("agent_type") or (.type | tostring | test("agent"))))] | length > 0' \
+  <<<"$input" >/dev/null; then
+  allow_stop
+fi
+
+status=0
+outcome=$(work-record --cwd "$cwd" check 2>/dev/null) || status=$?
+case "$status" in
+0) ;;
+3) allow_stop ;;
+4)
+  jq -n --arg m "Work record for $cwd is inconsistent; run \`work-record --cwd $cwd read\` and reconcile it." \
+    '{systemMessage: $m}'
+  allow_stop
+  ;;
+*) allow_stop ;;
+esac
+[[ "$outcome" == continue ]] || allow_stop
+
+record_path=$(work-record --cwd "$cwd" path)
+record=$(work-record --cwd "$cwd" read)
+
+# Progress is any change to the record; a stop that was not itself caused by
+# a hook continuation (a human prompt, a background wake) starts a new count.
+state="$(dirname "$record_path")/stop-nudges"
+fingerprint=$(git hash-object --stdin <<<"$record")
+count=1
+if [[ "$(jq -r '.stop_hook_active // false' <<<"$input")" == true && -f "$state" ]]; then
+  read -r last_fingerprint last_count <"$state" || true
+  if [[ "${last_fingerprint:-}" == "$fingerprint" ]]; then
+    count=$((${last_count:-0} + 1))
+  fi
+fi
+tmp=$(mktemp "${state}.XXXXXX")
+printf '%s %s\n' "$fingerprint" "$count" >"$tmp"
+mv -f "$tmp" "$state"
+
+if ((count > MAX_NUDGES)); then
+  jq -n --arg m "Stopped after $MAX_NUDGES continuation nudges without work-record progress ($record_path)." \
+    '{systemMessage: $m}'
+  allow_stop
+fi
+
+jq -n --argjson r "$record" --arg path "$record_path" '{
+  decision: "block",
+  reason: ("Approved work in this checkout is unfinished. Continue from the work record (\($path)): next action: \($r.next_action)"
+    + (if $r.current_ticket then " (current ticket \($r.current_ticket))" else "" end)
+    + ". If a worker you dispatched is still running or its report is unreconciled, wait for or reconcile it; do not dispatch another. If a human decision is needed, record a human_gate and stop.")
+}'

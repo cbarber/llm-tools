@@ -260,3 +260,13 @@ stop_groups() {
   run jq -c '[.hooks.Stop[].hooks[].command]' "$SETTINGS"
   [ "$output" = '["notify"]' ]
 }
+
+@test "the real template adds stop-continue beside notify in existing settings" {
+  run_setup
+  cp "$REAL_TEMPLATE" "$TEMPLATE"
+
+  run_setup
+  [ "$status" -eq 0 ]
+  run jq -c '[.hooks.Stop[] | [.hooks[].command]]' "$SETTINGS"
+  [ "$output" = '[["notify","stop-continue"]]' ]
+}
