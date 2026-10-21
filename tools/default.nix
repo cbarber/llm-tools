@@ -11,7 +11,15 @@ let
   iron-proxy = pkgs.callPackage ./iron-proxy { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
-  work-record = pkgs.writeShellScriptBin "work-record" (builtins.readFile ./work-record);
+  work-record = pkgs.writeShellApplication {
+    name = "work-record";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.git
+      pkgs.jq
+    ];
+    text = builtins.readFile ./work-record;
+  };
   forge = pkgs.stdenv.mkDerivation {
     pname = "forge";
     version = "0.1.0";

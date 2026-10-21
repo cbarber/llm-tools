@@ -31,6 +31,7 @@
         packages = {
           claude-code = import ./agents/claude-code { inherit pkgs tools; };
           opencode = import ./agents/opencode { inherit pkgs tools; };
+          work-record = tools.work-record;
         };
 
         devShells = {
@@ -55,6 +56,7 @@
                 bats
                 opencode
                 tools.backlog
+                tools.work-record
                 tools.fence
               ]
               ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ];
