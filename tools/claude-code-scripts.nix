@@ -32,6 +32,8 @@ stdenv.mkDerivation {
     # Copy scripts to bin directory
     cp ${./claude-code-scripts}/notify $out/bin/
     cp ${./claude-code-scripts}/stop-continue $out/bin/
+    cp ${./claude-code-scripts}/context-status $out/bin/
+    cp ${./claude-code-scripts}/context-size.sh $out/bin/
     cp ${./claude-code-scripts}/compact-resume $out/bin/
     cp ${./claude-code-scripts}/herdr-renew $out/bin/
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
@@ -42,7 +44,7 @@ stdenv.mkDerivation {
     chmod +x $out/bin/*
 
     # Wrap scripts with runtime dependencies
-    for script in notify stop-continue compact-resume; do
+    for script in notify; do
       wrapProgram $out/bin/$script \
         --prefix PATH : ${
           lib.makeBinPath [
@@ -52,6 +54,25 @@ stdenv.mkDerivation {
         }
     done
 
+    wrapProgram $out/bin/stop-continue \
+      --prefix PATH : ${
+        lib.makeBinPath [
+          coreutils
+          git
+          jq
+          work-record
+        ]
+      }
+
+    wrapProgram $out/bin/compact-resume \
+      --prefix PATH : ${
+        lib.makeBinPath [
+          coreutils
+          jq
+          work-record
+        ]
+      }
+
     # Runs outside the sandbox, so nothing on the launching PATH, which holds
     # sandbox-writable directories, may be executed.
     wrapProgram $out/bin/herdr-renew \
@@ -60,6 +81,14 @@ stdenv.mkDerivation {
           coreutils
           jq
           work-record
+        ]
+      }
+
+    wrapProgram $out/bin/context-status \
+      --prefix PATH : ${
+        lib.makeBinPath [
+          coreutils
+          jq
         ]
       }
 
@@ -75,7 +104,10 @@ stdenv.mkDerivation {
   ];
   installCheckPhase = ''
     runHook preInstallCheck
+    HOME=$TMPDIR CONTEXT_STATUS_BIN=$out/bin/context-status bats ${./claude-code-scripts}/test-context-status-path.bats
     HOME=$TMPDIR HERDR_RENEW_BIN=$out/bin/herdr-renew bats ${./claude-code-scripts}/test-herdr-renew-path.bats
+    HOME=$TMPDIR STOP_CONTINUE_BIN=$out/bin/stop-continue bats ${./claude-code-scripts}/test-stop-continue-path.bats
+    HOME=$TMPDIR COMPACT_RESUME_BIN=$out/bin/compact-resume bats ${./claude-code-scripts}/test-compact-resume-path.bats
     runHook postInstallCheck
   '';
 

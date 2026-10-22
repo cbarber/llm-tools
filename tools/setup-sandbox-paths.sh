@@ -119,6 +119,7 @@ done
 
 mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
 mkdir -p "$HOME/.local/state/work-record" 2>/dev/null || true
+mkdir -p "$HOME/.cache/claude" 2>/dev/null || true
 
 mkdir -p "$HOME/.config/nixsmith/iron-proxy" 2>/dev/null || true
 
