@@ -24,6 +24,7 @@ pkgs.mkShell {
     export TOOLS_DIR="${../../tools}"
     export FENCE_PATH="${tools.fence}/bin/fence"
     export IRON_PROXY_PATH="${tools.iron-proxy}/bin/iron-proxy"
+    export HERDR_RENEW_PATH="${tools.claude-code-scripts}/bin/herdr-renew"
 
     source ${./setup-shell.sh}
   '';
