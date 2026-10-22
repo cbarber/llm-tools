@@ -98,6 +98,52 @@ points_to_resume() {
   [ -z "$output" ]
 }
 
+@test "a compaction confirms a pending Herdr renewal, which submits the single resume entry" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  renewal="$(dirname "$(work-record --cwd "$A" path)")/renewal"
+  echo '{"handoff": "h1", "session_id": "s1", "pane": "w9:p9", "state": "requested", "attempt": "a1"}' >"$renewal"
+  session_start "$A"
+  points_to_resume
+  [ "$(jq -c . "$renewal")" = '{"handoff":"h1","session_id":"s1","pane":"w9:p9","state":"compacted","attempt":"a1"}' ]
+  [[ "$(context)" == *"Herdr submits /mojo-resume as the next prompt"* ]]
+  [[ "$(context)" == *"do not invoke mojo-resume a second time"* ]]
+}
+
+@test "a compaction without a pending renewal leaves renewal state alone" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  renewal="$(dirname "$(work-record --cwd "$A" path)")/renewal"
+  echo '{"handoff": "h1", "session_id": "s1", "state": "compacted"}' >"$renewal"
+  session_start "$A"
+  points_to_resume
+  [ "$(jq -r .state "$renewal")" = compacted ]
+  [[ "$(context)" != *"Herdr submits"* ]]
+  echo '{"handoff": "h1", "session_id": "s1", "state": "requested"}' >"$renewal"
+  session_start "$A" startup
+  [ "$(jq -r .state "$renewal")" = requested ]
+}
+
+@test "another session's compaction does not confirm a renewal" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  renewal="$(dirname "$(work-record --cwd "$A" path)")/renewal"
+  for request in '{"handoff": "h1", "session_id": "s0", "state": "requested", "attempt": "a1"}' '{"handoff": "h1", "state": "requested", "attempt": "a1"}'; do
+    echo "$request" >"$renewal"
+    session_start "$A"
+    points_to_resume
+    [ "$(jq -r .state "$renewal")" = requested ]
+    [[ "$(context)" != *"Herdr submits"* ]]
+  done
+}
+
+@test "a request the helper has not armed is not confirmed" {
+  work-record --cwd "$A" init '.next_action = "implement TASK-1"' >/dev/null
+  renewal="$(dirname "$(work-record --cwd "$A" path)")/renewal"
+  echo '{"handoff": "h1", "session_id": "s1", "state": "requested"}' >"$renewal"
+  session_start "$A"
+  points_to_resume
+  [ "$(jq -r .state "$renewal")" = requested ]
+  [[ "$(context)" != *"Herdr submits"* ]]
+}
+
 @test "the template runs compact-resume only after compaction" {
   run jq -c '[.hooks.SessionStart[] | {matcher, commands: [.hooks[].command]}]' "$TEMPLATE"
   [ "$output" = '[{"matcher":"compact","commands":["compact-resume"]}]' ]

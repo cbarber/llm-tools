@@ -81,6 +81,24 @@ are different choices.
   This choice can change later.
 - Missing or failed reasoned handoff pauses for human intervention. No blind
   compaction fallback is approved; observe failures before automating around them.
+- The sandboxed agent never gets the Herdr socket: the agent is not trusted, and
+  the socket would let it drive any pane. A helper outside the sandbox, started
+  with Claude and exiting with it, owns all Herdr traffic for its own pane. The
+  agent only writes a renewal request beside its work record; the helper treats
+  it as untrusted, acts at most once per current handoff, and can submit only
+  `/compact` and `/mojo-resume`. The request names its pane solely so a helper
+  ignores other panes' requests; it is never a target.
+- The helper executes only from the Nix store: its PATH is pinned. Herdr comes
+  from a fixed path, `/run/current-system/sw/bin/herdr` unless the launching
+  shell sets `HERDR_RENEW_HERDR`, never from PATH, which holds sandbox-writable
+  directories. The helper starts only if every directory and symlink from `/`
+  to the file, and the file, is owned by root and no directory is writable by
+  others unless sticky. Lying in the Nix store proves nothing: the sandbox can
+  build into it as a trusted Nix user.
+- Herdr recognizes the sandboxed Claude by `HERDR_AGENT=claude`, which the Claude
+  Code shell exports in a Herdr pane; Herdr reads process environments, as it
+  does `HERDR_AGENT=opencode` for sandboxed OpenCode. Its Claude integration only
+  reports session identity, which is not relayed.
 - Waiting for a human decision and final human review are deliberate stops.
 - A background Claude session followed by attach was rejected.
 - Workspace/tab arrangement is organizational, not a context-renewal mechanism.

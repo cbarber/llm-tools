@@ -19,10 +19,33 @@ export SETTINGS_TEMPLATE="${SETTINGS_TEMPLATE}"
 # agent-sandbox there and the nested launch dies in bubblewrap, which cannot map
 # uids from the user namespace fence already created. Matches sandboxed-opencode.
 if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]]; then
-  sandboxed-claude() {
-    agent-sandbox claude "$@"
+  # Context renewal drives this pane through Herdr from outside the sandbox,
+  # which never gets the socket; the helper exits with the process PID.
+  # Herdr comes from a fixed path root controls, never from PATH, which holds
+  # sandbox-writable directories; HERDR_RENEW_HERDR in the launching shell
+  # overrides it under the same check. Detached with builtins alone.
+  start-renewal-helper() {
+    [[ -z "${IN_AGENT_SANDBOX:-}" && -n "${HERDR_SOCKET_PATH:-}" && -n "${HERDR_PANE_ID:-}" && -x "${HERDR_RENEW_PATH:-}" ]] || return 0
+    # Run from /, so no relative path resolves into the sandbox-writable checkout.
+    local herdr checkout=$PWD
+    herdr=$(cd / && "$HERDR_RENEW_PATH" --resolve-herdr "${HERDR_RENEW_HERDR:-/run/current-system/sw/bin/herdr}") || return 0
+    ( (
+      trap '' HUP
+      cd / || exit
+      exec "$HERDR_RENEW_PATH" --watch "$1" --herdr "$herdr" --cwd "$checkout"
+    ) </dev/null >/dev/null 2>&1 &)
   }
-  export -f sandboxed-claude
+  sandboxed-claude() {
+    (
+      start-renewal-helper "$BASHPID"
+      # agent-sandbox is a function, which exec would look up on PATH instead.
+      exec "$AGENT_SANDBOX_SCRIPT" claude "$@"
+    )
+  }
+  export -f start-renewal-helper sandboxed-claude
+  # Herdr does not detect the sandboxed process as Claude without it, as for
+  # sandboxed-opencode.
+  [[ -n "${HERDR_PANE_ID:-}" ]] && export HERDR_AGENT=claude
 fi
 
 ${SETUP_SETTINGS_SCRIPT}
@@ -34,6 +57,7 @@ elif [[ "${AUTO_LAUNCH:-true}" == "true" ]]; then
   if declare -f sandboxed-claude >/dev/null 2>&1; then
     echo "Launching Claude Code in sandbox (disable with AGENT_SANDBOX=false)..."
     # Equivalent to sandboxed-claude, but exec'able: a function cannot be exec'd.
+    start-renewal-helper "$$"
     exec "$AGENT_SANDBOX_SCRIPT" claude --allow-dangerously-skip-permissions --dangerously-skip-permissions --add-dir "$HOME/.agents/skills/"
   else
     exec claude

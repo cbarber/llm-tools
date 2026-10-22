@@ -2,8 +2,12 @@
   lib,
   stdenv,
   makeWrapper,
+  bats,
+  coreutils,
+  git,
   jq,
   libnotify,
+  work-record,
 }:
 
 stdenv.mkDerivation {
@@ -29,6 +33,7 @@ stdenv.mkDerivation {
     cp ${./claude-code-scripts}/notify $out/bin/
     cp ${./claude-code-scripts}/stop-continue $out/bin/
     cp ${./claude-code-scripts}/compact-resume $out/bin/
+    cp ${./claude-code-scripts}/herdr-renew $out/bin/
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
     cp ${./claude-code-scripts}/git-to-bare-worktree $out/bin/
 
@@ -46,7 +51,31 @@ stdenv.mkDerivation {
         }
     done
 
+    # Runs outside the sandbox, so nothing on the launching PATH, which holds
+    # sandbox-writable directories, may be executed.
+    wrapProgram $out/bin/herdr-renew \
+      --set PATH ${
+        lib.makeBinPath [
+          coreutils
+          jq
+          work-record
+        ]
+      }
+
     runHook postInstall
+  '';
+
+  doInstallCheck = true;
+  nativeInstallCheckInputs = [
+    bats
+    git
+    jq
+    work-record
+  ];
+  installCheckPhase = ''
+    runHook preInstallCheck
+    HOME=$TMPDIR HERDR_RENEW_BIN=$out/bin/herdr-renew bats ${./claude-code-scripts}/test-herdr-renew-path.bats
+    runHook postInstallCheck
   '';
 
   meta = with lib; {

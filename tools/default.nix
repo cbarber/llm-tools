@@ -1,7 +1,7 @@
 { pkgs, backlog }:
 
 let
-  claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
+  claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { inherit work-record; };
   tea = pkgs.tea;
 
   spr = pkgs.callPackage ./spr { };
