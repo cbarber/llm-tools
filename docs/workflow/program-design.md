@@ -19,8 +19,11 @@ the example interfaces below are descriptive, not existing APIs.
 | Herdr renewal integration | Compact the current pane after handoff readiness, confirm renewal, then submit resume entry. |
 
 Use existing native mechanisms before adding glue. There is no custom executable
-Markdown renderer, transcript parser, worker fleet manager, or independent workflow
-framework in this plan.
+Markdown renderer, worker fleet manager, or independent workflow framework in this
+plan. The Stop hook takes the context size from the status line's per-session
+record, else from a read-only check of the latest main-conversation token usage
+in the transcript named by its hook input. That fallback is the only transcript
+reading, and the path is never stored.
 
 ## Claude renders executable skill initialization
 
@@ -182,7 +185,8 @@ cannot authorize the rejected blind fallback.
 
 The resume entry reuses the current pane. Capture agent/tool/session IDs through
 native results/hooks as supported, and use existing session tooling for selective
-historical context. No custom transcript reader is required. An old worker ID
+historical context. No transcript reader is required beyond the Stop hook's
+context-size fallback. An old worker ID
 is not automatically a valid continuation handle in a different parent session.
 
 Validate the native auto-compaction interaction, Stop timing, readiness detection,
@@ -192,7 +196,9 @@ background-session launch, same-pane clear, or emergency blind compaction.
 
 ## Reuse existing integration mechanisms
 
-These are researched candidates, not installed dependencies or adopted packages:
+These were researched candidates, not installed dependencies or adopted packages.
+[Decisions](decisions.md#researched-renewal-tools-are-not-installed) records why
+the four renewal tools were not used.
 
 | Candidate | Useful mechanism | Required adaptation/validation |
 | --- | --- | --- |

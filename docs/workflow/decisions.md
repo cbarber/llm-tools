@@ -81,6 +81,19 @@ are different choices.
   This choice can change later.
 - Missing or failed reasoned handoff pauses for human intervention. No blind
   compaction fallback is approved; observe failures before automating around them.
+- One threshold, 175k tokens of main-conversation context by default
+  (`CLAUDE_RENEWAL_TOKENS`), asks the session to finish its step and hand off;
+  when the status line records the context window, the threshold is capped at
+  60k below it, since Claude compacts a 200k window on its own at ~144k–167k;
+  without a current handoff the next stop pauses for the user. The pause holds
+  across later stops, hook-driven or not, until a handoff is current or context
+  drops below the threshold. Running background workers are not awaited: the
+  handoff lists them and their results arrive after renewal.
+- The Stop hook reads that size from the per-session record the status line
+  (`context-status`) writes under `~/.cache/claude`, else from the transcript
+  Claude names in the hook input, read-only and never stored. When neither gives
+  a size, that is reported, not ignored. The status line is a command Claude Code
+  runs that writes a local file, so it needs no Herdr access.
 - The sandboxed agent never gets the Herdr socket: the agent is not trusted, and
   the socket would let it drive any pane. A helper outside the sandbox, started
   with Claude and exiting with it, owns all Herdr traffic for its own pane. The
@@ -103,6 +116,26 @@ are different choices.
 - A background Claude session followed by attach was rejected.
 - Workspace/tab arrangement is organizational, not a context-renewal mechanism.
   Do not create a new tab or conversation for every sequential slice by default.
+
+## Researched renewal tools are not installed
+
+Their source was inspected while building renewal; the flow uses its own small
+pieces instead, for these reasons.
+
+- Herdr Context Meter: a Herdr plugin whose status line feeds a pane that joins
+  sessions to panes through `herdr agent list`. The Stop hook needs only its own
+  session's size, which `context-status` records without Herdr or a plugin.
+- Compact Handoff: its own Stop request and prompt advisory, with a mechanical
+  PreCompact note as the floor and handoff freshness judged by age and token
+  growth. A second Stop controller would compete with the one shared decision,
+  and neither the mechanical note nor age shows the handoff fits current work.
+- Safe Compact: a Herdr plugin that compacts any idle Claude pane it maps, and
+  past a hard threshold compacts without a handoff. That is the rejected blind
+  fallback; the helper here acts only on its own pane.
+- Claude auto-compactor: a daemon that compacts idle sessions through Herdr
+  before the prompt cache expires, with no handoff. Its lessons hold here: the
+  helper prompts only an idle agent and confirms compaction, not delivery, and
+  the transcript fallback counts no usage from before the last compaction.
 
 ## Keep continuation state small and reference-rich
 
