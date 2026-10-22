@@ -221,7 +221,7 @@ Primary platform contracts: [Claude skills](https://code.claude.com/docs/en/skil
 | `agents/claude-code/default.nix` and setup shell | Package selected Claude-native skills/helpers and entry environment. |
 | `agents/skills/mojo-*` | Authoritative policy sources; adapt executable initialization for Claude without writing a renderer. |
 | `tools/setup-shared-shell.sh` | Verify actual skill installation/discovery in Claude-recognized locations. |
-| `tools/agent-sandbox.sh` and `tools/setup-sandbox-paths.sh` | Verify allowed durable-store and Herdr socket access. |
+| `tools/agent-sandbox.sh` and `tools/setup-sandbox-paths.sh` | Verify allowed durable-store access; keep the Herdr socket out of the sandbox. |
 
 Recheck current files before editing. Documentation records a target, not a tested
 runtime. Preserve unrelated user work and use minimal edits.
