@@ -81,6 +81,14 @@ are different choices.
   This choice can change later.
 - Missing or failed reasoned handoff pauses for human intervention. No blind
   compaction fallback is approved; observe failures before automating around them.
+- One threshold, 175k tokens of main-conversation context by default
+  (`CLAUDE_RENEWAL_TOKENS`), asks the session to finish its step and hand off;
+  without a current handoff the next stop pauses for the user. Running
+  background workers are not awaited: the handoff lists them and their results
+  arrive after renewal.
+- The Stop hook reads that size from the transcript Claude names in the hook
+  input, read-only and never stored. A status-line meter would need Herdr access
+  from inside the sandbox. An unreadable transcript is reported, not ignored.
 - The sandboxed agent never gets the Herdr socket: the agent is not trusted, and
   the socket would let it drive any pane. A helper outside the sandbox, started
   with Claude and exiting with it, owns all Herdr traffic for its own pane. The

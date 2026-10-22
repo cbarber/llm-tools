@@ -7,20 +7,69 @@ set -euo pipefail
 # Nudges allowed while the record stays unchanged within one run of
 # hook-driven continuations; beyond this the stop is let through.
 MAX_NUDGES=3
+# Tokens of main-conversation context at which the session hands off for
+# renewal. A setting because the context window, and with it the point where
+# Claude compacts on its own, differs by model: the handoff turn must fit
+# below that point.
+RENEWAL_TOKENS=${CLAUDE_RENEWAL_TOKENS:-175000}
 
 input=$(cat)
 cwd=$(jq -r '.cwd // empty' <<<"$input")
 cwd=${cwd:-$PWD}
+# Said with whatever this stop decides, so renewal is never silently off.
+warning=""
 
 allow_stop() {
+  [[ -z "$warning" ]] || jq -n --arg w "$warning" '{systemMessage: $w}'
   exit 0
+}
+
+# Prints the hook's JSON from stdin with the warning added. It runs in a
+# pipeline, so the caller exits after it.
+respond() {
+  jq --arg w "$warning" 'if $w == "" then . else .systemMessage = ([.systemMessage // empty, $w] | join(" ")) end'
+}
+
+# Tokens in the main conversation's context: the latest main-chain usage
+# since the last compaction. The transcript is read, never recorded; fails
+# when it cannot be read.
+context_tokens() {
+  local transcript
+  transcript=$(jq -r '.transcript_path // empty' <<<"$input")
+  [[ -f "$transcript" && -r "$transcript" ]] || return 1
+  tail -n 500 "$transcript" | jq -Rn '
+    def usage: .message | if type == "object" then .usage else null end;
+    reduce (inputs | fromjson? | objects) as $e (null;
+      if $e.compactMetadata != null or $e.isCompactSummary == true then null
+      elif $e.isSidechain != true and ($e | usage | type) == "object" then ($e | usage)
+      else . end)
+    | if . == null then 0
+      else [.input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens, .output_tokens] | map(. // 0) | add
+      end' 2>/dev/null
+}
+
+# Asks the helper outside the sandbox, which owns this pane's Herdr
+# traffic, to renew once the turn settles. Written once per handoff so a
+# renewal in flight is not reset; sets requested when it writes.
+requested=false
+request_renewal() {
+  local state handoff tmp
+  state="$(dirname "$(work-record --cwd "$cwd" path)")/renewal"
+  handoff=$(work-record --cwd "$cwd" read | jq -r '.artifacts.handoff.record')
+  [[ "$(jq -r '.handoff // empty' "$state" 2>/dev/null)" != "$handoff" ]] || return 0
+  tmp=$(mktemp "$state.XXXXXX")
+  jq -n --arg h "$handoff" --arg s "$(jq -r '.session_id // empty' <<<"$input")" --arg p "$HERDR_PANE_ID" \
+    '{handoff: $h, session_id: $s, pane: $p, state: "requested"}' >"$tmp"
+  mv -f "$tmp" "$state"
+  requested=true
 }
 
 # A running background agent wakes the session when it finishes; nudging
 # now could dispatch duplicate work.
+worker_running=false
 if jq -e '[.background_tasks[]? | select(.status == "running" and (has("agent_type") or (.type | tostring | test("agent"))))] | length > 0' \
   <<<"$input" >/dev/null; then
-  allow_stop
+  worker_running=true
 fi
 
 status=0
@@ -37,9 +86,28 @@ case "$status" in
 esac
 [[ "$outcome" == continue ]] || allow_stop
 
-# A current handoff means the coordinator handed off and is waiting for
-# context renewal; any later record write makes it stale and nudging resumes.
-[[ "$(work-record --cwd "$cwd" handoff 2>/dev/null)" != current ]] || allow_stop
+tokens=$(context_tokens) || {
+  tokens=0
+  warning="Context size is unknown: the session transcript could not be read, so context renewal cannot start on its own. Hand off with mojo-handoff and renew by hand when the context is large."
+}
+
+# Continuation and renewal are decided here, once per stop, so they never
+# issue competing commands. A current handoff means the coordinator handed
+# off and waits for renewal; any later record write makes it stale and
+# nudging resumes.
+if [[ "$(work-record --cwd "$cwd" handoff 2>/dev/null)" == current ]]; then
+  if [[ "${HERDR_ENV:-}" == 1 && -n "${HERDR_PANE_ID:-}" ]]; then
+    request_renewal
+    $requested || allow_stop
+    # The helper may not be running; the user must not wait in silence.
+    jq -n '{systemMessage: "Context renewal requested: Herdr compacts this pane, then submits /mojo-resume. If nothing happens, renew by hand: /compact, then /mojo-resume."}' |
+      respond
+    exit 0
+  fi
+  jq -n '{systemMessage: "A reasoned handoff is current, but this session is not in a Herdr pane to renew it. Renew by hand: /compact, then /mojo-resume."}' |
+    respond
+  exit 0
+fi
 
 record_path=$(work-record --cwd "$cwd" path)
 record=$(work-record --cwd "$cwd" read)
@@ -48,21 +116,47 @@ record=$(work-record --cwd "$cwd" read)
 # a hook continuation (a human prompt, a background wake) starts a new count.
 state="$(dirname "$record_path")/stop-nudges"
 fingerprint=$(git hash-object --stdin <<<"$record")
-count=1
-if [[ "$(jq -r '.stop_hook_active // false' <<<"$input")" == true && -f "$state" ]]; then
-  read -r last_fingerprint last_count <"$state" || true
-  if [[ "${last_fingerprint:-}" == "$fingerprint" ]]; then
-    count=$((${last_count:-0} + 1))
-  fi
+active=$(jq -r '.stop_hook_active // false' <<<"$input")
+last_fingerprint="" last_count=0 last_kind=""
+if [[ "$active" == true && -f "$state" ]]; then
+  read -r last_fingerprint last_count last_kind _ <"$state" || true
 fi
-tmp=$(mktemp "${state}.XXXXXX")
-printf '%s %s\n' "$fingerprint" "$count" >"$tmp"
-mv -f "$tmp" "$state"
+
+save_state() {
+  local tmp
+  tmp=$(mktemp "${state}.XXXXXX")
+  printf '%s %s %s\n' "$fingerprint" "$1" "$2" >"$tmp"
+  mv -f "$tmp" "$state"
+}
+
+if ((tokens >= RENEWAL_TOKENS)); then
+  # The request was made and the agent stopped without a current handoff.
+  if [[ "${last_kind:-}" == handoff ]]; then
+    save_state 0 paused
+    jq -n --arg m "Context renewal paused: a reasoned handoff was requested at $tokens tokens but is not current ($(work-record --cwd "$cwd" handoff)). Write one with mojo-handoff, or renew by hand." \
+      '{systemMessage: $m}' | respond
+    exit 0
+  fi
+  save_state 0 handoff
+  jq -n --argjson tokens "$tokens" --argjson limit "$RENEWAL_TOKENS" '{
+    decision: "block",
+    reason: "Context holds \($tokens) tokens (renewal threshold \($limit)); hand off for renewal. Finish the step you are on without starting new work or dispatching workers beyond what that step needs, record progress in the work record, then invoke the mojo-handoff skill, naming every background worker still running, and stop: this pane is compacted and resumed from the handoff. Do not wait for running background workers first; their reports arrive in the renewed context."
+  }' | respond
+  exit 0
+fi
+
+$worker_running && allow_stop
+
+count=1
+if [[ "${last_fingerprint:-}" == "$fingerprint" && "${last_kind:-continue}" == continue ]]; then
+  count=$((${last_count:-0} + 1))
+fi
+save_state "$count" continue
 
 if ((count > MAX_NUDGES)); then
   jq -n --arg m "Stopped after $MAX_NUDGES continuation nudges without work-record progress ($record_path)." \
-    '{systemMessage: $m}'
-  allow_stop
+    '{systemMessage: $m}' | respond
+  exit 0
 fi
 
 jq -n --argjson r "$record" --arg path "$record_path" '{
@@ -70,4 +164,4 @@ jq -n --argjson r "$record" --arg path "$record_path" '{
   reason: ("Approved work in this checkout is unfinished. Continue from the work record (\($path)): next action: \($r.next_action)"
     + (if $r.current_ticket then " (current ticket \($r.current_ticket))" else "" end)
     + ". If a worker you dispatched is still running or its report is unreconciled, wait for or reconcile it; do not dispatch another. If a human decision is needed, record a human_gate and stop.")
-}'
+}' | respond

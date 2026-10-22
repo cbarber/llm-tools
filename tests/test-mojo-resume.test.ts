@@ -73,6 +73,9 @@ beforeAll(async () => {
     HOME: home,
     PATH: `${bin}:${process.env.PATH}`,
     WORK_RECORD_HOME: join(dir, "store"),
+    // stop-continue renews through Herdr when run in a pane; never here.
+    HERDR_ENV: "",
+    HERDR_PANE_ID: "",
     GIT_AUTHOR_NAME: "t",
     GIT_AUTHOR_EMAIL: "t@example.com",
     GIT_COMMITTER_NAME: "t",
@@ -142,8 +145,11 @@ describe("current handoff", () => {
     const stop = () =>
       sh(path, "bash", "-c", '"$0" <<<"$1"', join(root, "tools", "claude-code-scripts", "stop-continue"),
         JSON.stringify({ cwd: path, stop_hook_active: false }));
-    // Waiting for renewal: the Stop hook lets the handed-off context stop.
-    expect(await stop()).toBe("");
+    // Waiting for renewal: the Stop hook lets the handed-off context stop,
+    // and outside Herdr tells the user to renew by hand.
+    const waiting = JSON.parse(await stop());
+    expect(waiting.decision).toBeUndefined();
+    expect(waiting.systemMessage).toContain("Renew by hand");
 
     expect(await render(path)).toContain("Handoff: current");
     await documented(path, "Consume the handoff.");
