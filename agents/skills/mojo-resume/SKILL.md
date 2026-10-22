@@ -90,13 +90,16 @@ Act on the first case that applies:
       from before renewal, so invoke them again rather than recalling them.
    3. **Reconcile with Git.** Check the commits since the handoff and the
       working tree against the interrupted action. Commits from a worker
-      the handoff names as running are expected; anything else unexplained
-      is reconciled like a worker report before advancing, and a conflict
-      Git does not settle becomes a `human_gate`.
-   4. **Restore the interrupted action.** If the handoff names a running
-      worker, wait for its result rather than dispatching another. Otherwise
-      continue the record's `next_action` at the step the handoff describes,
-      under the reloaded skill.
+      the handoff lists under _Running workers_ are expected; anything else
+      unexplained is reconciled like a worker report before advancing, and a
+      conflict Git does not settle becomes a `human_gate`.
+   4. **Restore the interrupted action.** Each worker under _Running
+      workers_ survived the renewal: wait for its completion notification
+      and reconcile its report like any other; never dispatch it, or its
+      ticket and role, again. A listed worker that is no longer running and
+      never reported becomes a `human_gate`, not a re-dispatch. With no
+      running workers, continue the record's `next_action` at the step the
+      handoff describes, under the reloaded skill.
    5. **Stay within what was approved.** Decisions and approvals in the
       handoff stand. Work outside the approved scope still needs a
       `human_gate`.

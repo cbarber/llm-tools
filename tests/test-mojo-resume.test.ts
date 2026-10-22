@@ -119,6 +119,22 @@ describe("current handoff", () => {
     expect(out).not.toContain("Command execution failed");
   });
 
+  it("shows the workers that run through renewal so they are awaited, not re-dispatched", async () => {
+    const path = await repo("workers");
+    await sh(path, "work-record", "init", '.current_ticket = "TASK-1" | .next_action = "reconcile TASK-1 review round 0"');
+    await handoff(
+      path,
+      "# Handoff: TASK-1\n\n## Interrupted action\nWaiting on review.\n\n## Running workers\n- a7f3 TASK-1 reviewer, round 0 report\n",
+    );
+
+    const out = await render(path);
+    expect(out).toContain("Handoff: current");
+    expect(out).toContain("## Running workers\n- a7f3 TASK-1 reviewer, round 0 report");
+    const skill = await readFile(join(root, "agents", "skills", "mojo-resume", "SKILL.md"), "utf8");
+    expect(skill).toMatch(/_Running\s+workers_ survived the renewal: wait for its completion notification/);
+    expect(skill).toMatch(/never dispatch it, or its\s+ticket and role, again/);
+  });
+
   it("consumes the handoff so premature stops continue and a second renewal pauses", async () => {
     const path = await repo("consumed");
     await sh(path, "work-record", "init", '.current_ticket = "TASK-1" | .next_action = "implement TASK-1"');

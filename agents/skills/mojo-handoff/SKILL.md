@@ -54,9 +54,15 @@ artifacts instead of copying them, and keep it short:
 HEAD: <full SHA from above>
 
 ## Interrupted action
-<What was in progress and how far it got: the skill and step, the worker
-dispatched (agent id) and whether it is still running, the report or
-proposal awaiting reconciliation. How to pick it up without repeating it.>
+<What was in progress and how far it got: the skill and step, the report
+or proposal awaiting reconciliation. How to pick it up without repeating it.>
+
+## Running workers
+<Each background worker still running, one per line: agent id, ticket,
+role (implementer, reviewer, fixup), and the report it will return. Or
+"none". Workers keep running through compaction and report afterwards, so
+renewal does not wait for them; the resumed context must not dispatch
+them again.>
 
 ## Next action
 <The record's next_action, and why it is next.>
