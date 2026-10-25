@@ -43,6 +43,10 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
     )
   }
   export -f start-renewal-helper sandboxed-claude
+  # The sandbox bounds what rm can reach, so these unanswerable bypass-mode
+  # prompts only stall unattended agents.
+  export CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT=1
+  export CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT=1
   # Herdr does not detect the sandboxed process as Claude without it, as for
   # sandboxed-opencode.
   [[ -n "${HERDR_PANE_ID:-}" ]] && export HERDR_AGENT=claude
