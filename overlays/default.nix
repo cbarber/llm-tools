@@ -14,7 +14,7 @@ let
   opencode = {
     version = "1.18.21";
     srcHash = "sha256-WKG/lts+wzDjYJ5pOZ0X4Kb0rJ1TzYQzQgjyQBY+bxs=";
-    nodeModulesHash = "sha256-dGASaxZnxzJZY1PuDeqQCnYgMm2gEf5HZQsWOnt2JaU=";
+    nodeModulesHash = "sha256-smOt2xqIi6ROAoX5wSGQ3DlqoGXpe7mqI8VB1XXQHrk=";
   };
 
   # ============================================================================
@@ -23,7 +23,7 @@ let
   claude-code = {
     version = "2.1.91";
     srcHash = "sha256-u7jdM6hTYN05ZLPz630Yj7gI0PeCSArg4O6ItQRAMy4=";
-    npmDepsHash = "sha256-0ppKP+XMgTzVVZtL7GDsOjgvSPUDrUa7SoG048RLaNg=";
+    npmDepsHash = "";
   };
 
 in
