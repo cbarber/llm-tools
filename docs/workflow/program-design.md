@@ -255,7 +255,8 @@ Dex outline. Publish actual implementation tickets through the selected Pocock f
 - Actual successful compaction is distinguished from terminal input acknowledgment.
 - Handoff failure pauses for the user; no integration uses blind fallback.
 - Current-pane handoff/compact/resume restores the interrupted permitted action.
-- Agent completion stops at final human review, with Mojo-compliant retained history.
+- Agent completion pushes a draft pull request and stops at final human review,
+  with Mojo-compliant retained history.
 
 Choose exact thresholds and operational tuning from these checks. Do not expand
 the continuation record to solve speculative failures before observing them.

@@ -278,12 +278,19 @@ Record each reviewer's agent id in `.agents` with `role: "reviewer"`.
   ```
 
   Run _Review and correction_ with the integrated result as its scope. Once it
-  passes, record completion and stop for final human review with a summary of
-  tickets, commits, review outcomes, and open concerns:
+  passes, publish the branch for final human review as a draft pull request,
+  which also starts the forge's agent reviews. The body summarizes tickets,
+  review outcomes, and open concerns; record the PR, then completion:
 
   ```bash
-  work-record record '.complete = true | .current_ticket = null | .next_action = null'
+  git push -u origin "$(git branch --show-current)"
+  forge pr create --draft --title "<summary>" --body "<summary body>"
+  work-record record '.artifacts.pull_request = $u | .complete = true
+    | .current_ticket = null | .next_action = null' --arg u "<PR URL>"
   ```
+
+  Stop for final human review with the PR link and the same summary. A push
+  or PR failure is a `human_gate`, not a retry.
 
 - **Remaining tickets blocked or missing:** record a `human_gate` naming them
   and stop.
