@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Claude Code SessionStart hook (compact): points a compacted session at the
+# mojo-resume entry when its checkout has unfinished coordinated work.
+
+set -euo pipefail
+
+input=$(cat)
+cwd=$(jq -r '.cwd // empty' <<<"$input")
+cwd=${cwd:-$PWD}
+
+[[ "$(jq -r '.source // "compact"' <<<"$input")" == compact ]] || exit 0
+
+# Confirms to the waiting herdr-renew that the compaction really happened;
+# its own delivery of /compact proves only that keys were typed. Only the
+# session that requested the renewal can confirm it, and only after the
+# helper armed it with the attempt it submitted /compact for, which the
+# confirmation carries.
+renewal="$(dirname "$(work-record --cwd "$cwd" path)")/renewal"
+session=$(jq -r '.session_id // empty' <<<"$input")
+entry="Before anything else, invoke the mojo-resume skill, unless it is already being invoked"
+if [[ -n "$session" && -f "$renewal" ]] &&
+  jq -e --arg s "$session" '.state == "requested" and .session_id == $s and (.attempt | type == "string")' "$renewal" >/dev/null 2>&1; then
+  tmp=$(mktemp "$renewal.XXXXXX")
+  jq '.state = "compacted"' "$renewal" >"$tmp"
+  mv -f "$tmp" "$renewal"
+  entry="Herdr submits /mojo-resume as the next prompt: that is the resume entry, so do not invoke mojo-resume a second time. If the next prompt is anything else, invoke the mojo-resume skill before acting on it"
+fi
+
+status=0
+outcome=$(work-record --cwd "$cwd" check 2>/dev/null) || status=$?
+case "$status" in
+0) [[ "$outcome" != complete ]] || exit 0 ;;
+4) outcome=inconsistent ;;
+*) exit 0 ;;
+esac
+
+# Only a pointer: the skill itself loads the record, handoff, and
+# workflow skills when invoked.
+jq -n --arg path "$(work-record --cwd "$cwd" path)" --arg outcome "$outcome" --arg entry "$entry" '{
+  hookSpecificOutput: {
+    hookEventName: "SessionStart",
+    additionalContext: ("Context was just compacted while this checkout has coordinated work (work record \($path), continuation: \($outcome)). \($entry), and act only on what it reloads; do not continue from the compaction summary. A pending human gate stays pending.")
+  }
+}'

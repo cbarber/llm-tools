@@ -32,13 +32,16 @@ _dbg "sourcing setup-sandbox-paths.sh"
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 _dbg "setup-sandbox-paths.sh done"
 
+export OPENCODE_AUTH_CONTENT="{}"
+export CLAUDE_AUTH_DENY_CANONICAL=false
 if [[ "${1:-}" == "opencode" || "${1:-}" == */opencode ]]; then
   # shellcheck source=setup-opencode-auth.sh
   source "${TOOLS_DIR:-$(dirname "$0")}/setup-opencode-auth.sh"
-else
-  export OPENCODE_AUTH_CONTENT="{}"
+elif [[ "${1:-}" == "claude" || "${1:-}" == */claude ]]; then
+  # shellcheck source=setup-claude-auth.sh
+  source "${TOOLS_DIR:-$(dirname "$0")}/setup-claude-auth.sh"
 fi
-unset NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+unset NIXSMITH_OPENCODE_OAUTH_PROVIDERS NIXSMITH_CLAUDE_OAUTH
 
 # ── Locate fence ─────────────────────────────────────────────────────────────
 _dbg "locating fence binary"
@@ -98,6 +101,13 @@ _deny_read=(
   "${HOME}/.local/share/opencode/auth.json"
   "${HOME}/.ssh"
 )
+# Claude Code's credential file is only withheld once its OAuth values have been
+# handed over through the environment; otherwise the agent still needs the file
+# to complete and persist its own browser login.
+if [[ "${CLAUDE_AUTH_DENY_CANONICAL:-false}" == "true" ]]; then
+  _deny_read+=("${HOME}/.claude/.credentials.json")
+fi
+unset CLAUDE_AUTH_DENY_CANONICAL
 _deny_write=("${_deny_read[@]}")
 _deny_write+=("${HOME}/.config/nixsmith/iron-proxy")
 if git rev-parse --git-dir >/dev/null 2>&1; then

@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Durable outside any checkout so a record survives worktree removal and is
+# reachable from every agent shell.
+STORE="${WORK_RECORD_HOME:-$HOME/.local/state/work-record}"
+
+EXIT_USAGE=2
+EXIT_MISSING=3
+EXIT_INCONSISTENT=4
+
+show_help() {
+  cat <<EOF
+work-record - Coordinator's per-checkout work record (work.json)
+
+Usage: work-record [--cwd DIR] COMMAND [ARGS]
+
+Commands:
+  path                 Print the record file for the checkout
+  init [FILTER [JQ_ARGS...]]
+                       Create the record (fails if one exists); FILTER must
+                       set next_action or human_gate
+  read                 Print the record after checking it is consistent
+  record FILTER [JQ_ARGS...]
+                       Apply a jq FILTER to the record and replace it
+                       atomically; an inconsistent result is rejected, e.g.
+                         work-record record '.next_action = \$a' --arg a "review TASK-1"
+  check                Print continue | wait-for-human | complete
+                       (a pending human_gate wins over complete)
+  handoff [FILE]       With FILE, link it as the reasoned handoff for the
+                       record as it stands; without, print current | stale |
+                       missing (stale after any record write since linking)
+
+Options:
+  --cwd DIR            Resolve the checkout from DIR instead of \$PWD
+
+The checkout is the git top-level of DIR (or DIR itself outside git), so
+each clone or worktree resolves its own record. Only the coordinator writes;
+workers return reports.
+
+Record fields the helper interprets:
+  checkout           Absolute checkout path (set by the helper)
+  branch             Branch the work lives on (set by init)
+  current_ticket     Ticket in progress, or null
+  next_action        What the coordinator does next, or null
+  human_gate         Reason the workflow waits for a human, or null
+  correction_round   Correction rounds spent on the current ticket/review
+  complete           true once all approved agent work is done
+  revision           Write counter: every init and record write bumps it
+                     (set by the helper), so any write stales a handoff
+  artifacts.handoff  {path, record}: the handoff and the record state it
+                     describes (set by handoff FILE)
+Other fields (artifacts, agents, ...) are stored as given.
+
+Exit codes:
+  0  success
+  2  usage error or a rejected update
+  3  no record for this checkout
+  4  record is inconsistent; reconcile before continuing
+EOF
+}
+
+die() {
+  local code="$1"
+  shift
+  echo "work-record: $*" >&2
+  exit "$code"
+}
+
+resolve_checkout() {
+  local dir="$1" top
+  [[ -d "$dir" ]] || die "$EXIT_USAGE" "no such directory: $dir"
+  if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
+    (cd "$top" && pwd -P)
+  else
+    (cd "$dir" && pwd -P)
+  fi
+}
+
+current_branch() {
+  git -C "$CHECKOUT" symbolic-ref --short -q HEAD 2>/dev/null || true
+}
+
+# The basename keeps the store browsable; the hash keeps same-named
+# checkouts apart. The record's own checkout field catches collisions.
+record_dir() {
+  local hash
+  hash=$(printf '%s' "$CHECKOUT" | git hash-object --stdin)
+  echo "${STORE}/$(basename "$CHECKOUT")-${hash:0:12}"
+}
+
+# Prints one problem per line for the JSON on stdin; empty means consistent.
+problems() {
+  jq -rs --arg checkout "$CHECKOUT" '
+    if length != 1 or (.[0] | type) != "object" then "record must be a single JSON object" else .[0] |
+      (if .checkout != $checkout then "checkout is \(.checkout | tojson), expected \($checkout | tojson)" else empty end),
+      # Not compared with HEAD: rebases detach it, and the work may live on a
+      # worker branch while the coordinator stays put.
+      (if (.branch | . == null or (type == "string" and length > 0)) | not then "branch must be null or a non-empty string" else empty end),
+      (if (.human_gate | . == null or (type == "string" and length > 0)) | not then "human_gate must be null or a non-empty string" else empty end),
+      (if (.next_action | . == null or (type == "string" and length > 0)) | not then "next_action must be null or a non-empty string" else empty end),
+      (if (.correction_round | type == "number" and . >= 0 and . == floor) | not then "correction_round must be a non-negative integer" else empty end),
+      (if (.complete | type == "boolean") | not then "complete must be a boolean" else empty end),
+      # Absent in records written before the counter existed.
+      (if (.revision | . == null or (type == "number" and . >= 0 and . == floor)) | not then "revision must be a non-negative integer" else empty end),
+      (if .complete != true and .human_gate == null and .next_action == null then "no next_action, human_gate, or completion recorded" else empty end)
+    end
+  ' 2>/dev/null || echo "record is not valid JSON"
+}
+
+# Reads the record once into CONTENT so callers act on exactly what was
+# validated even if the coordinator replaces it meanwhile.
+load_consistent() {
+  [[ -f "$RECORD" ]] || die "$EXIT_MISSING" "no record for $CHECKOUT ($RECORD)"
+  CONTENT=$(<"$RECORD")
+  local found
+  found=$(problems <<<"$CONTENT")
+  [[ -z "$found" ]] || die "$EXIT_INCONSISTENT" "inconsistent record $RECORD:"$'\n'"$found"
+}
+
+# mkdir is atomic everywhere (flock is not on macOS); serializes writers so
+# read-modify-write updates are not lost.
+with_lock() {
+  local lock="${RECORD_DIR}/.lock" tries=0
+  until mkdir "$lock" 2>/dev/null; do
+    ((++tries > 100)) && die 1 "timed out waiting for $lock (remove it if no writer is running)"
+    sleep 0.05
+  done
+  # shellcheck disable=SC2064 # expand now; $lock is local
+  trap "rmdir '$lock' 2>/dev/null || true" EXIT
+  "$@"
+  rmdir "$lock"
+  trap - EXIT
+}
+
+# Applies FILTER [JQ_ARGS...] to CONTENT and atomically replaces the record:
+# readers see the old or the new file, never a partial write. The helper
+# owns revision: each write bumps it by REVISION_STEP, so even a write that
+# sets unchanged values is distinguishable from no write.
+REVISION_STEP=1
+apply_and_replace() {
+  local filter="${1:-.}" updated tmp found revision
+  shift || true
+  revision=$(jq --argjson step "$REVISION_STEP" '(.revision // 0) + $step' <<<"$CONTENT")
+  updated=$(jq --arg __checkout "$CHECKOUT" --argjson __revision "$revision" "$@" \
+    "($filter) | .checkout = \$__checkout | .revision = \$__revision" <<<"$CONTENT" 2>&1) ||
+    die "$EXIT_USAGE" "filter failed: $updated"
+  found=$(problems <<<"$updated")
+  [[ -z "$found" ]] || die "$EXIT_USAGE" "update rejected:"$'\n'"$found"
+  tmp=$(mktemp "${RECORD_DIR}/.work.json.XXXXXX")
+  printf '%s\n' "$updated" >"$tmp"
+  mv -f "$tmp" "$RECORD"
+  printf '%s\n' "$updated"
+}
+
+do_init() {
+  [[ ! -e "$RECORD" ]] || die "$EXIT_USAGE" "record already exists: $RECORD"
+  CONTENT=$(jq -n --arg checkout "$CHECKOUT" --arg branch "$(current_branch)" '{
+    checkout: $checkout,
+    branch: (if $branch == "" then null else $branch end),
+    current_ticket: null,
+    next_action: null,
+    human_gate: null,
+    correction_round: 0,
+    complete: false,
+    revision: 0,
+    artifacts: {},
+    agents: []
+  }')
+  apply_and_replace "$@"
+}
+
+do_record() {
+  load_consistent
+  apply_and_replace "$@"
+}
+
+# Identifies the record state a handoff describes. The link itself is left
+# out, and absent, null, and empty artifacts count as the same state, so
+# linking (which creates artifacts) does not change it.
+handoff_fingerprint() {
+  # A record written before the counter existed is linked at revision 0.
+  jq -cS '
+    .revision //= 0
+    | if (.artifacts | type) == "object" then .artifacts |= del(.handoff) else . end
+    | if .artifacts == null or .artifacts == {} then del(.artifacts) else . end
+  ' <<<"$CONTENT" | git hash-object --stdin
+}
+
+do_link_handoff() {
+  load_consistent
+  jq -e '.artifacts | . == null or type == "object"' <<<"$CONTENT" >/dev/null ||
+    die "$EXIT_USAGE" "artifacts must be an object to link a handoff"
+  # Linking describes the record state rather than changing it, so it keeps
+  # the revision the fingerprint was taken at.
+  REVISION_STEP=0
+  # shellcheck disable=SC2016 # jq variables, not shell
+  apply_and_replace '.artifacts.handoff = {path: $path, record: $record}' \
+    --arg path "$1" --arg record "$(handoff_fingerprint)"
+}
+
+handoff_state() {
+  local path
+  path=$(jq -r '.artifacts | objects | .handoff | objects | .path | strings' <<<"$CONTENT")
+  if [[ -z "$path" || ! -s "$path" ]]; then
+    echo missing
+  elif [[ "$(jq -r '.artifacts.handoff.record | strings' <<<"$CONTENT")" != "$(handoff_fingerprint)" ]]; then
+    echo stale
+  else
+    echo current
+  fi
+}
+
+main() {
+  local dir="$PWD"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --cwd)
+      [[ $# -ge 2 ]] || die "$EXIT_USAGE" "--cwd needs a directory"
+      dir="$2"
+      shift 2
+      ;;
+    -h | --help | help)
+      show_help
+      return
+      ;;
+    *) break ;;
+    esac
+  done
+  [[ $# -gt 0 ]] || {
+    show_help >&2
+    exit "$EXIT_USAGE"
+  }
+
+  CHECKOUT=$(resolve_checkout "$dir")
+  RECORD_DIR=$(record_dir)
+  RECORD="${RECORD_DIR}/work.json"
+
+  local command="$1"
+  shift
+  case "$command" in
+  path) echo "$RECORD" ;;
+  init)
+    mkdir -p "$RECORD_DIR"
+    with_lock do_init "$@"
+    ;;
+  read)
+    load_consistent
+    printf '%s\n' "$CONTENT"
+    ;;
+  record)
+    [[ $# -ge 1 ]] || die "$EXIT_USAGE" "record needs a jq filter"
+    with_lock do_record "$@"
+    ;;
+  check)
+    load_consistent
+    jq -r '
+      if .human_gate != null then "wait-for-human"
+      elif .complete then "complete"
+      else "continue" end
+    ' <<<"$CONTENT"
+    ;;
+  handoff)
+    if [[ $# -eq 0 ]]; then
+      load_consistent
+      handoff_state
+      return
+    fi
+    [[ -f "$1" && -s "$1" ]] || die "$EXIT_USAGE" "handoff is missing or empty: $1"
+    local file
+    file="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
+    with_lock do_link_handoff "$file"
+    ;;
+  *) die "$EXIT_USAGE" "unknown command: $command (see work-record --help)" ;;
+  esac
+}
+
+main "$@"

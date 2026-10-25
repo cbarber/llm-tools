@@ -26,7 +26,7 @@ buildGoModule {
   nativeBuildInputs = [ makeWrapper ];
 
   # fence requires bubblewrap and socat at runtime on Linux
-  postInstall = lib.optionalString stdenv.isLinux ''
+  postInstall = lib.optionalString stdenv.hostPlatform.isLinux ''
     wrapProgram $out/bin/fence \
       --prefix PATH : ${
         lib.makeBinPath [

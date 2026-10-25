@@ -130,6 +130,15 @@ describe("temper plugin — mojo-init", () => {
     }
     expect(count).toBe(1);
   });
+
+  it("renders its ! block instead of injecting the commands", () => {
+    const tasks = taskRequests(history);
+    const mojoInit = tasks[tasks.length - 1].request.messages.find(
+      (m) => m.role === "user" && m.content.includes("# mojo-init")
+    );
+    expect(mojoInit?.content).toContain("Git status:");
+    expect(mojoInit?.content).not.toContain("```!");
+  });
 });
 
 describe("temper plugin — mojo-commit (9a9d417 regression)", () => {

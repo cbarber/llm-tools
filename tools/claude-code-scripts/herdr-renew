@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+# Renews a sandboxed Claude Code session's context in its own Herdr pane:
+# /compact, confirm the compaction, then submit the mojo-resume entry.
+# Runs outside the sandbox, started by the Claude Code shell before it
+# launches Claude, and exits with the process it watches. The sandbox never
+# gets the Herdr socket; the agent can only ask, through the renewal state
+# beside its work record, and everything read from there is untrusted.
+# The package pins PATH to the Nix store, and herdr is run only by the
+# absolute path given: the launching PATH holds sandbox-writable directories.
+#
+# Usage: herdr-renew --watch PID --herdr PATH [--cwd DIR]   (targets $HERDR_PANE_ID)
+#        herdr-renew --resolve-herdr CANDIDATE   (prints the trusted file or refuses)
+
+set -euo pipefail
+
+SETTLE_SECONDS=${RENEW_SETTLE_SECONDS:-3}
+TURN_TIMEOUT_MS=${RENEW_TURN_TIMEOUT_MS:-600000}
+COMPACT_TIMEOUT_SECONDS=${RENEW_COMPACT_TIMEOUT_SECONDS:-1800}
+START_TIMEOUT_MS=${RENEW_START_TIMEOUT_MS:-30000}
+POLL_SECONDS=${RENEW_POLL_SECONDS:-2}
+# Bounds every read of sandbox-writable files: a FIFO or a stalled read must
+# not keep the helper from noticing that Claude exited.
+READ_TIMEOUT_SECONDS=${RENEW_READ_TIMEOUT_SECONDS:-5}
+# Outside the sandbox's writable paths, so the agent cannot redirect it.
+LOG=${RENEW_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/claude-code/renewal.log}
+LOG_LINES=1000
+
+# Herdr is trusted only through a chain root controls: /, every directory
+# and symlink it resolves through, and the file, all owned by root, and no
+# directory writable by others unless sticky (as /nix/store), where only an
+# entry's owner may replace it. PATH and the Nix store alone prove nothing:
+# the sandbox writes PATH directories and can build into the store.
+if [[ "${1:-}" == --resolve-herdr ]]; then
+  candidate=${2:-}
+  shift 2 || shift
+  trusted=(0)
+  # For tests only, which run unprivileged where root may show as nobody.
+  while [[ "${1:-}" == --trust-uid && -n "${2:-}" ]]; do
+    trusted+=("$2")
+    shift 2
+  done
+  refuse() {
+    echo "herdr-renew: herdr at '$candidate' is not trusted: $1; context renewal is off for this session" >&2
+    exit 1
+  }
+  # Sets kind to the file type of $1 once it passes.
+  check() {
+    local info uid mode u
+    info=$(stat -c '%u %a %F' -- "$1" 2>/dev/null) || refuse "$1 does not exist"
+    read -r uid mode kind <<<"$info"
+    for u in "${trusted[@]}"; do [[ "$uid" == "$u" ]] && break; done
+    [[ "$uid" == "$u" ]] || refuse "$1 is owned by uid $uid, not root"
+    case "$kind" in
+    "symbolic link") ;;
+    directory) ((!(8#$mode & 8#022) || 8#$mode & 8#1000)) || refuse "$1 is writable by others" ;;
+    "regular file") ((!(8#$mode & 8#022))) || refuse "$1 is writable by others" ;;
+    *) refuse "$1 is a $kind" ;;
+    esac
+  }
+  [[ "$candidate" == /* ]] || refuse "not an absolute path"
+  check /
+  resolved="" rest=$candidate links=0
+  while rest=${rest#"${rest%%[!/]*}"} && [[ -n "$rest" ]]; do
+    [[ "$kind" == directory ]] || refuse "$resolved is not a directory"
+    part=${rest%%/*}
+    rest=${rest#"$part"}
+    case "$part" in
+    .) continue ;;
+    ..)
+      resolved=${resolved%/*}
+      continue
+      ;;
+    esac
+    check "$resolved/$part"
+    if [[ "$kind" == "symbolic link" ]]; then
+      ((++links <= 40)) || refuse "too many symlinks"
+      target=$(readlink -- "$resolved/$part")
+      [[ "$target" != /* ]] || resolved=""
+      rest=$target$rest
+      kind=directory
+      continue
+    fi
+    resolved+=/$part
+  done
+  [[ "$kind" == "regular file" && -x "$resolved" ]] || refuse "${resolved:-/} is not an executable file"
+  echo "$resolved"
+  exit 0
+fi
+
+cwd=$PWD watch="" herdr=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --cwd) cwd=$2 ;;
+  --watch) watch=$2 ;;
+  --herdr) herdr=$2 ;;
+  *)
+    echo "usage: herdr-renew --watch PID --herdr PATH [--cwd DIR]" >&2
+    exit 2
+    ;;
+  esac
+  shift 2
+done
+[[ "$watch" =~ ^[0-9]+$ ]] || {
+  echo "herdr-renew: --watch needs the PID of the Claude process" >&2
+  exit 2
+}
+# Captured from the launching shell, never from anything the agent writes.
+pane=${HERDR_PANE_ID:-}
+[[ -n "$pane" ]] || exit 0
+[[ "$herdr" == /* && -x "$herdr" ]] || {
+  echo "herdr-renew: --herdr needs the absolute path of herdr" >&2
+  exit 2
+}
+
+mkdir -p "$(dirname "$LOG")"
+if [[ -f "$LOG" ]] && (($(wc -l <"$LOG") > LOG_LINES)); then
+  tail -n $((LOG_LINES / 2)) "$LOG" >"$LOG.tmp" && mv -f "$LOG.tmp" "$LOG"
+fi
+exec 2>>"$LOG"
+
+handoff=""
+
+log() {
+  printf '%s %s %s\n' "$(date '+%F %T')" "$pane" "$*" >&2
+}
+
+bounded() {
+  timeout -k 1 "$READ_TIMEOUT_SECONDS" "$@"
+}
+
+# Written by stop-continue (request) and compact-resume (confirmation):
+# {handoff, session_id, pane, state: requested | compacted}.
+state_file="$(dirname "$(bounded work-record --cwd "$cwd" path)")/renewal"
+# The record directory as it must physically be: directly in the record
+# store, resolved before Claude starts. The sandbox can write the directory
+# and swap it for a symlink, so writes check it again.
+state_dir="$(readlink -f -- "${WORK_RECORD_HOME:-$HOME/.local/state/work-record}")/$(basename "$(dirname "$state_file")")"
+
+# The handoff fingerprint the record links, as work-record stores it.
+linked_handoff() {
+  bounded work-record --cwd "$cwd" read 2>/dev/null | jq -r '.artifacts.handoff.record // empty' 2>/dev/null || true
+}
+
+# The handoff this renewal was started for is still the current one.
+handoff_holds() {
+  [[ "$(bounded work-record --cwd "$cwd" handoff 2>/dev/null)" == current && "$(linked_handoff)" == "$handoff" ]]
+}
+
+# Prints the request's handoff when it is for this pane and well formed.
+request_field() {
+  [[ -f "$state_file" ]] || return 0
+  # shellcheck disable=SC2016 # jq variables, not shell
+  bounded jq -r --arg pane "$pane" --arg want "$1" '
+    select(type == "object" and .pane == $pane and (.handoff | type == "string" and test("^[0-9a-f]{40,64}$")))
+    | if .state == $want then .handoff else empty end' "$state_file" 2>/dev/null || true
+}
+
+# Marks the request with this attempt for compact-resume to carry into its
+# confirmation. Accepted risk: the sandbox can read the attempt and forge
+# the confirmation without compacting; the worst outcome is /mojo-resume
+# typed into an idle, uncompacted session.
+# Writes through the record directory held open as the working directory,
+# once it is physically $state_dir, so no symlink planted later is
+# followed: the temp name is unguessable and created exclusively, mv -T
+# replaces a link at renewal rather than following it, and the request is
+# rebuilt from checked fields, never copied from what renewal points at.
+# Residual: the sandbox can still move the directory within its own
+# writable paths, so the write lands somewhere it could write anyway.
+arm() {
+  (
+    cd -P -- "$state_dir" 2>/dev/null && [[ "$(env pwd -P)" == "$state_dir" ]] || exit 1
+    local session tmp
+    # shellcheck disable=SC2016 # jq variables, not shell
+    session=$(bounded jq -r --arg pane "$pane" --arg h "$handoff" '
+      select(type == "object" and .pane == $pane and .handoff == $h) | .session_id | strings' renewal 2>/dev/null) &&
+      [[ -n "$session" ]] || exit 1
+    tmp=renewal.$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
+    set -C
+    # shellcheck disable=SC2016 # jq variables, not shell
+    jq -n --arg h "$handoff" --arg s "$session" --arg p "$pane" --arg a "$1" \
+      '{handoff: $h, session_id: $s, pane: $p, state: "requested", attempt: $a}' >"$tmp" &&
+      mv -f -T -- "$tmp" renewal
+  )
+}
+
+# Prints the attempt compact-resume confirmed for this pane's handoff.
+confirmed_attempt() {
+  [[ -f "$state_file" ]] || return 0
+  # shellcheck disable=SC2016 # jq variables, not shell
+  bounded jq -r --arg pane "$pane" --arg h "$handoff" '
+    select(type == "object" and .pane == $pane and .handoff == $h and .state == "compacted")
+    | .attempt | strings' "$state_file" 2>/dev/null || true
+}
+
+# No fallback: the work and the handoff stay as they are for the user.
+pause() {
+  log "paused: $1"
+  "$herdr" notification show "Context renewal paused" --body "$1. $2" >/dev/null 2>&1 || true
+  exit 1
+}
+
+before_compact() {
+  pause "$1" "The handoff is preserved; renew by hand (/compact, then /mojo-resume) or continue."
+}
+
+after_compact() {
+  pause "$1" "Context was compacted; submit /mojo-resume by hand unless the session already resumed."
+}
+
+agent_status() {
+  "$herdr" agent "$@" 2>/dev/null | jq -r '.result.agent.agent_status // empty' 2>/dev/null || true
+}
+
+# Input typed during a turn is queued as a message, not run as a command.
+settled() {
+  local status
+  status=$(agent_status wait "$pane" --timeout "$TURN_TIMEOUT_MS")
+  [[ "$status" == idle || "$status" == "done" ]] || {
+    echo "agent is ${status:-unreachable}, not idle"
+    return 1
+  }
+  sleep "$SETTLE_SECONDS"
+  status=$(agent_status get "$pane")
+  [[ "$status" == idle || "$status" == "done" ]] || {
+    echo "agent is ${status:-unreachable}, not idle"
+    return 1
+  }
+}
+
+# One renewal of $handoff; any failure pauses. Runs in a subshell so a
+# pause ends only this attempt.
+renew() {
+  local why
+  log "renewing handoff $handoff"
+  why=$(settled) || before_compact "before /compact: $why"
+  handoff_holds || before_compact "the handoff changed before /compact"
+  [[ "$(pending)" == "$handoff" ]] || before_compact "the renewal request changed before /compact"
+  # A compaction counts only when confirmed for this attempt, so a
+  # `compacted` written beforehand cannot skip /compact.
+  local attempt
+  attempt=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
+  arm "$attempt" || before_compact "the renewal request could not be armed"
+  "$herdr" agent prompt "$pane" /compact >/dev/null 2>&1 || before_compact "/compact was not delivered"
+
+  # Delivery only acknowledges the keystrokes; a compaction is observed when
+  # Claude starts the compacted session and compact-resume records it.
+  local deadline=$((SECONDS + COMPACT_TIMEOUT_SECONDS))
+  until [[ "$(confirmed_attempt)" == "$attempt" ]]; do
+    ((SECONDS < deadline)) || pause "no compaction observed within ${COMPACT_TIMEOUT_SECONDS}s of submitting /compact" \
+      "If compaction is still running, submit /mojo-resume once it finishes; otherwise the handoff is preserved: renew by hand (/compact, then /mojo-resume) or continue."
+    kill -0 "$watch" 2>/dev/null || exit 0
+    sleep "$POLL_SECONDS"
+  done
+
+  why=$(settled) || after_compact "after compaction: $why"
+  handoff_holds || pause "the handoff changed after compaction" "The session moved on from the handoff; nothing was submitted."
+  [[ "$(agent_status prompt "$pane" /mojo-resume --wait --until working --timeout "$START_TIMEOUT_MS")" == working ]] ||
+    after_compact "/mojo-resume did not start a turn"
+  log "resumed handoff $handoff"
+}
+
+pending() {
+  local found
+  found=$(request_field requested)
+  [[ -n "$found" ]] || found=$(request_field compacted)
+  echo "$found"
+}
+
+# Every handoff attempted in this helper's lifetime: at most one attempt
+# per handoff, whatever the state file says later. A request left from an
+# earlier session is not this session's to act on.
+declare -A attempted=()
+handoff=$(pending)
+[[ -z "$handoff" ]] || attempted[$handoff]=1
+log "watching $state_file for pid $watch"
+while kill -0 "$watch" 2>/dev/null; do
+  handoff=$(pending)
+  if [[ -n "$handoff" && -z "${attempted[$handoff]:-}" ]] && handoff_holds; then
+    attempted[$handoff]=1
+    (renew) || true
+  fi
+  sleep "$POLL_SECONDS"
+done
+log "pid $watch exited"
