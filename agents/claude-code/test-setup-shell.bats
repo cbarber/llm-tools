@@ -74,3 +74,8 @@ started() {
   grep -qx -- "$SCRATCH/checkout claude --x" "$SCRATCH/helper.log"
   [ ! -e "$SCRATCH/pwned" ]
 }
+
+@test "the sandboxed launch turns off the unanswerable rm prompts" {
+  run "$BASH" -c 'echo "$CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT $CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT"'
+  [ "$output" = "1 1" ]
+}
