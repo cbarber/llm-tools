@@ -4,6 +4,7 @@ title: Worker and reviewer rules live in the instructions
 status: To Do
 assignee: []
 created_date: '2026-10-26 01:58'
+updated_date: '2026-10-26 02:20'
 labels:
   - workflow
 dependencies: []
@@ -27,3 +28,9 @@ The implementer brief only pointed at mojo-commit, nothing verified it was follo
 - [ ] #3 Reconciliation checks each new commit's trailer and the standing rules against Git, and mojo-review's Standards axis checks the trailer
 - [ ] #4 mojo-commit no longer instructs a worker to push or open a PR; publishing belongs to the coordinator's or human's step
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Revised 2026-10-25: TASK-101 makes the sandbox add the Authored-By trailer, so briefs only note that it is automatic and reconciliation checks it is present; the rest stands.
+<!-- SECTION:NOTES:END -->
