@@ -90,6 +90,11 @@ _add_git_cfg() { _git_cfg_keys+=("$1"); _git_cfg_values+=("$2"); }
 _add_git_cfg "url.https://github.com/.insteadOf" "git@github.com:"
 _add_git_cfg "credential.https://github.com.helper" "!git-credential-nixsmith"
 
+# Every commit carries the agent's trailer whatever the agent was told. The
+# hooks live beside this script, in the Nix store, which the agent cannot write.
+SANDBOX_GIT_HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git-hooks"
+_add_git_cfg "core.hooksPath" "$SANDBOX_GIT_HOOKS_DIR"
+
 # Allowlisted identity/preference passthrough from the user's real gitconfig.
 # Deliberately narrow — the rest of the user's config is never read into the
 # sandbox; it can carry directives (an https->ssh url.insteadOf, diff.external,

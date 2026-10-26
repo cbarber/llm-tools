@@ -47,6 +47,8 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
   # prompts only stall unattended agents.
   export CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT=1
   export CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT=1
+  # Names the agent in the trailer the sandbox's commit hook adds.
+  export AUTHORED_BY_AGENT=claude-code
   # Herdr does not detect the sandboxed process as Claude without it, as for
   # sandboxed-opencode.
   [[ -n "${HERDR_PANE_ID:-}" ]] && export HERDR_AGENT=claude

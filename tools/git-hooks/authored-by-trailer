@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Stamps a sandboxed commit with the agent's Authored-By trailer unless it
+# reproduces an existing commit's change unaltered.
+# run-repo-hook runs it after the repository's own prepare-commit-msg;
+# --no-verify does not skip it.
+
+set -euo pipefail
+
+msg_file="$1"
+agent="${AUTHORED_BY_AGENT:-}"
+[[ -n "$agent" ]] || exit 0
+
+git_path_exists() { [[ -e "$(git rev-parse --git-path "$1")" ]]; }
+
+# Line numbers and context are left out, so a clean pick whose surrounding
+# lines changed upstream still matches; whitespace is kept, since it can carry
+# meaning; an empty change has no id.
+patch_id() { git patch-id --verbatim | cut -d' ' -f1; }
+
+# The commit this one may reproduce, and the parent it is committed on.
+original="" parent=HEAD
+if [[ "${2:-}" == "commit" ]]; then
+  # --amend without a new message passes HEAD, which it changes nothing in
+  # only when it commits HEAD's own tree; -c/-C name the reused commit.
+  if [[ "$(git rev-parse -q --verify "$3")" == "$(git rev-parse -q --verify HEAD)" ]]; then
+    ! git diff-index --cached --quiet HEAD || exit 0
+  else
+    original="$3"
+  fi
+elif git_path_exists rebase-merge/current-fixups; then
+  # A fixup or squash amends the pick before it, while REBASE_HEAD names the
+  # folded commit; the fold always alters the pick.
+  :
+elif git_path_exists CHERRY_PICK_HEAD; then
+  # cherry-pick, and rebase picks that apply cleanly.
+  original=CHERRY_PICK_HEAD
+elif git_path_exists rebase-merge; then
+  # A rebase stopped at a conflict or an edit names the stopped pick in
+  # REBASE_HEAD, which outlives the rebase, so it counts only while one runs.
+  # A merge it recreates is named only by its step, the last one done.
+  original=REBASE_HEAD step="" flag="" merged=""
+  read -r step flag merged _ < <(tail -n1 "$(git rev-parse --git-path rebase-merge/done)" 2>/dev/null) || true
+  [[ ! "$step" =~ ^(m|merge)$ || ! "$flag" =~ ^-[Cc]$ ]] || original="$merged"
+fi
+
+if [[ -n "$original" ]] && git rev-parse -q --verify "$original^{commit}" >/dev/null; then
+  parent="$(git rev-parse -q --verify "$parent^{commit}" || git hash-object -t tree /dev/null)"
+  change="$(git diff-index --cached -p -U0 "$parent" | patch_id)"
+  reproduced="$(git diff-tree -p -U0 --root --no-commit-id --diff-merges=first-parent "$original" | patch_id)"
+  [[ -z "$change" || "$change" != "$reproduced" ]] || exit 0
+fi
+
+# The agent's change invalidates any review of the commit it alters; a squash
+# leaves the review above the squashed message, so every such line goes.
+if grep -qi '^reviewed-by:' "$msg_file"; then
+  msg="$(grep -vi '^reviewed-by:' "$msg_file" || true)"
+  printf '%s\n' "$msg" >"$msg_file"
+fi
+
+# A trailer for this agent written by hand, with or without its model, already
+# names it; adding the hook's form beside it would duplicate the attribution.
+while IFS= read -r trailer; do
+  value="${trailer#Authored-By: }"
+  [[ "$trailer" != "$value" ]] || continue
+  [[ "$value" == "$agent" || "$value" == "$agent ("* ]] && exit 0
+done < <(git interpret-trailers --parse "$msg_file")
+
+git interpret-trailers --in-place --if-exists addIfDifferent \
+  --trailer "Authored-By: $agent${AUTHORED_BY_MODEL:+ ($AUTHORED_BY_MODEL)}" "$msg_file"

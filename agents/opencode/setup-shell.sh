@@ -19,6 +19,8 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
     agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"
   }
   export -f sandboxed-opencode
+  # Names the agent in the trailer the sandbox's commit hook adds.
+  export AUTHORED_BY_AGENT=opencode
 fi
 
 export AGENT_ENV_CONFIG_DIR="${HOME}/.config/opencode"

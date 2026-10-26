@@ -109,7 +109,7 @@ if [[ "${CLAUDE_AUTH_DENY_CANONICAL:-false}" == "true" ]]; then
 fi
 unset CLAUDE_AUTH_DENY_CANONICAL
 _deny_write=("${_deny_read[@]}")
-_deny_write+=("${HOME}/.config/nixsmith/iron-proxy")
+_deny_write+=("${HOME}/.config/nixsmith/iron-proxy" "$SANDBOX_GIT_HOOKS_DIR")
 if git rev-parse --git-dir >/dev/null 2>&1; then
   _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config
   [[ -f "$_git_cfg" ]] && _deny_write+=("$_git_cfg")
@@ -385,7 +385,7 @@ if [[ -n "${FENCE_LOG_FILE:-}" ]]; then
 fi
 
 _dbg "exec fence: $FENCE_BIN ${FENCE_ARGS[*]}"
-unset _git_cfg _deny_read _deny_write _system_ro
+unset _git_cfg _deny_read _deny_write _system_ro SANDBOX_GIT_HOOKS_DIR
 unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
 
 # Run fence as a child (not exec) so the EXIT trap fires and kills iron-proxy.
