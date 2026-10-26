@@ -103,3 +103,8 @@ STUB
   run "$BASH" -c 'echo "$CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT $CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT"'
   [ "$output" = "1 1" ]
 }
+
+@test "the sandboxed launch names the agent for the commit trailer" {
+  run "$BASH" -c 'echo "$AUTHORED_BY_AGENT"'
+  [ "$output" = "claude-code" ]
+}
