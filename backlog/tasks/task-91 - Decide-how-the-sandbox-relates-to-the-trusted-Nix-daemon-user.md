@@ -4,6 +4,7 @@ title: Decide how the sandbox relates to the trusted Nix daemon user
 status: To Do
 assignee: []
 created_date: '2026-10-25 01:21'
+updated_date: '2026-10-26 01:58'
 labels:
   - follow-up
   - claude-code
@@ -36,3 +37,9 @@ Alternatives:
 - [ ] #2 The sandbox's daemon access matches the decision
 - [ ] #3 Unless the risk is accepted, `nix store info` inside the sandbox reports Trusted: 0, and nix build still works there
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (human, 2026-10-25): user-level proxy, fail closed. The launching shell starts nix daemon --extra-experimental-features daemon-trust-override --force-untrusted --store daemon as the user, outside the sandbox; the sandbox gets only the proxy socket in place of the real one. If the proxy cannot start, the sandbox has no Nix daemon. Probe: inside the sandbox a user-run proxy reported Trusted: 0; a build through it was not shown (the proxy died on its second connection inside the sandbox's PID namespace), so verify outside.
+<!-- SECTION:NOTES:END -->

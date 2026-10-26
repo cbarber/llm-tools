@@ -4,6 +4,7 @@ title: No sandbox-writable directory precedes system paths on the launching PATH
 status: To Do
 assignee: []
 created_date: '2026-10-25 01:21'
+updated_date: '2026-10-26 01:58'
 labels:
   - follow-up
   - claude-code
@@ -27,3 +28,9 @@ Follow-up from TASK-66 reviews. .direnv/bin (in the checkout) and ~/.cargo/bin a
 - [ ] #1 Commands the agent shells run outside the sandbox cannot resolve to a file the sandbox can write
 - [ ] #2 A test plants a name in each sandbox-writable PATH dir and shows it is not run
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (human, 2026-10-25): agent-sandbox re-mounts read-only every launching-PATH directory that falls inside a writable sandbox mount.
+<!-- SECTION:NOTES:END -->

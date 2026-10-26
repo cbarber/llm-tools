@@ -1,11 +1,10 @@
 ---
 id: TASK-90
-title: >-
-  Files evaluated outside the sandbox at the next shell entry are not
-  sandbox-writable
+title: Record the accepted risk of sandbox edits evaluated at the next shell entry
 status: To Do
 assignee: []
 created_date: '2026-10-25 01:21'
+updated_date: '2026-10-26 01:58'
 labels:
   - follow-up
   - claude-code
@@ -26,5 +25,11 @@ Follow-up from TASK-66 reviews. The sandbox can edit flake.nix, .envrc and .env 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Edits the sandbox makes to these files cannot run code outside it without the human seeing them first
+- [ ] #1 docs/workflow/decisions.md records the accepted risk and why
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (human, 2026-10-25): unavoidable, and the same holds for any source code executed later. Record it as an accepted risk in docs/workflow/decisions.md.
+<!-- SECTION:NOTES:END -->
