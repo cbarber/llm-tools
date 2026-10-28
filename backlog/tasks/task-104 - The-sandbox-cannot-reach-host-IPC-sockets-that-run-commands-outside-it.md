@@ -1,9 +1,10 @@
 ---
 id: TASK-104
 title: The sandbox cannot reach host IPC sockets that run commands outside it
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-28 03:24'
+updated_date: '2026-10-28 03:39'
 labels:
   - security
   - claude-code
@@ -23,6 +24,12 @@ Found in TASK-91 review. fence on Linux has no Unix socket policy (allowUnixSock
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 /run/user/$UID/bus and /run/user/$UID/systemd/private are not connectable from inside the sandbox on Linux
-- [ ] #2 Every Unix socket reachable from inside the sandbox on Linux is listed in tools/SANDBOX.md with a decision (masked, or kept with the reason), including SSH_AUTH_SOCK, gpg-agent, and the system bus
+- [x] #2 Every Unix socket reachable from inside the sandbox on Linux is listed in tools/SANDBOX.md with a decision (masked, or kept with the reason), including SSH_AUTH_SOCK, gpg-agent, and the system bus
 - [ ] #3 A test shows a connect to the masked sockets fails for the masking reason, not any error
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC1 and AC3 await a run of the launch tests outside the sandbox (bats tools/test-agent-sandbox.bats); the sandbox that wrote them cannot start a nested one.
+<!-- SECTION:NOTES:END -->
