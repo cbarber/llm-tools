@@ -11,6 +11,7 @@ Agents run in a deny-by-default sandbox via [fence](https://github.com/fencesand
 | Agent config/cache dirs (`~/.config/opencode`, etc.) | read-write |
 | Git identity files (`~/.gitconfig`, `~/.ssh/known_hosts`) | read-only |
 | OS directories (`/usr`, `/bin`, `/lib`, `/nix`, etc.) | read-only |
+| Nix daemon socket | untrusted client |
 | `~/.ssh` (keys), `~/.gnupg` | **denied** |
 | Rest of home directory | **denied** |
 | Other project directories | **denied** |

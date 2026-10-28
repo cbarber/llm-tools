@@ -4,7 +4,7 @@ title: Decide how the sandbox relates to the trusted Nix daemon user
 status: To Do
 assignee: []
 created_date: '2026-10-25 01:21'
-updated_date: '2026-10-28 03:24'
+updated_date: '2026-10-28 03:25'
 labels:
   - follow-up
   - claude-code
@@ -33,8 +33,8 @@ Alternatives:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The decision is recorded in docs/workflow/decisions.md
-- [ ] #2 The sandbox's daemon access matches the decision
+- [x] #1 The decision is recorded in docs/workflow/decisions.md
+- [x] #2 The sandbox's daemon access matches the decision
 - [ ] #3 Unless the risk is accepted, `nix store info` inside the sandbox reports Trusted: 0, and nix build still works there
 <!-- AC:END -->
 

@@ -163,6 +163,22 @@ pieces instead, for these reasons.
   instructions and tool configuration take precedence. Select applicable guidance
   at entry for both implementers and fixup reviewers.
 
+## The user is not a trusted Nix user
+
+- The user is removed from Nix `trusted-users`; the sandbox keeps the plain
+  daemon socket and builds as an untrusted client. The change lives in the
+  human's NixOS configuration, outside this repository.
+- Nix grants trust per uid, and the sandbox shares the user's uid. A trusted
+  daemon is root-equivalent: it imports store paths with arbitrary contents.
+  Any escape from the sandbox to the user, such as the reachable systemd user
+  bus (TASK-104), would reach it.
+- An untrusted proxy daemon (`nix daemon --force-untrusted`) in front of the
+  sandbox was rejected: it guards only the socket path the sandbox sees, not
+  the uid, and macOS could not mask the real socket.
+- Costs: caches a flake requests must be listed system-wide in
+  `trusted-substituters` with their public keys, and restricted settings need
+  `sudo`, including from the user's own terminal.
+
 ## Explicitly excluded or deferred
 
 - No maintenance/debt register; concrete concerns become linked follow-up tickets.
