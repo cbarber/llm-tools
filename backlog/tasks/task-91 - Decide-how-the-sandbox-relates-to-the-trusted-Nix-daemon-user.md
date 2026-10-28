@@ -4,7 +4,7 @@ title: Decide how the sandbox relates to the trusted Nix daemon user
 status: To Do
 assignee: []
 created_date: '2026-10-25 01:21'
-updated_date: '2026-10-26 01:58'
+updated_date: '2026-10-28 03:24'
 labels:
   - follow-up
   - claude-code
@@ -42,4 +42,6 @@ Alternatives:
 
 <!-- SECTION:NOTES:BEGIN -->
 Decision (human, 2026-10-25): user-level proxy, fail closed. The launching shell starts nix daemon --extra-experimental-features daemon-trust-override --force-untrusted --store daemon as the user, outside the sandbox; the sandbox gets only the proxy socket in place of the real one. If the proxy cannot start, the sandbox has no Nix daemon. Probe: inside the sandbox a user-run proxy reported Trusted: 0; a build through it was not shown (the proxy died on its second connection inside the sandbox's PID namespace), so verify outside.
+
+Decision revised (human, 2026-10-27): remove cbarber from trusted-users instead of the proxy. Trust belongs to the uid, and the sandbox shares it, so any escape to the user outside the sandbox (the systemd user bus was found reachable) reached a trusted daemon; macOS also could not mask the socket. The proxy commits (b1eae31, 8108acf) were dropped. The trusted-users change is the human's, in their NixOS config; extra caches move to system-wide substituters/trusted-substituters. The sandbox keeps the plain daemon socket.
 <!-- SECTION:NOTES:END -->
