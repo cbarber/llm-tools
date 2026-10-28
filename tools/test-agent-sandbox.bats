@@ -104,6 +104,139 @@ setup_file() {
   [[ "$output" == *"Trusted: 0"* ]]
 }
 
+# TASK-104: fence masks a denied socket with /dev/null, so a masked path is a
+# character device that refuses connects; any other failure is not masking.
+SOCKET_PROBE='
+import errno, os, socket, stat, sys
+null = os.stat("/dev/null").st_rdev
+for path in sys.argv[1:]:
+    st = os.stat(path)
+    if stat.S_ISSOCK(st.st_mode):
+        kind = "socket"
+    elif stat.S_ISCHR(st.st_mode) and st.st_rdev == null:
+        kind = "devnull"
+    else:
+        kind = "other"
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(path)
+        result = "connected"
+    except OSError as e:
+        result = errno.errorcode.get(e.errno, str(e.errno))
+    finally:
+        s.close()
+    print(kind, result)
+'
+
+@test "host IPC sockets are in the deny list" {
+  local test_bin test_home
+  test_bin=$(mktemp -d)
+  test_home=$(mktemp -d)
+  mkdir -p "$test_home/.config/nixsmith"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'while [[ "$1" != "--" ]]; do' \
+    '  if [[ "$1" == "--settings" ]]; then settings="$2"; shift 2; else shift; fi' \
+    'done' \
+    'jq -r ".filesystem.denyRead[]" "$settings"' > "$test_bin/fence"
+  chmod +x "$test_bin/fence"
+
+  run env HOME="$test_home" FENCE_PATH="$test_bin/fence" \
+    XDG_RUNTIME_DIR=/run/user/4242 \
+    WAYLAND_DISPLAY=wayland-7 \
+    SSH_AUTH_SOCK=/tmp/ssh-test/agent.1 \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/tmp/dbus-test,guid=0" \
+    "$SANDBOX_SCRIPT" true
+  rm -rf "$test_bin" "$test_home"
+
+  [ "$status" -eq 0 ]
+  for path in \
+    /run/user/4242/bus \
+    /run/user/4242/systemd/private \
+    /run/user/4242/podman/podman.sock \
+    /run/user/4242/gnupg \
+    /run/user/4242/hypr \
+    /run/user/4242/wayland-7 \
+    /run/dbus/system_bus_socket \
+    /run/podman/podman.sock \
+    /tmp/.X11-unix \
+    /tmp/ssh-test/agent.1 \
+    /tmp/dbus-test; do
+    grep -Fqx "$path" <<< "$output"
+  done
+}
+
+@test "masked runtime sockets refuse connects inside the sandbox" {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    skip "path masking applies on Linux"
+  fi
+  local runtime_dir listener
+  runtime_dir=$(mktemp -d /tmp/sandbox-runtime-XXXXXX)
+  mkdir -p "$runtime_dir/systemd"
+  python3 -c '
+import socket, sys, time
+socks = []
+for path in sys.argv[1:]:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.bind(path)
+    s.listen()
+    socks.append(s)
+time.sleep(60)
+' "$runtime_dir/bus" "$runtime_dir/systemd/private" "$runtime_dir/unmasked" &
+  listener=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [[ -S "$runtime_dir/unmasked" ]] && break
+    sleep 0.2
+  done
+
+  run env XDG_RUNTIME_DIR="$runtime_dir" "$SANDBOX_SCRIPT" python3 -c "$SOCKET_PROBE" \
+    "$runtime_dir/bus" "$runtime_dir/systemd/private" "$runtime_dir/unmasked"
+  kill "$listener"
+  rm -rf "$runtime_dir"
+
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "devnull ECONNREFUSED" ]
+  [ "${lines[1]}" = "devnull ECONNREFUSED" ]
+  [ "${lines[2]}" = "socket connected" ]
+}
+
+@test "the user's systemd sockets refuse connects inside the sandbox" {
+  local runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  if [[ ! -S "$runtime_dir/bus" || ! -S "$runtime_dir/systemd/private" ]]; then
+    skip "no user bus or systemd manager socket under $runtime_dir"
+  fi
+
+  run "$SANDBOX_SCRIPT" python3 -c "$SOCKET_PROBE" \
+    "$runtime_dir/bus" "$runtime_dir/systemd/private"
+
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "devnull ECONNREFUSED" ]
+  [ "${lines[1]}" = "devnull ECONNREFUSED" ]
+}
+
+# The renewal helper owns all Herdr traffic: the socket would let the agent
+# drive any pane. Run from a Herdr pane, where HERDR_SOCKET_PATH is live.
+@test "the Herdr socket refuses connects inside the sandbox" {
+  if [[ ! -S "${HERDR_SOCKET_PATH:-}" ]]; then
+    skip "not in a Herdr pane: HERDR_SOCKET_PATH names no socket"
+  fi
+
+  run "$SANDBOX_SCRIPT" python3 -c '
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.connect(sys.argv[1])
+    print("connected")
+except OSError as e:
+    print("refused", e.errno)
+' "$HERDR_SOCKET_PATH"
+
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [[ "$output" == "refused "* ]]
+}
+
 @test "nix build works in the sandbox" {
   run "$SANDBOX_SCRIPT" nix build --impure --no-link --argstr nonce "$$-$RANDOM" --expr '
     { nonce }: derivation {
