@@ -97,6 +97,18 @@ setup_file() {
   [ "$status" -ne 0 ]
 }
 
+@test "nix build works in the sandbox" {
+  run "$SANDBOX_SCRIPT" nix build --impure --no-link --argstr nonce "$$-$RANDOM" --expr '
+    { nonce }: derivation {
+      name = "sandbox-build-${nonce}";
+      system = builtins.currentSystem;
+      builder = "/bin/sh";
+      args = [ "-c" "echo > $out" ];
+    }'
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
 @test "network access works" {
   if ! command -v curl &>/dev/null; then
     skip "curl not available"
