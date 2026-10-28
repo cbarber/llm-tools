@@ -36,7 +36,7 @@ Commit after edit. An atomic commit is self-contained, related, and fully-functi
 
 **Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
 
-**Before pushing:** review commits since branching with `git log --oneline origin/main..HEAD`. Squash any fix-of-fix chains into the commit they belong to using `--fixup` and `--autosquash`.
+**Before reporting:** review commits since branching with `git log --oneline origin/main..HEAD`. Commit a fix to an earlier branch commit with `git commit --fixup=<owning SHA>`; leave folding (`--autosquash`) to the publishing step.
 
 Write commit messages succinct and exact. Conventional Commits format. No fluff. Why over what.
 
@@ -73,11 +73,6 @@ Linux sandbox script only mounted legacy file, breaking XDG-only users.
 Authored-By: claude-code (claude-3.7-sonnet)
 ```
 
-When all commits are clean and work is complete: push and create a PR — do not ask for confirmation.
-
-```bash
-git push -u origin <branch>
-forge pr create --title "..." --body "..."
-```
-
-- Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
+When all commits are clean and work is complete, stop and report them.
+Do not push or open a PR: publishing belongs to the coordinator's or the
+human's step.
