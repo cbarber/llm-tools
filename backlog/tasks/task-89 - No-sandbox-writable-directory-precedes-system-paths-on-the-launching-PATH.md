@@ -1,10 +1,10 @@
 ---
 id: TASK-89
 title: No sandbox-writable directory precedes system paths on the launching PATH
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-25 01:21'
-updated_date: '2026-10-26 01:58'
+updated_date: '2026-11-01 01:04'
 labels:
   - follow-up
   - claude-code
@@ -33,4 +33,8 @@ Follow-up from TASK-66 reviews. .direnv/bin (in the checkout) and ~/.cargo/bin a
 
 <!-- SECTION:NOTES:BEGIN -->
 Decision (human, 2026-10-25): agent-sandbox re-mounts read-only every launching-PATH directory that falls inside a writable sandbox mount.
+
+AC2: the launch test "names planted in writable PATH directories are not run outside the sandbox" in tools/test-agent-sandbox.bats has not run; it needs a launch outside the sandbox (bats tools/test-agent-sandbox.bats).
+
+AC1 and AC2 both wait on the launch test run outside the sandbox: AC1 was checked without launch evidence and is unchecked until "names planted in writable PATH directories are not run outside the sandbox" passes (bats tools/test-agent-sandbox.bats).
 <!-- SECTION:NOTES:END -->

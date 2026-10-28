@@ -283,6 +283,249 @@ except OSError as e:
   [[ "$output" == *"invalid port in SANDBOX_LOCAL_OUTBOUND_PORTS: not-a-port"* ]]
 }
 
+# TASK-89: shells outside the sandbox run bare names through the launching
+# PATH, so no directory on it may stay writable from inside.
+deny_write_fence() {
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'while [[ "$1" != "--" ]]; do' \
+    '  if [[ "$1" == "--settings" ]]; then settings="$2"; shift 2; else shift; fi' \
+    'done' \
+    'jq -r ".filesystem.denyWrite[]" "$settings"' > "$1/fence"
+  chmod +x "$1/fence"
+}
+
+@test "writable PATH directories and their ancestors are re-mounted read-only" {
+  local test_bin test_home work other
+  test_bin=$(mktemp -d)
+  test_home=$(cd "$(mktemp -d)" && pwd -P)
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  other=$(cd "$(mktemp -d)" && pwd -P)
+  deny_write_fence "$test_bin"
+  mkdir -p "$test_home/.config/nixsmith" "$test_home/.cargo/bin" "$work/.direnv/bin" "$other/home-bin"
+  ln -s "$test_home/.cargo/bin" "$other/home-bin/cargo"
+
+  run bash -c 'cd "$1" && shift && exec env "$@"' _ "$work" \
+    HOME="$test_home" FENCE_PATH="$test_bin/fence" \
+    PATH="$work/.direnv/bin:$work/tools/bin:$test_home/.cargo/bin:$other/home-bin/cargo:$work/.direnv/bin:$PATH" \
+    "$SANDBOX_SCRIPT" true
+  local created=false
+  [[ -d "$work/tools/bin" ]] && created=true
+  rm -rf "$test_bin" "$test_home" "$work" "$other"
+
+  echo "# output: $output" >&3
+  [ "$status" -eq 0 ]
+  [ "$created" = true ]
+  for path in \
+    "$work/.direnv" \
+    "$work/.direnv/bin" \
+    "$work/tools" \
+    "$work/tools/bin" \
+    "$test_home/.cargo/bin"; do
+    [ "$(grep -Fcx "$path" <<< "$output")" -eq 1 ]
+  done
+  [ "$(grep -Fcx "$work" <<< "$output")" -eq 0 ]
+  [ "$(grep -Fcx "$test_home/.cargo" <<< "$output")" -eq 0 ]
+}
+
+@test "relative PATH entries are refused" {
+  local entry
+  for entry in "" "." "bin"; do
+    run env PATH="${entry}:$PATH" "$SANDBOX_SCRIPT" true
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"PATH entry '${entry}' is relative"* ]]
+  done
+}
+
+@test "a PATH entry that is a whole writable mount is refused" {
+  cd "$PROJECT_DIR"
+  run env PATH="$PROJECT_DIR:$PATH" "$SANDBOX_SCRIPT" true
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PATH entry $PROJECT_DIR is the writable sandbox mount"* ]]
+}
+
+@test "a PATH symlink held by a writable mount is refused" {
+  local work other
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  other=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$other/bin"
+  ln -s "$other" "$work/result"
+
+  run bash -c 'cd "$1" && shift && exec env "$@"' _ "$work" \
+    PATH="$work/result/bin:$PATH" "$SANDBOX_SCRIPT" true
+  rm -rf "$work" "$other"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlink $work/result sits in writable sandbox mount $work"* ]]
+}
+
+# Runs the sandbox from $1 with $1/.direnv/bin on PATH, under the fake fence.
+run_with_direnv_bin() {
+  local work=$1 test_bin
+  test_bin=$(mktemp -d)
+  deny_write_fence "$test_bin"
+  run bash -c 'cd "$1" && shift && exec env "$@"' _ "$work" \
+    FENCE_PATH="$test_bin/fence" PATH="$work/.direnv/bin:$PATH" "$SANDBOX_SCRIPT" true
+  rm -rf "$test_bin"
+}
+
+@test "a PATH directory symlink into a writable mount is refused" {
+  local work
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$work/.direnv/bin" "$work/tools"
+  ln -s ../../tools/foo "$work/.direnv/bin/foo"
+
+  run_with_direnv_bin "$work"
+  rm -rf "$work"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlink $work/.direnv/bin/foo resolves through $work/tools"* ]]
+}
+
+@test "a PATH directory symlink through a writable symlink is refused" {
+  local work bash_dir
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  bash_dir=$(dirname "$(readlink -f "$(command -v bash)")")
+  mkdir -p "$work/.direnv/bin"
+  ln -s "$bash_dir" "$work/result"
+  ln -s ../../result/bash "$work/.direnv/bin/bash"
+
+  run_with_direnv_bin "$work"
+  rm -rf "$work"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlink $work/.direnv/bin/bash: symlink $work/result sits in writable sandbox mount $work"* ]]
+}
+
+@test "a PATH entry with '..' after a missing directory is refused" {
+  local work
+  work=$(cd "$(mktemp -d)" && pwd -P)
+
+  run bash -c 'cd "$1" && shift && exec env "$@"' _ "$work" \
+    PATH="$work/missing/../bin:$PATH" "$SANDBOX_SCRIPT" true
+  rm -rf "$work"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"'..' follows $work/missing, which does not exist"* ]]
+}
+
+@test "a PATH directory symlink target with a newline is refused" {
+  local work target
+  for target in "real"$'\n'"/../../../tools/foo" "../a"$'\n'; do
+    work=$(cd "$(mktemp -d)" && pwd -P)
+    mkdir -p "$work/.direnv/bin/real"$'\n' "$work/tools"
+    : > "$work/.direnv/a"
+    ln -s "$work/tools/foo" "$work/.direnv/a"$'\n'
+    ln -s "$target" "$work/.direnv/bin/foo"
+
+    run_with_direnv_bin "$work"
+    rm -rf "$work"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"symlink $work/.direnv/bin/foo"*"newline"* ]]
+  done
+}
+
+@test "a hard-linked file in a PATH directory is refused" {
+  local work
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$work/.direnv/bin"
+  printf '#!/bin/sh\n' > "$work/foo"
+  ln "$work/foo" "$work/.direnv/bin/foo"
+
+  run_with_direnv_bin "$work"
+  rm -rf "$work"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$work/.direnv/bin/foo has more than one hard link"* ]]
+}
+
+@test "PATH directory symlinks to read-only or pinned files are accepted" {
+  local work
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$work/.direnv/bin"
+  ln -s "$(readlink -f "$(command -v bash)")" "$work/.direnv/bin/bash"
+  printf '#!/bin/sh\n' > "$work/.direnv/bin/foo-1"
+  ln -s foo-1 "$work/.direnv/bin/foo"
+  ln -s foo "$work/.direnv/bin/foo-link"
+
+  run_with_direnv_bin "$work"
+  rm -rf "$work"
+
+  [ "$status" -eq 0 ]
+}
+
+# Runs the sandbox from $1 with $2 on PATH, under the fake fence. $2 must lie
+# outside /tmp, so it is not a writable mount.
+run_with_outside_bin() {
+  local work=$1 bin=$2 test_bin
+  test_bin=$(mktemp -d)
+  deny_write_fence "$test_bin"
+  run bash -c 'cd "$1" && shift && exec env "$@"' _ "$work" \
+    FENCE_PATH="$test_bin/fence" PATH="$bin:$PATH" "$SANDBOX_SCRIPT" true
+  rm -rf "$test_bin"
+}
+
+@test "a symlink in an unpinned PATH directory into a writable mount is refused" {
+  local work outside="$PROJECT_DIR/.sandbox-path-test-$$"
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$outside/bin" "$work/tools"
+  ln -s "$work/tools/foo" "$outside/bin/foo"
+
+  run_with_outside_bin "$work" "$outside/bin"
+  rm -rf "$work" "$outside"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"symlink $outside/bin/foo resolves through "* ]]
+}
+
+@test "a symlink in an unpinned PATH directory into /nix/store is accepted" {
+  local work outside="$PROJECT_DIR/.sandbox-path-test-$$"
+  work=$(cd "$(mktemp -d)" && pwd -P)
+  mkdir -p "$outside/bin"
+  ln -s "$(readlink -f "$(command -v bash)")" "$outside/bin/bash"
+
+  run_with_outside_bin "$work" "$outside/bin"
+  rm -rf "$work" "$outside"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "names planted in writable PATH directories are not run outside the sandbox" {
+  local name="sandbox-planted-$$" scratch="$PROJECT_DIR/.sandbox-path-test-$$"
+  local test_path="$scratch/bin:$scratch/missing/bin:$PATH"
+  mkdir -p "$scratch/bin"
+  # Plants the name in every PATH directory, then tries to move a pinned
+  # ancestor aside and plant under the freed path.
+  local plant='
+    name=$1 scratch=$2
+    plant() { mkdir -p "$1" && printf "#!/bin/sh\necho planted\n" > "$1/$name" && chmod +x "$1/$name"; }
+    IFS=: read -ra dirs <<< "$3"
+    for dir in "${dirs[@]}"; do
+      plant "$dir" 2>/dev/null && echo "planted in $dir"
+    done
+    mv "$scratch" "$scratch.moved" 2>/dev/null && plant "$scratch/bin" && echo "planted after moving $scratch"
+    true'
+
+  run env PATH="$test_path" "$SANDBOX_SCRIPT" bash -c "$plant" _ "$name" "$scratch" "$test_path"
+  local sandbox_status=$status sandbox_output=$output
+  run -127 env PATH="$test_path" bash -c "$name"
+  local run_status=$status run_output=$output
+
+  local dirs dir
+  IFS=: read -ra dirs <<< "$test_path"
+  for dir in "${dirs[@]}"; do
+    [[ -f "$dir/$name" ]] && rm -f "$dir/$name"
+  done
+  rm -rf "$scratch" "$scratch.moved"
+
+  echo "# sandbox: $sandbox_output" >&3
+  echo "# outside: $run_output" >&3
+  [ "$sandbox_status" -eq 0 ]
+  [[ "$sandbox_output" != *planted* ]]
+  [ "$run_status" -eq 127 ]
+}
+
 @test "/proc is accessible on Linux" {
   if [[ "$(uname -s)" != "Linux" ]]; then
     skip "not applicable on $(uname -s)"

@@ -29,6 +29,25 @@ Key environment variables:
 - `SANDBOX_LOCAL_OUTBOUND_PORTS=5432:6379` — host loopback ports available inside Fence on Linux
 - `FENCE_PATH` — path to the `fence` binary (set by the nix shellHook)
 
+## Launching PATH
+
+Shells outside the sandbox run bare names through the PATH the agent was launched with, which can list directories the sandbox can write, such as `.direnv/bin` in the project or `~/.cargo/bin`. `agent-sandbox.sh` adds to `denyWrite` every PATH directory that resolves strictly inside a writable mount, and every directory between that mount and it; fence re-mounts `denyWrite` paths read-only after the writable mounts. Pinning the ancestors keeps the agent from renaming one aside and creating a fresh directory at the PATH location. A PATH directory that does not exist yet is created first, because fence skips missing paths. Inside the sandbox, `cargo install` and similar tools can no longer place binaries in those directories.
+
+The launch is refused when a PATH entry cannot be pinned:
+
+- a relative or empty entry (`.`, `bin`, or `::`), which follows the shell's working directory, usually the writable project;
+- an entry with `..` after a directory inside a writable mount that does not exist, because fence skips a missing path and the agent could create a symlink there that `..` then follows;
+- an entry that is itself a writable mount, such as the project root, because pinning it would make the whole mount read-only;
+- an entry that passes through a symlink held directly by a writable mount (a `result` link in the project), because a mount cannot cover a symlink and the agent could re-point it;
+- any PATH directory holding a symlink whose resolution passes through a path the sandbox can write (`.direnv/bin/foo -> ../../tools/foo`, `~/.local/bin/foo -> ~/src/project/foo`, or a link through a `result` symlink in the project), because a read-only mount, or none for a directory outside the writable mounts, covers the link but not its target;
+- a pinned PATH directory holding a non-directory with more than one hard link, because its other name may sit in a writable tree. This would also refuse rustup-style proxies, which hard-link one binary under each tool name.
+
+Symlinks resolving outside the writable mounts, such as into `/nix/store`, or to an entry of a pinned directory, are accepted. `/nix/store` is immutable, so PATH directories in it are not scanned and a path is not resolved further once it reaches a store object; a store symlink leading back into a writable mount is trusted. With today's PATH (about a hundred store directories, `.direnv/bin`, `~/.cargo/bin`) the checks add no measurable launch time; a directory outside the store with 1,689 symlinks through `/run/current-system` adds about 1.2 seconds.
+
+Hard links are refused only in pinned directories. A file in a directory outside the writable mounts is writable from the sandbox only if another of its names lies in one, which cannot be found without searching those mounts, and refusing every multiply linked file there would refuse ordinary system binaries. Such a hard link is not detected.
+
+The pins and entries are checked at launch from that PATH. A shell that later adds another sandbox-writable directory to its PATH is not covered.
+
 ## Unix Sockets
 
 On Linux fence has no Unix socket policy (`allowUnixSockets` is macOS-only) and binds `/run` read-only, so any socket the user can connect to on the host is reachable unless its path is hidden. `agent-sandbox.sh` adds each socket that acts outside the sandbox to `denyRead`; fence then binds `/dev/null` over a socket (a connect fails with `ECONNREFUSED` because the path is no longer a socket) or an empty tmpfs over a directory. Paths that do not exist at launch are skipped. `$RUNTIME` below is `$XDG_RUNTIME_DIR`, else `/run/user/$(id -u)`.
