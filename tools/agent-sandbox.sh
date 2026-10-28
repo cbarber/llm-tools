@@ -101,6 +101,42 @@ _deny_read=(
   "${HOME}/.local/share/opencode/auth.json"
   "${HOME}/.ssh"
 )
+# Host sockets that act outside the sandbox: run commands, sign as the user,
+# or drive input and audio. fence has no Unix socket policy on Linux, so each
+# is masked by path. The audit behind this list is in SANDBOX.md.
+_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+_deny_read+=(
+  "${_runtime_dir}/bus"
+  "${_runtime_dir}/systemd/private"
+  "${_runtime_dir}/systemd/io.systemd.Manager"
+  "${_runtime_dir}/podman/podman.sock"
+  "${_runtime_dir}/docker.sock"
+  "${_runtime_dir}/gcr/ssh"
+  "${_runtime_dir}/gcr/.ssh"
+  "${_runtime_dir}/gnupg"
+  "${_runtime_dir}/keyring"
+  "${_runtime_dir}/hypr"
+  "${_runtime_dir}/pipewire-0"
+  "${_runtime_dir}/pipewire-0-manager"
+  "${_runtime_dir}/pulse/native"
+  "${_runtime_dir}/voxtype/audio.sock"
+  "/run/dbus/system_bus_socket"
+  "/run/podman/podman.sock"
+  "/run/docker.sock"
+  "/run/tailscale/tailscaled.sock"
+  "/run/clamav/clamd.ctl"
+  "/tmp/.X11-unix"
+  "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
+)
+if [[ "${DBUS_SESSION_BUS_ADDRESS:-}" =~ unix:path=([^,;]+) ]]; then
+  _deny_read+=("${BASH_REMATCH[1]}")
+fi
+_wayland="${WAYLAND_DISPLAY:-wayland-0}"
+[[ "$_wayland" == /* ]] || _wayland="${_runtime_dir}/${_wayland}"
+for _sock in "$_wayland" "${SSH_AUTH_SOCK:-}" "${SWAYSOCK:-}" "${NIRI_SOCKET:-}"; do
+  [[ -n "$_sock" ]] && _deny_read+=("$_sock")
+done
+unset _runtime_dir _wayland _sock
 # Claude Code's credential file is only withheld once its OAuth values have been
 # handed over through the environment; otherwise the agent still needs the file
 # to complete and persist its own browser login.
