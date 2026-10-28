@@ -1,10 +1,10 @@
 ---
 id: TASK-99
 title: Worker and reviewer rules live in the instructions
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-26 01:58'
-updated_date: '2026-10-26 02:20'
+updated_date: '2026-10-28 02:29'
 labels:
   - workflow
 dependencies: []
@@ -23,10 +23,10 @@ The implementer brief only pointed at mojo-commit, nothing verified it was follo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The implementer brief states the commit rules it relies on (Conventional Commits form, Authored-By trailer, one concern per commit, fixup targeting) rather than only naming mojo-commit
-- [ ] #2 Implementer, reviewer and mojo-review axis sub-agent briefs carry the standing rules, including the commands that prompt even in bypass mode (rm on variable or glob paths, reading or writing ~/.claude or .claude/, Herdr sockets) and a scratch dir left in place
-- [ ] #3 Reconciliation checks each new commit's trailer and the standing rules against Git, and mojo-review's Standards axis checks the trailer
-- [ ] #4 mojo-commit no longer instructs a worker to push or open a PR; publishing belongs to the coordinator's or human's step
+- [x] #1 The implementer brief states the commit rules it relies on (Conventional Commits form, Authored-By trailer, one concern per commit, fixup targeting) rather than only naming mojo-commit
+- [x] #2 Implementer, reviewer and mojo-review axis sub-agent briefs carry the standing rules, including the commands that prompt even in bypass mode (rm on variable or glob paths, reading or writing ~/.claude or .claude/, Herdr sockets) and a scratch dir left in place
+- [x] #3 Reconciliation checks each new commit's trailer and the standing rules against Git, and mojo-review's Standards axis checks the trailer
+- [x] #4 mojo-commit no longer instructs a worker to push or open a PR; publishing belongs to the coordinator's or human's step
 <!-- AC:END -->
 
 ## Implementation Notes
