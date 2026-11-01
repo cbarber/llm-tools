@@ -1,9 +1,10 @@
 ---
 id: TASK-110
 title: mojo-commit and mojo-rebase leave the Authored-By trailer to the sandbox hook
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-01 02:22'
+updated_date: '2026-11-01 02:29'
 labels:
   - skills
 dependencies: []
@@ -18,6 +19,6 @@ mojo-commit (SKILL.md:64, example :73) and mojo-rebase (SKILL.md:44-48) tell age
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Neither skill tells agents to write Authored-By by hand or shows a hard-coded model
-- [ ] #2 Both say the sandbox adds the trailer, and what to do outside the sandbox
+- [x] #1 Neither skill tells agents to write Authored-By by hand or shows a hard-coded model
+- [x] #2 Both say the sandbox adds the trailer, and what to do outside the sandbox
 <!-- AC:END -->
