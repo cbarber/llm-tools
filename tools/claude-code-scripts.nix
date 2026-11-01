@@ -113,7 +113,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "Claude Code utility scripts for linting, testing, and notifications";
+    description = "Claude Code hooks (notify, work continuation, compaction resume, session model), the context status line, the Herdr context-renewal helper, and git-to-bare-worktree";
     license = licenses.mit;
     platforms = platforms.unix;
   };
