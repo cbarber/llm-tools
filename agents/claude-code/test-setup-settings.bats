@@ -309,5 +309,5 @@ stop_groups() {
   run_setup
   [ "$status" -eq 0 ]
   run jq -c '[.hooks.SessionStart[] | {matcher, commands: [.hooks[].command]}]' "$SETTINGS"
-  [ "$output" = '[{"matcher":"compact","commands":["compact-resume"]}]' ]
+  [ "$output" = '[{"matcher":"","commands":["session-model"]},{"matcher":"compact","commands":["compact-resume"]}]' ]
 }
