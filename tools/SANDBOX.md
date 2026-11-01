@@ -10,6 +10,7 @@ Agents run in a deny-by-default sandbox via [fence](https://github.com/fencesand
 | Temp workspace (`$AGENT_WORK_DIR`) | read-write |
 | Agent config/cache dirs (`~/.config/opencode`, etc.) | read-write |
 | Git identity files (`~/.gitconfig`, `~/.ssh/known_hosts`) | read-only |
+| direnv allows (`~/.local/share/direnv`) | read-only |
 | OS directories (`/usr`, `/bin`, `/lib`, `/nix`, etc.) | read-only |
 | Nix daemon socket | untrusted client |
 | `~/.ssh` (keys), `~/.gnupg` | **denied** |

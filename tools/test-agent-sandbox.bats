@@ -601,6 +601,15 @@ run_with_outside_bin() {
   [ "$status" -eq 0 ]
 }
 
+@test "direnv allows are readable but not writable" {
+  mkdir -p "$HOME/.local/share/direnv/allow"
+  run "$SANDBOX_SCRIPT" ls "$HOME/.local/share/direnv/allow"
+  [ "$status" -eq 0 ]
+  run "$SANDBOX_SCRIPT" bash -c 'touch ~/.local/share/direnv/allow/sandbox-test'
+  rm -f "$HOME/.local/share/direnv/allow/sandbox-test"
+  [ "$status" -ne 0 ]
+}
+
 @test "canonical OpenCode credentials are unreadable and unwritable" {
   local test_home
   test_home=$(mktemp -d)
