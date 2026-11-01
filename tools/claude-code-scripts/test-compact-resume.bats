@@ -145,6 +145,6 @@ points_to_resume() {
 }
 
 @test "the template runs compact-resume only after compaction" {
-  run jq -c '[.hooks.SessionStart[] | {matcher, commands: [.hooks[].command]}]' "$TEMPLATE"
+  run jq -c '[.hooks.SessionStart[] | select(any(.hooks[]; .command == "compact-resume")) | {matcher, commands: [.hooks[].command]}]' "$TEMPLATE"
   [ "$output" = '[{"matcher":"compact","commands":["compact-resume"]}]' ]
 }

@@ -35,6 +35,7 @@ stdenv.mkDerivation {
     cp ${./claude-code-scripts}/context-status $out/bin/
     cp ${./claude-code-scripts}/context-size.sh $out/bin/
     cp ${./claude-code-scripts}/compact-resume $out/bin/
+    cp ${./claude-code-scripts}/session-model $out/bin/
     cp ${./claude-code-scripts}/herdr-renew $out/bin/
     cp ${./claude-code-scripts}/common-helpers.sh $out/bin/
     cp ${./claude-code-scripts}/git-to-bare-worktree $out/bin/
@@ -44,7 +45,7 @@ stdenv.mkDerivation {
     chmod +x $out/bin/*
 
     # Wrap scripts with runtime dependencies
-    for script in notify; do
+    for script in notify session-model; do
       wrapProgram $out/bin/$script \
         --prefix PATH : ${
           lib.makeBinPath [

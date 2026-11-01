@@ -10,6 +10,15 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "session-model"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
