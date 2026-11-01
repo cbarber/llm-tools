@@ -23,7 +23,6 @@ Agents run in a deny-by-default sandbox via [fence](https://github.com/fencesand
 
 Key environment variables:
 
-- `AGENT_SANDBOX_BIND_HOME=true` — allow writes to the entire `$HOME` (breaks isolation)
 - `SANDBOX_EXTRA_RO=path1:path2` — additional read-only paths
 - `SANDBOX_EXTRA_RW=path1:path2` — additional read-write paths
 - `SANDBOX_LOCAL_OUTBOUND_PORTS=5432:6379` — host loopback ports available inside Fence on Linux

@@ -272,10 +272,6 @@ export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST
 export NIXSMITH_OPENCODE_OAUTH_PROVIDERS NIXSMITH_CLAUDE_OAUTH
 unset -f set_scoped_secrets
 
-if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
-  SANDBOX_MOUNTS_RW+=("$HOME")
-fi
-
 # Serialize mount lists into env vars so forge doctor can display them inside
 # the sandbox. Colon-separated, matching the SANDBOX_EXTRA_RO/RW convention.
 # These are injected via bwrap --setenv by the caller (agent-sandbox.sh).
