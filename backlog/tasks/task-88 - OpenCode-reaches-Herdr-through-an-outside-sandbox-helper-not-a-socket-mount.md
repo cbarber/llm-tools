@@ -1,9 +1,10 @@
 ---
 id: TASK-88
 title: 'OpenCode reaches Herdr through an outside-sandbox helper, not a socket mount'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-25 01:21'
+updated_date: '2026-11-01 02:41'
 labels:
   - follow-up
   - opencode
@@ -23,6 +24,6 @@ Follow-up from TASK-66. agents/opencode passes the Herdr socket into the sandbox
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The OpenCode sandbox no longer has the Herdr socket
-- [ ] #2 Whatever OpenCode needs from Herdr goes through a helper outside the sandbox that validates its requests
+- [x] #1 The OpenCode sandbox no longer has the Herdr socket
+- [x] #2 Whatever OpenCode needs from Herdr goes through a helper outside the sandbox that validates its requests
 <!-- AC:END -->
