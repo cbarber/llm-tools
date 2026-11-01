@@ -2,6 +2,9 @@
 name: mojo-complete
 description: Session completion checklist — fires when unpushed work remains
 once: true
+# Claude Code hides it: publishing is the coordinator's; OpenCode's temper still fires it.
+disable-model-invocation: true
+user-invocable: false
 triggers:
   - event: session.idle
     when: "git log origin/HEAD..HEAD --oneline 2>/dev/null | grep -q ."
