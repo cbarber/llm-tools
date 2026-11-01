@@ -179,6 +179,16 @@ pieces instead, for these reasons.
   `trusted-substituters` with their public keys, and restricted settings need
   `sudo`, including from the user's own terminal.
 
+## Sandbox edits run at the next shell entry: accepted risk
+
+- The sandbox can write the checkout, including `flake.nix`, `.envrc`, and
+  `.env`. The next `nix develop` or direnv load evaluates or sources them
+  outside the sandbox; `setup-shared-shell.sh` sources `.env`. An agent can
+  run code there, or set `HERDR_RENEW_HERDR` and `HERDR_RENEW_PATH` before
+  the renewal helper starts.
+- Accepted as unavoidable. The same holds for any source code from the
+  checkout the human executes later; the shell entry files are not a special case.
+
 ## Explicitly excluded or deferred
 
 - No maintenance/debt register; concrete concerns become linked follow-up tickets.

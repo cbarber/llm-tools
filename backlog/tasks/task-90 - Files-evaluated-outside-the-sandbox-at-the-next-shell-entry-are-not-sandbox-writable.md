@@ -1,10 +1,10 @@
 ---
 id: TASK-90
 title: Record the accepted risk of sandbox edits evaluated at the next shell entry
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-25 01:21'
-updated_date: '2026-10-26 01:58'
+updated_date: '2026-11-01 03:04'
 labels:
   - follow-up
   - claude-code
@@ -25,7 +25,7 @@ Follow-up from TASK-66 reviews. The sandbox can edit flake.nix, .envrc and .env 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 docs/workflow/decisions.md records the accepted risk and why
+- [x] #1 docs/workflow/decisions.md records the accepted risk and why
 <!-- AC:END -->
 
 ## Implementation Notes
