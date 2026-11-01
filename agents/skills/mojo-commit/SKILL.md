@@ -61,7 +61,7 @@ Write commit messages succinct and exact. Conventional Commits format. No fluff.
 - Emoji (unless project convention requires)
 - Restating the file name when scope already says it
 
-**Footer:** `Authored-By: <agent> (<model>)`
+**Footer:** the sandbox's commit hook adds `Authored-By: <agent> (<model>)`; do not write it, since the hook keeps a trailer already present. Outside the sandbox no hook runs: end the message with that trailer by hand, naming your own agent and model.
 
 **Example:**
 
@@ -69,8 +69,6 @@ Write commit messages succinct and exact. Conventional Commits format. No fluff.
 fix(sandbox): support XDG git config in Linux sandbox
 
 Linux sandbox script only mounted legacy file, breaking XDG-only users.
-
-Authored-By: claude-code (claude-3.7-sonnet)
 ```
 
 When all commits are clean and work is complete, stop and report them.
