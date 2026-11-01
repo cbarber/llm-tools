@@ -10,12 +10,32 @@ DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|
 source "${TOOLS_DIR}/common-helpers.sh"
 
 if [[ -n "${AGENTS_SKILLS_DIR:-}" && -d "${AGENTS_SKILLS_DIR}" ]]; then
+  # Other sources install into the same directory, so only skills named in
+  # this repo's manifest are ever removed.
+  skills_manifest="$HOME/.agents/skills/.llm-tools-installed"
+  installed_skills=()
   for skill_dir in "${AGENTS_SKILLS_DIR}"/*/; do
     skill_name=$(basename "$skill_dir")
     dest="$HOME/.agents/skills/${skill_name}"
     mkdir -p "$dest" 2>/dev/null || true
     rsync --checksum --recursive "${skill_dir}" "$dest/" 2>/dev/null || true
+    installed_skills+=("$skill_name")
   done
+  # Installed by the fsm branch before the manifest existed.
+  previous_skills=(mojo-create-pull-request mojo-update-pull-request mojo-review-response)
+  [[ -f "$skills_manifest" ]] && mapfile -t previous_skills <"$skills_manifest"
+  for skill_name in "${previous_skills[@]}"; do
+    [[ "$skill_name" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || continue
+    [[ " ${installed_skills[*]} " == *" ${skill_name} "* ]] && continue
+    dest="$HOME/.agents/skills/${skill_name}"
+    # The install only creates real directories; a symlink is someone else's.
+    [[ -L "$dest" ]] && continue
+    # Some installed skill directories are read-only.
+    chmod -R u+w "$dest" 2>/dev/null || true
+    rm -rf "$dest" 2>/dev/null || true
+  done
+  printf '%s\n' "${installed_skills[@]}" >"$skills_manifest" 2>/dev/null || true
+  unset skills_manifest installed_skills previous_skills
 fi
 
 [[ -f .env ]] && source .env
