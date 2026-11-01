@@ -118,6 +118,7 @@ unset _git_cfg_keys _git_cfg_values _i
 # shellcheck disable=SC2066
 for ro_path in \
   "$HOME/.agents" \
+  "$HOME/.local/share/direnv" \
   "$HOME/.config/nixsmith/iron-proxy"; do
   [[ -e "$ro_path" ]] && SANDBOX_MOUNTS_RO+=("$ro_path")
 done
@@ -147,7 +148,6 @@ for rw_path in \
   "$HOME/.gradle" \
   "$HOME/.hex" \
   "$HOME/.local/share/claude" \
-  "$HOME/.local/share/direnv" \
   "$HOME/.local/share/opencode" \
   "$HOME/.local/share/opentui" \
   "$HOME/.local/share/pnpm" \
