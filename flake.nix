@@ -31,12 +31,14 @@
         packages = {
           claude-code = import ./agents/claude-code { inherit pkgs tools; };
           opencode = import ./agents/opencode { inherit pkgs tools; };
+          work-record = tools.work-record;
         };
 
         devShells = {
           inherit pkgs tools;
           claude-code = self.packages.${system}.claude-code;
           opencode = self.packages.${system}.opencode;
+          claude-code-auth = import ./agents/claude-code/auth.nix { inherit pkgs; };
           opencode-auth = import ./agents/opencode/auth.nix { inherit pkgs; };
           default = pkgs.mkShell {
             name = "dev-shell";
@@ -44,20 +46,20 @@
               with pkgs;
               [
                 typescript
-                typescript-language-server
                 vtsls
                 bun
                 tools.spr
                 shellcheck
                 markdownlint-cli2
-                nixfmt-rfc-style
+                nixfmt
                 pre-commit
                 bats
                 opencode
                 tools.backlog
+                tools.work-record
                 tools.fence
               ]
-              ++ lib.optionals stdenv.isLinux [ bubblewrap ];
+              ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ];
           };
         };
       }

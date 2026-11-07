@@ -15,18 +15,6 @@ Running inside `nix develop .#opencode` or `nix develop .#claude-code` provides:
 
 Outside the nix shell, only this file is available.
 
-## Repository Structure
-
-```text
-llm-tools/
-├── flake.nix                    # Root flake exposing all agents
-├── agents/
-│   ├── claude-code/             # Claude Code shell environment
-│   ├── opencode/                # OpenCode shell environment
-├── tools/                       # Shared MCP servers and agent tools
-└── .opencode/plugin/temper      # OpenCode temper plugin
-```
-
 ## Architecture
 
 ### Agent Environments
@@ -46,15 +34,6 @@ The `tools/default.nix` framework allows:
 - Custom tool packaging with nix-init
 - Shared dependency management
 - Reproducible tool versions via flake.lock
-
-## Configuration
-
-Shell-generated files are created on first entry — edit the templates, not the outputs:
-
-| Generated file | Template source |
-| --- | --- |
-| `opencode.json` | `agents/opencode/setup-config.sh` |
-| `.claude/settings.local.json` | `agents/claude-code/settings.template.json` |
 
 ## Common Commands
 

@@ -190,3 +190,20 @@ teardown() {
   [ "$status" -eq 0 ]
   [ "$output" = 'gitea' ]
 }
+
+@test "forge warns when the needs-human-review label is not applied" {
+  git -C "$TEST_REPO" remote add origin git@github.com:cbarber/project.git
+  git -C "$TEST_REPO" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -q --allow-empty -m base
+  git -C "$TEST_REPO" update-ref refs/remotes/origin/main HEAD
+  git -C "$TEST_REPO" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  git -C "$TEST_REPO" checkout -q -b feature
+  git -C "$TEST_REPO" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -q --allow-empty -m 'feat: x' -m 'Authored-By: claude-code (test)'
+  printf '%s\n' '#!/usr/bin/env bash' 'case "$1 $2" in' '  "pr create") echo https://github.com/cbarber/project/pull/7 ;;' '  "pr edit") echo "could not add label: '"'"'needs-human-review'"'"' not found" >&2; exit 1 ;;' 'esac' > "$TEST_BIN/gh"
+  chmod +x "$TEST_BIN/gh"
+
+  run env -u IN_AGENT_SANDBOX -u ANTHROPIC_API_KEY HOME="$TEST_HOME" PATH="$TEST_BIN:$PATH" GH_TOKEN=test-token \
+    bash -c 'cd "$1"; "$2" pr create --title test' _ "$TEST_REPO" "$FORGE_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Warning: needs-human-review label not applied to https://github.com/cbarber/project/pull/7: could not add label: 'needs-human-review' not found"* ]]
+}

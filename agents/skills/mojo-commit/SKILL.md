@@ -16,7 +16,7 @@ triggers:
 
 # mojo-commit
 
-```bash {exec}
+```!
 default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
 current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
 
@@ -24,7 +24,8 @@ if [[ -n "$default_branch" && "$current_branch" == "$default_branch" ]]; then
   echo "⚠ You are on the default branch ($default_branch). Create a feature branch before committing."
 fi
 
-git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/${DEFAULT_BRANCH})"...
+# A failing command aborts Claude's skill load, so tolerate repos without origin.
+git log --oneline "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/${DEFAULT_BRANCH})"... || true
 ```
 
 Commit after edit. An atomic commit is self-contained, related, and fully-functional. Atomic does not mean granular — it means self-contained and intentional. Three commits that together implement one thing are not three atomic commits; they are one commit that leaked its drafts.
@@ -35,7 +36,7 @@ Commit after edit. An atomic commit is self-contained, related, and fully-functi
 
 **Atomicity check:** if your subject contains "and <verb>" (e.g. "fix X and update Y"), split it into two commits.
 
-**Before pushing:** review commits since branching with `git log --oneline origin/main..HEAD`. Squash any fix-of-fix chains into the commit they belong to using `--fixup` and `--autosquash`.
+**Before reporting:** review commits since branching with `git log --oneline origin/main..HEAD`. Commit a fix to an earlier branch commit with `git commit --fixup=<owning SHA>`; leave folding (`--autosquash`) to the publishing step.
 
 Write commit messages succinct and exact. Conventional Commits format. No fluff. Why over what.
 
@@ -60,7 +61,7 @@ Write commit messages succinct and exact. Conventional Commits format. No fluff.
 - Emoji (unless project convention requires)
 - Restating the file name when scope already says it
 
-**Footer:** `Authored-By: <agent> (<model>)`
+**Footer:** the sandbox's commit hook adds `Authored-By: <agent> (<model>)`; do not write it, since the hook keeps a trailer already present. Outside the sandbox no hook runs: end the message with that trailer by hand, naming your own agent and model.
 
 **Example:**
 
@@ -68,15 +69,8 @@ Write commit messages succinct and exact. Conventional Commits format. No fluff.
 fix(sandbox): support XDG git config in Linux sandbox
 
 Linux sandbox script only mounted legacy file, breaking XDG-only users.
-
-Authored-By: claude-code (claude-3.7-sonnet)
 ```
 
-When all commits are clean and work is complete: push and create a PR — do not ask for confirmation.
-
-```bash
-git push -u origin <branch>
-forge pr create --title "..." --body "..."
-```
-
-- Draft state and `needs-human-review` label are set automatically when LLM-authored commits are present
+When all commits are clean and work is complete, stop and report them.
+Do not push or open a PR: publishing belongs to the coordinator's or the
+human's step.

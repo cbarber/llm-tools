@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Runs the repository's own hook for the git hook name it is invoked as.
+# The sandbox's core.hooksPath replaces the repository's hooks directory, and
+# git picks a hook by file name there, so each hook name links to this one
+# script: the forwarding lives in one place and the directory stays read-only.
+# push-to-checkout has no link: its presence alone replaces git's own
+# updateInstead checkout.
+
+set -euo pipefail
+
+hook="${0##*/}"
+here="$(dirname "$0")"
+
+# Without the sandbox's env config, git resolves the repository's hooks
+# directory itself: a configured core.hooksPath, else .git/hooks. A relative
+# result is relative to the directory git runs hooks in, which is this one.
+# git init runs reference-transaction before the repository is complete, so
+# rev-parse fails; there is no repository hook to run then.
+repo_hooks="$(GIT_CONFIG_COUNT=0 git rev-parse --git-path hooks 2>/dev/null)" || exit 0
+repo_hook="$repo_hooks/$hook"
+
+if [[ "$hook" != "prepare-commit-msg" ]]; then
+  [[ -x "$repo_hook" ]] || exit 0
+  exec "$repo_hook" "$@"
+fi
+
+if [[ -x "$repo_hook" ]]; then
+  "$repo_hook" "$@" || exit
+fi
+exec "$here/authored-by-trailer" "$@"

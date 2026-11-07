@@ -1,7 +1,7 @@
 { pkgs, backlog }:
 
 let
-  claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { };
+  claude-code-scripts = pkgs.callPackage ./claude-code-scripts.nix { inherit work-record; };
   tea = pkgs.tea;
 
   spr = pkgs.callPackage ./spr { };
@@ -11,6 +11,15 @@ let
   iron-proxy = pkgs.callPackage ./iron-proxy { };
 
   temper = pkgs.writeShellScriptBin "temper" (builtins.readFile ./temper);
+  work-record = pkgs.writeShellApplication {
+    name = "work-record";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.git
+      pkgs.jq
+    ];
+    text = builtins.readFile ./work-record;
+  };
   forge = pkgs.stdenv.mkDerivation {
     pname = "forge";
     version = "0.1.0";
@@ -46,6 +55,7 @@ in
     fence
     iron-proxy
     temper
+    work-record
     forge
     git-agent-sequence-editor
     git-agent-editor
@@ -62,6 +72,7 @@ in
     fence
     iron-proxy
     temper
+    work-record
     forge
     git-agent-sequence-editor
     git-agent-editor

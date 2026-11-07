@@ -32,13 +32,16 @@ _dbg "sourcing setup-sandbox-paths.sh"
 source "${TOOLS_DIR:-$(dirname "$0")}/setup-sandbox-paths.sh"
 _dbg "setup-sandbox-paths.sh done"
 
+export OPENCODE_AUTH_CONTENT="{}"
+export CLAUDE_AUTH_DENY_CANONICAL=false
 if [[ "${1:-}" == "opencode" || "${1:-}" == */opencode ]]; then
   # shellcheck source=setup-opencode-auth.sh
   source "${TOOLS_DIR:-$(dirname "$0")}/setup-opencode-auth.sh"
-else
-  export OPENCODE_AUTH_CONTENT="{}"
+elif [[ "${1:-}" == "claude" || "${1:-}" == */claude ]]; then
+  # shellcheck source=setup-claude-auth.sh
+  source "${TOOLS_DIR:-$(dirname "$0")}/setup-claude-auth.sh"
 fi
-unset NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+unset NIXSMITH_OPENCODE_OAUTH_PROVIDERS NIXSMITH_CLAUDE_OAUTH
 
 # ── Locate fence ─────────────────────────────────────────────────────────────
 _dbg "locating fence binary"
@@ -98,12 +101,211 @@ _deny_read=(
   "${HOME}/.local/share/opencode/auth.json"
   "${HOME}/.ssh"
 )
+# Host sockets that act outside the sandbox: run commands, sign as the user,
+# or drive input and audio. fence has no Unix socket policy on Linux, so each
+# is masked by path. The audit behind this list is in SANDBOX.md.
+_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+_deny_read+=(
+  "${_runtime_dir}/bus"
+  "${_runtime_dir}/systemd/private"
+  "${_runtime_dir}/systemd/io.systemd.Manager"
+  "${_runtime_dir}/podman/podman.sock"
+  "${_runtime_dir}/docker.sock"
+  "${_runtime_dir}/gcr/ssh"
+  "${_runtime_dir}/gcr/.ssh"
+  "${_runtime_dir}/gnupg"
+  "${_runtime_dir}/keyring"
+  "${_runtime_dir}/hypr"
+  "${_runtime_dir}/pipewire-0"
+  "${_runtime_dir}/pipewire-0-manager"
+  "${_runtime_dir}/pulse/native"
+  "${_runtime_dir}/voxtype/audio.sock"
+  "/run/dbus/system_bus_socket"
+  "/run/podman/podman.sock"
+  "/run/docker.sock"
+  "/run/tailscale/tailscaled.sock"
+  "/run/clamav/clamd.ctl"
+  "/tmp/.X11-unix"
+  "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)"
+)
+if [[ "${DBUS_SESSION_BUS_ADDRESS:-}" =~ unix:path=([^,;]+) ]]; then
+  _deny_read+=("${BASH_REMATCH[1]}")
+fi
+_wayland="${WAYLAND_DISPLAY:-wayland-0}"
+[[ "$_wayland" == /* ]] || _wayland="${_runtime_dir}/${_wayland}"
+for _sock in "$_wayland" "${SSH_AUTH_SOCK:-}" "${SWAYSOCK:-}" "${NIRI_SOCKET:-}"; do
+  [[ -n "$_sock" ]] && _deny_read+=("$_sock")
+done
+unset _runtime_dir _wayland _sock
+# Claude Code's credential file is only withheld once its OAuth values have been
+# handed over through the environment; otherwise the agent still needs the file
+# to complete and persist its own browser login.
+if [[ "${CLAUDE_AUTH_DENY_CANONICAL:-false}" == "true" ]]; then
+  _deny_read+=("${HOME}/.claude/.credentials.json")
+fi
+unset CLAUDE_AUTH_DENY_CANONICAL
 _deny_write=("${_deny_read[@]}")
-_deny_write+=("${HOME}/.config/nixsmith/iron-proxy")
+_deny_write+=("${HOME}/.config/nixsmith/iron-proxy" "$SANDBOX_GIT_HOOKS_DIR")
 if git rev-parse --git-dir >/dev/null 2>&1; then
   _git_cfg=$(git rev-parse --git-common-dir 2>/dev/null || git rev-parse --git-dir 2>/dev/null)/config
   [[ -f "$_git_cfg" ]] && _deny_write+=("$_git_cfg")
 fi
+
+# Shells outside the sandbox resolve bare names through the launching PATH, so
+# every PATH directory the sandbox could write is re-mounted read-only. Each
+# directory between a writable mount and the PATH directory is pinned too:
+# renaming an unpinned ancestor would carry the read-only mount aside.
+_writable_roots=()
+for _root in /tmp "${SANDBOX_MOUNTS_RW[@]:-}"; do
+  [[ -d "$_root" ]] && _writable_roots+=("$(cd "$_root" && pwd -P)")
+done
+_is_writable_root() {
+  local root
+  for root in "${_writable_roots[@]}"; do [[ "$1" == "$root" ]] && return 0; done
+  return 1
+}
+_in_writable_root() {
+  local root
+  for root in "${_writable_roots[@]}"; do [[ "$1" == "$root"/* ]] && return 0; done
+  return 1
+}
+# Resolves an absolute path one component at a time, as the kernel does,
+# adding each directory strictly inside a writable mount to _path_pins and
+# setting _path_resolved. A symlink held directly by a writable mount cannot be
+# pinned by a mount, so it fails with _path_error. /nix/store is immutable, so
+# the rest of a path inside a store object is taken as written, symlinks and all.
+declare -A _link_targets=()
+_pin_path() {
+  local depth=$2 cur="" i comp next target rest
+  local -a comps
+  if (( depth >= 40 )); then
+    _path_error="too many levels of symlinks"
+    return 1
+  fi
+  # read stops at a newline, which would hide the rest of the path.
+  if [[ "$1" == *$'\n'* ]]; then
+    _path_error="path contains a newline"
+    return 1
+  fi
+  IFS=/ read -ra comps <<< "$1"
+  for i in "${!comps[@]}"; do
+    comp=${comps[i]}
+    if [[ "$cur" == /nix/store/?* && "$1" != *..* ]]; then
+      printf -v rest '/%s' "${comps[@]:i}"
+      _path_resolved="$cur$rest"
+      return 0
+    fi
+    case "$comp" in
+      "" | .) continue ;;
+      ..)
+        # fence skips a missing pin, and the kernel follows a symlink created
+        # there later before applying "..".
+        if _in_writable_root "$cur" && [[ ! -d "$cur" ]]; then
+          _path_error="'..' follows $cur, which does not exist and the sandbox could create"
+          return 1
+        fi
+        cur="${cur%/*}"; continue ;;
+    esac
+    next="$cur/$comp"
+    if [[ -L "$next" ]]; then
+      if _is_writable_root "$cur"; then
+        _path_error="symlink $next sits in writable sandbox mount $cur"
+        return 1
+      fi
+      # The trailing "." keeps a newline that ends the target.
+      [[ -n "${_link_targets[$next]:-}" ]] || _link_targets[$next]=$(readlink "$next" && echo .)
+      target=${_link_targets[$next]%$'\n.'}
+      [[ "$target" == /* ]] || target="$cur/$target"
+      _pin_path "$target" $((depth + 1)) || return 1
+      cur="$_path_resolved"
+      continue
+    fi
+    cur="$next"
+    if _in_writable_root "$cur" && ! _is_writable_root "$cur"; then
+      _path_pins+=("$cur")
+    fi
+  done
+  _path_resolved="${cur:-/}"
+}
+# A read-only mount covers a directory's entries but not what they lead to: a
+# symlink resolving through a path the sandbox can write, or a hard link whose
+# other name may be writable. Fails with _path_error naming the first such
+# entry. A symlink may resolve into an already pinned directory. Outside the
+# writable mounts only symlinks are checked.
+_check_entries() {
+  local entry target pin
+  local -a pins=("${_path_pins[@]}") kinds=(-type l)
+  local -A known=()
+  [[ -d "$1" ]] || return 0
+  _in_writable_root "$1" && kinds=(\( -type l -o \( ! -type d -links +1 \) \))
+  for pin in "${pins[@]}"; do known[$pin]=1; done
+  while IFS= read -r -d '' entry && IFS= read -r -d '' target; do
+    if [[ -z "$target" ]]; then
+      _path_error="$entry has more than one hard link, so another name may be writable"
+      return 1
+    fi
+    [[ "$target" == /nix/store/?* && "$target" != *..* ]] && continue
+    [[ "$target" == /* ]] || target="$1/$target"
+    _path_pins=()
+    if ! _pin_path "$target" 1; then
+      _path_error="symlink $entry: $_path_error"
+      return 1
+    fi
+    if _is_writable_root "$_path_resolved"; then
+      _path_error="symlink $entry resolves to writable sandbox mount $_path_resolved"
+      return 1
+    fi
+    for pin in "${_path_pins[@]:-}"; do
+      [[ -z "$pin" || -n "${known[$pin]:-}" ]] && continue
+      if [[ "$pin" == "$_path_resolved" && -n "${known[${pin%/*}]:-}" ]]; then
+        [[ -z $(find "$pin" -maxdepth 0 ! -type d -links +1) ]] && continue
+        _path_error="symlink $entry resolves to $pin, which has more than one hard link"
+        return 1
+      fi
+      _path_error="symlink $entry resolves through $pin, which the sandbox can write"
+      return 1
+    done
+  done < <(find "$1" -mindepth 1 -maxdepth 1 "${kinds[@]}" -printf '%p\0%l\0')
+  _path_pins=("${pins[@]}")
+}
+_path_pins=()
+_entry_dirs=()
+IFS=: read -ra _path_dirs <<< "${PATH}:"
+for _dir in "${_path_dirs[@]}"; do
+  if [[ "$_dir" != /* ]]; then
+    echo "agent-sandbox: PATH entry '${_dir}' is relative to the working directory, which the sandbox can write; remove it from PATH" >&2
+    exit 1
+  fi
+  if ! _pin_path "$_dir" 0; then
+    echo "agent-sandbox: PATH entry ${_dir}: ${_path_error}; remove it from PATH" >&2
+    exit 1
+  fi
+  if _is_writable_root "$_path_resolved"; then
+    echo "agent-sandbox: PATH entry ${_dir} is the writable sandbox mount ${_path_resolved}; remove it from PATH" >&2
+    exit 1
+  fi
+  # fence skips a missing path, so a directory the sandbox could create later
+  # must exist before its read-only mount.
+  if _in_writable_root "$_path_resolved" && [[ ! -e "$_path_resolved" ]] && ! mkdir -p "$_path_resolved"; then
+    echo "agent-sandbox: cannot create PATH entry ${_dir} to re-mount it read-only" >&2
+    exit 1
+  fi
+  [[ "$_path_resolved" == /nix/store/* ]] || _entry_dirs+=("$_path_resolved")
+done
+for _dir in "${_entry_dirs[@]:-}"; do
+  if [[ -n "$_dir" ]] && ! _check_entries "$_dir"; then
+    echo "agent-sandbox: PATH directory ${_dir}: ${_path_error}; remove that entry or drop ${_dir} from PATH" >&2
+    exit 1
+  fi
+done
+declare -A _pinned=()
+for _pin in "${_path_pins[@]:-}"; do
+  [[ -z "$_pin" || -n "${_pinned[$_pin]:-}" ]] && continue
+  _pinned[$_pin]=1
+  _deny_write+=("$_pin")
+done
+unset -f _is_writable_root _in_writable_root _pin_path _check_entries
+unset _writable_roots _root _link_targets _path_pins _entry_dirs _path_dirs _dir _path_resolved _path_error _pinned _pin
 
 # Always readable: /nix (binaries), /proc (self status), /etc (SSL/resolv),
 # /run/current-system (NixOS compat). These are system paths not covered by
@@ -375,7 +577,7 @@ if [[ -n "${FENCE_LOG_FILE:-}" ]]; then
 fi
 
 _dbg "exec fence: $FENCE_BIN ${FENCE_ARGS[*]}"
-unset _git_cfg _deny_read _deny_write _system_ro
+unset _git_cfg _deny_read _deny_write _system_ro SANDBOX_GIT_HOOKS_DIR
 unset _deny_write_json _allow_read_json _allow_write_json _local_ports _local_ports_json _port
 
 # Run fence as a child (not exec) so the EXIT trap fires and kills iron-proxy.

@@ -38,14 +38,14 @@ git commit --allow-empty -m "amend! <original-subject>" -m "<new-full-message-in
 git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```
 
+Leave `Authored-By` out of the new message: the sandbox's commit hook adds it when the fold lands, and keeps one already there. Outside the sandbox no hook runs, so end the new message with `Authored-By: <agent> (<model>)`, naming your own agent and model.
+
 Example:
 
 ```bash
 git commit --allow-empty -m "amend! feat(foo): add bar" -m "feat(foo): add bar
 
-New body explaining why without outdated details.
-
-Authored-By: claude-code (claude-3.7-sonnet)"
+New body explaining why without outdated details."
 
 git rebase --autosquash origin/${DEFAULT_BRANCH}
 ```

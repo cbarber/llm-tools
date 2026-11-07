@@ -11,7 +11,7 @@ pkgs.mkShell {
       gh
       tea
     ]
-    ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       iproute2
       coreutils
     ]

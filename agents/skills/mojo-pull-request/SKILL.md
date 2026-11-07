@@ -9,9 +9,10 @@ triggers:
 
 # mojo-pull-request
 
-```bash {exec}
+```!
 echo "PR status from: `forge pr status`"
-forge pr status
+# A failing command aborts Claude's skill load, so tolerate remotes forge cannot serve.
+forge pr status || true
 ```
 
 **Viewing PR status:**
