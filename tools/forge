@@ -506,7 +506,10 @@ pr_create() {
     # Apply needs-human-review label when unreviewed LLM commits are present.
     # Label signals to teammates that this PR requires the author's review first.
     if [[ "$FORGE_TYPE" == "github" ]] && has_unreviewed_llm_commits; then
-        gh pr edit --add-label "needs-human-review" 2>/dev/null || true
+        local label_error
+        if ! label_error=$(gh pr edit --add-label "needs-human-review" 2>&1 >/dev/null); then
+            echo "Warning: needs-human-review label not applied to $pr_url: $label_error" >&2
+        fi
     fi
 }
 

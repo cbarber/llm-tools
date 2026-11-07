@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Claude Code status line: shows the context size and records it for the
+# Stop hook, which has no usage in its input.
+
+set -euo pipefail
+
+# shellcheck source=context-size.sh
+source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/context-size.sh"
+
+input=$(cat)
+# Counted as stop-continue counts the transcript's usage, so the renewal
+# threshold means the same whichever source it reads.
+tokens=$(jq -r '.context_window.current_usage // empty
+  | [.input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens, .output_tokens] | map(. // 0) | add' <<<"$input" 2>/dev/null) || true
+[[ "$tokens" =~ ^[0-9]+$ ]] || tokens=""
+size=$(jq -r '.context_window.context_window_size // empty' <<<"$input" 2>/dev/null) || true
+[[ "$size" =~ ^[1-9][0-9]*$ ]] || size=""
+
+# Usage is null before the first API call and after /compact; the stale
+# size is dropped so the hook reads the transcript, which knows both.
+if file=$(context_size_file "$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)"); then
+  if [[ -z "$tokens" ]]; then
+    rm -f -- "$file"
+  elif mkdir -p -- "$(dirname -- "$file")" && tmp=$(mktemp "$file.XXXXXX"); then
+    printf '%s\n%s\n' "$tokens" "$size" >"$tmp"
+    mv -f -- "$tmp" "$file"
+  fi
+fi
+
+if [[ -z "$tokens" ]]; then
+  echo "ctx –"
+elif [[ "$size" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ctx $((tokens / 1000))k/$((size / 1000))k ($((tokens * 100 / size))%)"
+else
+  echo "ctx $((tokens / 1000))k"
+fi

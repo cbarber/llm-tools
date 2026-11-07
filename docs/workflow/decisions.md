@@ -1,0 +1,202 @@
+# Selected workflow decisions
+
+Status: decisions reached through grilling, recorded for implementation.
+Read [architecture](architecture.md) for the combined flow and
+[program design](program-design.md) for the implementation pieces.
+[Mojo policy](mojo.md) remains binding. Source research is linked from
+[the collection index](../workflow.md); upstream instructions are not adopted wholesale.
+
+## Select established pieces rather than a new methodology
+
+| Area | Selection | Adaptation or boundary |
+| --- | --- | --- |
+| Work classification | Bounded and design-bearing paths | Depth follows consequential unresolved choices, not a file-count threshold. |
+| Interview | Pocock's prerequisite-ready question frontier | Research facts before asking the user to decide; independent questions can share a round. |
+| Product discussion | Dex's product-first guidance | Agree on problem, success evidence, and solution before technical design; out-of-scope items are specific ruled-out alternatives. |
+| Technical design | Dex's system and program design | Separate human approvals; selective contracts, signatures, call trees, seams, and file responsibilities. |
+| Implementation contract | Pocock's spec and tickets | Reference approved design; do not also generate Dex's structure outline. |
+| Implementation progression | Pocock ticket dependencies with Dex-like sequential progression | One ticket at a time, not Pocock's maximum-concurrency frontier. |
+| Implementation discipline | Mojo initialization, editing, commits, and history | Front-load instructions instead of event-triggered policy injection. |
+| Review | Addy's fresh artifact-and-contract review | Review each slice and the integrated result; no mandatory cross-model offer every cycle. |
+| Correction | Reviewer-authored SHA-targeted fixup proposals | Orchestrator accepts/rejects; this is a local adaptation, not Addy's prescribed role split. |
+| Context renewal | Reasoned handoff plus in-place Claude compaction through Herdr | Use the current pane; no background-session/attach workflow. |
+
+Poteto's concrete safety-proof approach remains useful to the less-front-loaded
+bounded path. It is not a substitute implementation backbone for `implement-spec`
+or `implement-outline`. General-purpose implementation and test-first technique
+are different choices.
+
+## Design approval permits learning, not silent overrides
+
+- Early design's purpose is to surface consequential decisions sooner.
+- Do not specify every implementation detail or freeze illustrative sketches.
+- Implementers may fill in details left open.
+- Overriding an agreed architecture or program decision requires human review again.
+- Present the changed decision and consequences; review the whole affected section
+  when its relationships change. Unaffected approvals remain valid.
+- Keep the design document coherent rather than append a transcript of decisions.
+- A context reset does not reopen approval or grant new authority.
+- Confirm testing seams during the existing design discussion when practical.
+  `to-spec` records the agreement and asks only for a missing decision.
+
+## Implementation continues within approved scope
+
+- Bounded work can be implemented in the main conversation.
+- Planned multi-slice work uses a fresh implementer for each ticket, coordinated
+  by the main conversation.
+- Execute one ticket at a time. Finish verification and review/correction before
+  advancing to the next unblocked ticket.
+- Continue ordinary approved implementation without permission-to-proceed prompts.
+- TDD is available when appropriate or requested, but invoking `tdd` is not
+  mandatory for every ticket. Tickets specify behavior and verification requirements.
+- Initialization includes agent/sandbox identification, Git state, and active work.
+  Routine `forge pr status` and `forge pr next-action` are largely redundant with
+  the work record; use Forge at actual PR interaction steps.
+
+## Reviewers propose fixes; the orchestrator accepts them
+
+- Review each meaningful slice and perform a final integrated review. For a bounded
+  change, one review can serve both purposes.
+- Every review has fresh context, through a subagent or separate agent session.
+  Do not inherit the author's conversation as the reviewer's reasoning.
+- Review the artifact against the agreed contract; reconcile findings against
+  actual code and evidence rather than treating the reviewer as authoritative.
+- Use Addy's simpler artifact review, not a restriction to the fix diff alone.
+- Reviewers may author fixup commits targeting the owning SHAs. The orchestrator
+  accepts or rejects them; reviewer proposals do not automatically enter the
+  implementation branch.
+- Verify accepted changes and obtain fresh-context re-review.
+- Allow at most three correction rounds after the initial review, for both slice
+  and final review. Unresolved substantive findings at the limit return to the user.
+- Track rounds durably. Do not reset the count at compaction.
+- Accepted fixups are folded into owning commits before publication. Preserve
+  distinct atomic purposes, working retained history, and final human review/stamping.
+
+## Continuation and renewal stay in the interactive workflow
+
+- Stop's purpose is to keep an already-instructed agent moving when possible.
+  It is not the mechanism for injecting editing or review policy at tool triggers.
+- Load applicable skills at entry; reload them at recovery entry after renewal.
+- Default to `/compact` in the current Herdr pane, backed by a reasoned handoff.
+  This choice can change later.
+- Missing or failed reasoned handoff pauses for human intervention. No blind
+  compaction fallback is approved; observe failures before automating around them.
+- One threshold, 175k tokens of main-conversation context by default
+  (`CLAUDE_RENEWAL_TOKENS`), asks the session to finish its step and hand off;
+  when the status line records the context window, the threshold is capped at
+  60k below it, since Claude compacts a 200k window on its own at ~144k–167k;
+  without a current handoff the next stop pauses for the user. The pause holds
+  across later stops, hook-driven or not, until a handoff is current or context
+  drops below the threshold. Running background workers are not awaited: the
+  handoff lists them and their results arrive after renewal.
+- The Stop hook reads that size from the per-session record the status line
+  (`context-status`) writes under `~/.cache/claude`, else from the transcript
+  Claude names in the hook input, read-only and never stored. When neither gives
+  a size, that is reported, not ignored. The status line is a command Claude Code
+  runs that writes a local file, so it needs no Herdr access.
+- The sandboxed agent never gets the Herdr socket: the agent is not trusted, and
+  the socket would let it drive any pane. A helper outside the sandbox, started
+  with Claude and exiting with it, owns all Herdr traffic for its own pane. The
+  agent only writes a renewal request beside its work record; the helper treats
+  it as untrusted, acts at most once per current handoff, and can submit only
+  `/compact` and `/mojo-resume`. The request names its pane solely so a helper
+  ignores other panes' requests; it is never a target.
+- The helper executes only from the Nix store: its PATH is pinned. Herdr comes
+  from a fixed path, `/run/current-system/sw/bin/herdr` unless the launching
+  shell sets `HERDR_RENEW_HERDR`, never from PATH, which holds sandbox-writable
+  directories. The helper starts only if every directory and symlink from `/`
+  to the file, and the file, is owned by root and no directory is writable by
+  others unless sticky. Lying in the Nix store proves nothing: the sandbox can
+  build into it.
+- Herdr recognizes the sandboxed Claude by `HERDR_AGENT=claude`, which the Claude
+  Code shell exports in a Herdr pane; Herdr reads process environments, as it
+  does `HERDR_AGENT=opencode` for sandboxed OpenCode. Its Claude integration only
+  reports session identity, which is not relayed.
+- Waiting for a human decision and final human review are deliberate stops.
+- A background Claude session followed by attach was rejected.
+- Workspace/tab arrangement is organizational, not a context-renewal mechanism.
+  Do not create a new tab or conversation for every sequential slice by default.
+
+## Researched renewal tools are not installed
+
+Their source was inspected while building renewal; the flow uses its own small
+pieces instead, for these reasons.
+
+- Herdr Context Meter: a Herdr plugin whose status line feeds a pane that joins
+  sessions to panes through `herdr agent list`. The Stop hook needs only its own
+  session's size, which `context-status` records without Herdr or a plugin.
+- Compact Handoff: its own Stop request and prompt advisory, with a mechanical
+  PreCompact note as the floor and handoff freshness judged by age and token
+  growth. A second Stop controller would compete with the one shared decision,
+  and neither the mechanical note nor age shows the handoff fits current work.
+- Safe Compact: a Herdr plugin that compacts any idle Claude pane it maps, and
+  past a hard threshold compacts without a handoff. That is the rejected blind
+  fallback; the helper here acts only on its own pane.
+- Claude auto-compactor: a daemon that compacts idle sessions through Herdr
+  before the prompt cache expires, with no handoff. Its lessons hold here: the
+  helper prompts only an idle agent and confirms compaction, not delivery, and
+  the transcript fallback counts no usage from before the last compaction.
+
+## Keep continuation state small and reference-rich
+
+- Use one `work.json` in a durable home-directory work folder, with the active
+  session pointing to it.
+- Track current ticket/next action, any human gate, correction round, branch, and
+  references to existing artifacts.
+- Include agent/tool/session IDs so existing tooling can retrieve historical context.
+- The coordinator advances progress after reconciling results. Workers return
+  reports instead of independently advancing shared workflow state.
+- Do not store a Herdr pane reference, commit ranges, or transcript paths.
+- Do not build a transcript reader or recovery subsystem just to add reference links.
+- Fixup SHAs belong to correction proposals; rejecting commit-range tracking in
+  `work.json` does not remove SHA-targeted fixups from the engineering workflow.
+
+## Front-load native Claude skills
+
+- Use Claude's documented executable-skill syntax: inline `!` commands or fenced
+  blocks opened with three backticks followed by `!`.
+- Adapt the existing Mojo `{exec}` blocks for this Claude workflow; do not introduce
+  a custom Markdown renderer or competing executable standard.
+- Herdr submits the entry/resume skill invocation. Claude loads the skill and runs
+  its executable initialization through the native mechanism.
+- Personal language-style reference skills supply portable preferences; repository
+  instructions and tool configuration take precedence. Select applicable guidance
+  at entry for both implementers and fixup reviewers.
+
+## The user is not a trusted Nix user
+
+- The user is removed from Nix `trusted-users`; the sandbox keeps the plain
+  daemon socket and builds as an untrusted client. The change lives in the
+  human's NixOS configuration, outside this repository.
+- Nix grants trust per uid, and the sandbox shares the user's uid. A trusted
+  daemon is root-equivalent: it imports store paths with arbitrary contents.
+  Any escape from the sandbox to the user, such as the reachable systemd user
+  bus (TASK-104), would reach it.
+- An untrusted proxy daemon (`nix daemon --force-untrusted`) in front of the
+  sandbox was rejected: it guards only the socket path the sandbox sees, not
+  the uid, and macOS could not mask the real socket.
+- Costs: caches a flake requests must be listed system-wide in
+  `trusted-substituters` with their public keys, and restricted settings need
+  `sudo`, including from the user's own terminal.
+
+## Sandbox edits run at the next shell entry: accepted risk
+
+- The sandbox can write the checkout, including `flake.nix`, `.envrc`, and
+  `.env`. The next `nix develop` or direnv load evaluates or sources them
+  outside the sandbox; `setup-shared-shell.sh` sources `.env`. An agent can
+  run code there, or set `HERDR_RENEW_HERDR` and `HERDR_RENEW_PATH` before
+  the renewal helper starts.
+- Accepted as unavoidable. The same holds for any source code from the
+  checkout the human executes later; the shell entry files are not a special case.
+
+## Explicitly excluded or deferred
+
+- No maintenance/debt register; concrete concerns become linked follow-up tickets.
+- No exhaustive upfront specification or duplicated outline/ticket decomposition.
+- No automatic override of agreed design, blind renewal, or agent final-human stamp.
+- No mandatory TDD experiment was selected; the earlier question contrasting TDD
+  with blast-radius as implementation alternatives was withdrawn.
+- No wholesale adoption of Jesse's ledger machinery, five-round limit, or autonomous
+  rulings; only the durable progress precedent is relevant.
+- Thresholds, record naming, native API compatibility, and transport timing are
+  implementation/validation details. They must not become an open-ended interview.

@@ -196,3 +196,22 @@ describe("mojo-complete — once:true fires at most once per session", () => {
     expect(appearances.length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite 3: Claude Code cannot discover it. Claude drops the description from
+// context and refuses the Skill tool under disable-model-invocation, and
+// hides the / menu entry under user-invocable: false; OpenCode ignores both
+// (unknown frontmatter), which suite 2 exercises.
+// ---------------------------------------------------------------------------
+
+describe("mojo-complete — hidden from Claude Code", () => {
+  it("sets the Claude-only invocation flags in frontmatter", async () => {
+    const skill = await readFile(
+      join(import.meta.dir, "..", "agents", "skills", "mojo-complete", "SKILL.md"),
+      "utf8",
+    );
+    const frontmatter = skill.split("\n---\n")[0];
+    expect(frontmatter).toMatch(/^disable-model-invocation: true$/m);
+    expect(frontmatter).toMatch(/^user-invocable: false$/m);
+  });
+});

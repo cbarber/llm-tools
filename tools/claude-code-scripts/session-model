@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Claude Code SessionStart hook: exports the session's model as
+# AUTHORED_BY_MODEL, which the sandbox's Authored-By trailer names.
+
+set -euo pipefail
+
+[[ -n "${CLAUDE_ENV_FILE:-}" ]] || exit 0
+
+# Absent after /clear or conversation recovery; the trailer then names the
+# agent alone.
+model=$(jq -r '.model // empty | strings')
+[[ -n "$model" ]] || exit 0
+
+# Every later Bash command runs the file as shell code, so the untrusted
+# value is quoted, never interpolated.
+printf 'export AUTHORED_BY_MODEL=%q\n' "$model" >>"$CLAUDE_ENV_FILE"

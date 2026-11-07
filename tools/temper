@@ -90,7 +90,7 @@ execute_bash_block() {
   local bash_code="" remaining_text=""
 
   while IFS= read -r line; do
-    if [[ "$line" == '```bash {exec}' ]]; then
+    if [[ "$line" == '```bash {exec}' || "$line" == '```!' ]]; then
       in_bash_block=1
       continue
     fi

@@ -10,15 +10,18 @@ if [[ "${AGENT_SANDBOX:-true}" == "true" ]] && [[ -x "$AGENT_SANDBOX_SCRIPT" ]];
     export FENCE_LOG_FILE="$_FENCE_LOG"
   fi
   sandboxed-opencode() {
+    # No Herdr socket: it would let the agent drive any pane, and Herdr
+    # detects OpenCode from this variable and the screen without it.
     if [[ -n "${HERDR_SOCKET_PATH:-}" ]]; then
       HERDR_AGENT=opencode \
-        SANDBOX_EXTRA_RO="${SANDBOX_EXTRA_RO:+${SANDBOX_EXTRA_RO}:}${HERDR_SOCKET_PATH}" \
         agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"
       return
     fi
     agent-sandbox opencode --port "${OPENCODE_PORT}" --dangerously-skip-permissions "$@"
   }
   export -f sandboxed-opencode
+  # Names the agent in the trailer the sandbox's commit hook adds.
+  export AUTHORED_BY_AGENT=opencode
 fi
 
 export AGENT_ENV_CONFIG_DIR="${HOME}/.config/opencode"

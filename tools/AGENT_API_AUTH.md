@@ -194,6 +194,9 @@ LLM provider credentials are injected into the sandbox via
       "GH_TOKEN": "ghp_...",
       "_opencodeAuth": {
         "oauthProviders": ["openai"]
+      },
+      "_claudeAuth": {
+        "oauth": true
       }
     }
   },
@@ -238,8 +241,9 @@ environment injection if `iron-proxy` is unavailable or fails to start.
 | NVIDIA | `NVIDIA_API_KEY` |
 | DigitalOcean | `DIGITALOCEAN_ACCESS_TOKEN` |
 
-Any valid environment-variable name except the reserved `_opencodeAuth` object
-is treated as a credential. The list above is guidance, not a restriction.
+Any valid environment-variable name except the reserved `_opencodeAuth` and
+`_claudeAuth` objects is treated as a credential. The list above is guidance,
+not a restriction.
 
 **Setup:**
 
@@ -278,6 +282,33 @@ active session, OpenCode cannot persist an upstream refresh because canonical
 writes are denied. Re-run the authentication command and restart the agent;
 the next launch also prints the command when it detects the expired credential.
 
+Claude Code stores credentials in `~/.claude/.credentials.json`. Setting
+`_claudeAuth.oauth` to `true` hands the `claudeAiOauth` entry to a sandboxed
+Claude Code launch and makes the canonical file unreadable and unwritable inside
+Fence. The entry is validated and exported as `CLAUDE_CODE_OAUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, and `CLAUDE_CODE_OAUTH_SCOPES`; missing,
+malformed, or expired credentials abort launch. Other Claude Code state under
+`~/.claude` remains available. As with OpenCode, OAuth values are visible to the
+agent through the environment and are not obfuscated by `iron-proxy`.
+
+Because Claude Code performs the OAuth exchange from the environment, the
+sandbox renews its own access token without the canonical file. Launch is
+therefore gated on `refreshTokenExpiresAt` rather than `expiresAt`: the access
+token lives about twelve hours and is expected to be stale, while the refresh
+token lasts about thirty days and is what actually requires a new browser login.
+
+The grant is opt-in. Without it nothing is exported and the canonical file stays
+readable, so Claude Code's own browser login keeps working inside the sandbox.
+
+Authenticate outside Fence with upstream Claude Code:
+
+```bash
+nix develop github:cbarber/llm-tools#claude-code-auth --command claude auth login
+```
+
+The auth shell clears inherited `CLAUDE_CODE_OAUTH_*` values and updates the
+canonical file without exposing it to the agent.
+
 ### Outer shell isolation
 
 After sourcing `.env` files, `setup-shared-shell.sh` unsets all known AI-provider
@@ -287,7 +318,8 @@ Credentials reach the sandbox exclusively through secrets.json `--setenv`
 injection.
 
 The blocklist covers: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`,
+`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`,
+`CLAUDE_CODE_OAUTH_SCOPES`, `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`,
 `OPENAI_API_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
 `AWS_BEARER_TOKEN_BEDROCK`, `AZURE_OPENAI_API_KEY`, `AZURE_RESOURCE_NAME`,

@@ -90,6 +90,11 @@ _add_git_cfg() { _git_cfg_keys+=("$1"); _git_cfg_values+=("$2"); }
 _add_git_cfg "url.https://github.com/.insteadOf" "git@github.com:"
 _add_git_cfg "credential.https://github.com.helper" "!git-credential-nixsmith"
 
+# Every commit carries the agent's trailer whatever the agent was told. The
+# hooks live beside this script, in the Nix store, which the agent cannot write.
+SANDBOX_GIT_HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git-hooks"
+_add_git_cfg "core.hooksPath" "$SANDBOX_GIT_HOOKS_DIR"
+
 # Allowlisted identity/preference passthrough from the user's real gitconfig.
 # Deliberately narrow — the rest of the user's config is never read into the
 # sandbox; it can carry directives (an https->ssh url.insteadOf, diff.external,
@@ -113,11 +118,14 @@ unset _git_cfg_keys _git_cfg_values _i
 # shellcheck disable=SC2066
 for ro_path in \
   "$HOME/.agents" \
+  "$HOME/.local/share/direnv" \
   "$HOME/.config/nixsmith/iron-proxy"; do
   [[ -e "$ro_path" ]] && SANDBOX_MOUNTS_RO+=("$ro_path")
 done
 
 mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
+mkdir -p "$HOME/.local/state/work-record" 2>/dev/null || true
+mkdir -p "$HOME/.cache/claude" 2>/dev/null || true
 
 mkdir -p "$HOME/.config/nixsmith/iron-proxy" 2>/dev/null || true
 
@@ -140,11 +148,11 @@ for rw_path in \
   "$HOME/.gradle" \
   "$HOME/.hex" \
   "$HOME/.local/share/claude" \
-  "$HOME/.local/share/direnv" \
   "$HOME/.local/share/opencode" \
   "$HOME/.local/share/opentui" \
   "$HOME/.local/share/pnpm" \
   "$HOME/.local/state/opencode" \
+  "$HOME/.local/state/work-record" \
   "$HOME/.m2" \
   "$HOME/.mix" \
   "$HOME/.npm" \
@@ -183,6 +191,7 @@ NIXSMITH_SECRETS_ENV=""
 NIXSMITH_DERIVED_ENV=""
 NIXSMITH_GITEA_HOST=""
 NIXSMITH_OPENCODE_OAUTH_PROVIDERS="[]"
+NIXSMITH_CLAUDE_OAUTH="false"
 
 set_scoped_secrets() {
   local selected_scope="$1"
@@ -191,20 +200,25 @@ set_scoped_secrets() {
 
   if ! jq -e '
     type == "object" and
-    ([to_entries[] | select(.key != "_opencodeAuth") |
+    ([to_entries[] | select(.key != "_opencodeAuth" and .key != "_claudeAuth") |
       (.key | test("^[A-Za-z_][A-Za-z0-9_]*$")) and (.value | type == "string")] | all) and
     (if has("_opencodeAuth") then
       (._opencodeAuth | type == "object" and
         ((.oauthProviders // []) | type == "array" and all(.[]; type == "string" and length > 0)))
+    else true end) and
+    (if has("_claudeAuth") then
+      (._claudeAuth | type == "object" and
+        ((.oauth // false) | type == "boolean"))
     else true end)
   ' <<< "$selected_scope" >/dev/null; then
-    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment keys must be variable names, values must be strings, and _opencodeAuth.oauthProviders must be an array of provider IDs." >&2
+    echo "Invalid entry in ${NIXSMITH_SECRETS_FILE}: environment keys must be variable names, values must be strings, _opencodeAuth.oauthProviders must be an array of provider IDs, and _claudeAuth.oauth must be a boolean." >&2
     return 1
   fi
 
-  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth" and .key != "GITEA_INSTANCE_URL") | "\(.key)=\(.value)"' <<< "$selected_scope")
+  NIXSMITH_SECRETS_ENV=$(jq -r 'to_entries[] | select(.key != "_opencodeAuth" and .key != "_claudeAuth" and .key != "GITEA_INSTANCE_URL") | "\(.key)=\(.value)"' <<< "$selected_scope")
   [[ -z "$NIXSMITH_SECRETS_ENV" ]] || NIXSMITH_SECRETS_ENV+=$'\n'
   NIXSMITH_OPENCODE_OAUTH_PROVIDERS=$(jq -c '._opencodeAuth.oauthProviders // [] | unique' <<< "$selected_scope")
+  NIXSMITH_CLAUDE_OAUTH=$(jq -r 'if ._claudeAuth.oauth == true then "true" else "false" end' <<< "$selected_scope")
 
   if jq -e 'has("GITEA_TOKEN")' <<< "$selected_scope" >/dev/null; then
     repo_url=$(extract_repo_url 2>/dev/null || true)
@@ -254,12 +268,9 @@ if [[ -f "$NIXSMITH_SECRETS_FILE" ]] && command -v jq >/dev/null 2>&1; then
   unset _secrets_valid
 fi
 
-export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST NIXSMITH_OPENCODE_OAUTH_PROVIDERS
+export NIXSMITH_SECRETS_ENV NIXSMITH_DERIVED_ENV NIXSMITH_GITEA_HOST
+export NIXSMITH_OPENCODE_OAUTH_PROVIDERS NIXSMITH_CLAUDE_OAUTH
 unset -f set_scoped_secrets
-
-if [[ "${AGENT_SANDBOX_BIND_HOME:-false}" == "true" ]]; then
-  SANDBOX_MOUNTS_RW+=("$HOME")
-fi
 
 # Serialize mount lists into env vars so forge doctor can display them inside
 # the sandbox. Colon-separated, matching the SANDBOX_EXTRA_RO/RW convention.
