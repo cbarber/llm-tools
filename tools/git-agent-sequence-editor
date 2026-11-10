@@ -7,7 +7,12 @@
 #
 # Usage: GIT_SEQUENCE_EDITOR=git-agent-sequence-editor git rebase -i <ref>
 
-sed -i '1s/^/break\n/' "$1"
+set -e
+
+# Portable prepend: BSD sed (macOS) and GNU sed disagree on `-i` syntax.
+tmp="$1.tmp"
+{ echo break; cat "$1"; } > "$tmp"
+mv "$tmp" "$1"
 
 echo "git rebase -i halted. Edit the rebase todo, then run: git rebase --continue"
 echo "Todo file: $1"
